@@ -91,10 +91,10 @@ export default function Navbar({}: NavbarProps) {
   };
 
   const getSelectedMenu = () => {
-    if (pathname.startsWith("/dashboard")) return "Dashboard";
-    if (pathname.startsWith("/management")) return "Management";
-    if (pathname.startsWith("/reports")) return "Reports";
-    if (pathname.startsWith("/admin")) return "Admin";
+    if (pathname.startsWith("/dashboard")) return "Customers";
+    if (pathname.startsWith("/management")) return "Products";
+    if (pathname.startsWith("/reports")) return "Assets";
+    if (pathname.startsWith("/admin")) return "Sales";
     if (pathname.startsWith("/alarms")) return "alarms";
     return "";
   };
@@ -166,13 +166,13 @@ export default function Navbar({}: NavbarProps) {
         {/* Center: Nav Links (hidden on small screens) */}
         <Box sx={{ display: { xs: "none", md: "flex", flexGrow: 1 } }}>
           <Box sx={{ mx: 3 }} />
-          {menuLink("Dashboard", "/dashboard")}
+          {menuLink("Customers", "/dashboard")}
           <Box sx={{ mx: 2 }} />
-          {menuLink("Management", "/management?section=1")}
+          {menuLink("Products", "/management?section=1")}
           <Box sx={{ mx: 2 }} />
-          {menuLink("Reports", "/reports")}
+          {menuLink("Assets", "/reports")}
           <Box sx={{ mx: 2 }} />
-          {menuLink("Admin", "/admin")}
+          {menuLink("Sales", "/admin")}
         </Box>
 
         {/* Right: User Info (hidden on small screens) */}
@@ -337,16 +337,16 @@ export default function Navbar({}: NavbarProps) {
         <Box sx={{ width: 250 }} role="presentation" onClick={toggleDrawer}>
           <List>
             <ListItem component={Link} href="/">
-              <ListItemText primary="Dashboard" />
+              <ListItemText primary="Customers" />
             </ListItem>
             <ListItem component={Link} href="/management?section=1">
-              <ListItemText primary="Management" />
+              <ListItemText primary="Products" />
             </ListItem>
             <ListItem component={Link} href="/alarms?section=0">
-              <ListItemText primary="Alarms" />
+              <ListItemText primary="Assets" />
             </ListItem>
             <ListItem component={Link} href="/reports">
-              <ListItemText primary="Reports" />
+              <ListItemText primary="Sales" />
             </ListItem>
             <ListItem component={Link} href="/admin">
               <ListItemText primary="Admin" />
