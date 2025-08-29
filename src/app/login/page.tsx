@@ -1,17 +1,15 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/contexts/AuthContext";
+// NOTE: intentionally not importing useAuth to avoid any internal network calls
 import BackgroundBox from "@/components/BackgroundBox";
 import constants from "@/styles/constants";
 import * as colors from "@/styles/colors";
 import { ArrowBack } from "@mui/icons-material";
 import CircularProgress from "@mui/material/CircularProgress";
-import { emailIsValid, getCurrentHourHash } from "@/utils/helpers";
+import { getCurrentHourHash } from "@/utils/helpers"; // email validation not needed anymore
 import SnackView from "@/components/SnackView";
 import { AlertColor } from "@mui/material";
-
-const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
 
 import {
   Box,
@@ -24,9 +22,34 @@ import {
 } from "@mui/material";
 import Grid from "@mui/material/Grid";
 
+// Helper: base64url encode
+function b64url(input: string) {
+  if (typeof window !== "undefined" && typeof window.btoa === "function") {
+    return window
+      .btoa(input)
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+  }
+  return Buffer.from(input, "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+// Helper: create a mock JWT-like token (not signed)
+function createMockToken(email: string, role = "admin", name = "Admin User") {
+  const header = { alg: "none", typ: "JWT" };
+  const iat = Math.floor(Date.now() / 1000);
+  const exp = iat + 60 * 60; // 1 hour
+  const payload = { sub: email, email, role, name, iat, exp };
+  return `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(payload))}.`;
+}
+
 const LoginPage: React.FC = () => {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState(""); // kept for UI only; not used to authenticate
+  const [password, setPassword] = useState(""); // kept for UI only
   const [repeatPassword, setRepeatPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [redirectEmail, setRedirectEmail] = useState<string | null>(null);
@@ -38,7 +61,6 @@ const LoginPage: React.FC = () => {
     "login"
   );
 
-  const { login } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -62,108 +84,20 @@ const LoginPage: React.FC = () => {
     }
   }, []);
 
+  // --- UNUSED (kept to avoid breaking other flows visually) ---
   const handleRegister = async () => {
-    if (
-      email.length === 0 ||
-      password.length === 0 ||
-      repeatPassword.length === 0
-    ) {
-      setInfoMessage({
-        type: "warning",
-        message: "Please enter a valid email and password",
-      });
-      return;
-    }
-
-    if (password !== repeatPassword) {
-      setInfoMessage({ type: "warning", message: "Passwords do not match" });
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      const response = await fetch(`${backendUrl}/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await response.json();
-      if (response.ok && data?.access_token) {
-        setInfoMessage({ type: "success", message: "Registration successful" });
-        setTimeout(() => {
-          setIsLoading(false);
-          login(data?.access_token, data?.refresh_token, email);
-          document.cookie = "auth=true; path=/";
-          router.push("/dashboard");
-        }, 2000);
-      } else {
-        setInfoMessage({
-          type: "error",
-          message: data?.msg || "Registration failed",
-        });
-        setIsLoading(false);
-      }
-    } catch (error) {
-      setIsLoading(false);
-      setInfoMessage({
-        type: "error",
-        message: (error as any)?.message || "Registration failed",
-      });
-    }
+    setInfoMessage({
+      type: "info",
+      message: "Register is disabled in mock mode.",
+    });
   };
-
   const handleResetPassword = async () => {
-    if (email.length === 0 || !emailIsValid(email)) {
-      setInfoMessage({
-        type: "warning",
-        message: "Please enter a valid email",
-      });
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      // FIX: removed trailing space from the endpoint path
-      const response = await fetch(`${backendUrl}/auth/forgot-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      const data = await response.json();
-      if (response.ok) {
-        if (data?.msg) {
-          setInfoMessage({
-            type: "info",
-            message: data?.msg,
-          });
-        } else if (data?.reset_token) {
-          setInfoMessage({
-            type: "info",
-            message: "Password reset email sent",
-          });
-        } else {
-          setInfoMessage({
-            type: "error",
-            message: "Password reset process failed",
-          });
-        }
-      } else {
-        setInfoMessage({
-          type: "error",
-          message: data?.msg || "Password reset process failed",
-        });
-      }
-      setIsLoading(false);
-    } catch (error) {
-      setIsLoading(false);
-      setInfoMessage({
-        type: "error",
-        message: (error as any)?.message || "Error during password reset",
-      });
-    }
+    setInfoMessage({
+      type: "info",
+      message: "Password reset is disabled in mock mode.",
+    });
   };
+  // ------------------------------------------------------------
 
   const handleAction = async () => {
     if (flowState === "login") {
@@ -175,35 +109,28 @@ const LoginPage: React.FC = () => {
     }
   };
 
-  // MOCK LOGIN: no network call; generate tokens and redirect
+  // MOCK LOGIN ONLY: no network, force admin@example.com
   const handleLogin = async () => {
-    if (email.length === 0 || password.length === 0) {
-      setInfoMessage({
-        type: "warning",
-        message: "Please enter a valid email and password",
-      });
-      return;
-    }
-
-    if (!emailIsValid(email)) {
-      setInfoMessage({
-        type: "warning",
-        message: "Please enter a valid email",
-      });
-      return;
-    }
-
     setIsLoading(true);
     try {
-      const now = Date.now();
-      const access_token = `mock_access_token_${email}_${now}`;
-      const refresh_token = `mock_refresh_token_${email}_${now}`;
+      const hardcodedEmail = "admin@example.com";
+      const access_token = createMockToken(hardcodedEmail, "admin", "Admin User");
+      const refresh_token = `mock_refresh_${hardcodedEmail}_${Date.now()}`;
 
-      // store in your auth context as usual
-      login(access_token, refresh_token, email);
+      // Persist minimal auth state (no server calls)
+      localStorage.setItem("access_token", access_token);
+      localStorage.setItem("refresh_token", refresh_token);
+      localStorage.setItem("user_email", hardcodedEmail);
+      localStorage.setItem(
+        "user_info",
+        JSON.stringify({ email: hardcodedEmail, role: "admin", name: "Admin User" })
+      );
       document.cookie = "auth=true; path=/";
 
-      // go straight to dashboard
+      // Optional: expose a flag for your app
+      (window as any).__MOCK_AUTH__ = true;
+
+      // Go straight to dashboard
       router.push("/dashboard");
     } catch (error) {
       setInfoMessage({
@@ -265,9 +192,7 @@ const LoginPage: React.FC = () => {
                     color="white"
                     marginBottom={-1}
                     onClick={() => {
-                      if (flowState !== "login") {
-                        setFlowState("login");
-                      }
+                      if (flowState !== "login") setFlowState("login");
                     }}
                   >
                     {flowState === "login"
@@ -285,9 +210,7 @@ const LoginPage: React.FC = () => {
                       fontWeight={"600"}
                       color="white"
                       marginBottom={-1}
-                      onClick={() => {
-                        setFlowState("register");
-                      }}
+                      onClick={() => setFlowState("register")}
                     >
                       REGISTER
                     </Typography>
@@ -296,7 +219,7 @@ const LoginPage: React.FC = () => {
               </Box>
             </Box>
 
-            {/* USERNAME */}
+            {/* USERNAME (UI only) */}
             <Grid container p={constants.spacing.EDGES} width="400px">
               <Grid sx={{ width: "100%", marginBottom: "20px" }}>
                 <TextField
@@ -307,10 +230,11 @@ const LoginPage: React.FC = () => {
                   value={email}
                   autoComplete="off"
                   onChange={(e) => setEmail(e.target.value)}
+                
                 />
               </Grid>
 
-              {/* PASSWORD */}
+              {/* PASSWORD (UI only) */}
               <Grid sx={{ width: "100%", marginBottom: "20px" }}>
                 <Collapse in={flowState !== "reset"} style={{ width: "100%" }}>
                   <TextField
@@ -322,11 +246,12 @@ const LoginPage: React.FC = () => {
                     fullWidth
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    
                   />
                 </Collapse>
               </Grid>
 
-              {/* REPEAT PASSWORD */}
+              {/* REPEAT PASSWORD (UI only) */}
               <Grid sx={{ width: "100%", marginBottom: "20px" }}>
                 <Collapse
                   in={flowState === "register"}
@@ -341,6 +266,7 @@ const LoginPage: React.FC = () => {
                     fullWidth
                     value={repeatPassword}
                     onChange={(e) => setRepeatPassword(e.target.value)}
+                    helperText="Mock mode: register disabled"
                   />
                 </Collapse>
               </Grid>
