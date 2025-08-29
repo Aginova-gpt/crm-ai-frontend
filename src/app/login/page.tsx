@@ -175,6 +175,7 @@ const LoginPage: React.FC = () => {
     }
   };
 
+  // MOCK LOGIN: no network call; generate tokens and redirect
   const handleLogin = async () => {
     if (email.length === 0 || password.length === 0) {
       setInfoMessage({
@@ -193,37 +194,24 @@ const LoginPage: React.FC = () => {
     }
 
     setIsLoading(true);
-
     try {
-      // Use the mock API route in your Next.js app
-      const response = await fetch("/api/account/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-        cache: "no-store",
-      });
+      const now = Date.now();
+      const access_token = `mock_access_token_${email}_${now}`;
+      const refresh_token = `mock_refresh_token_${email}_${now}`;
 
-      const data = await response.json();
+      // store in your auth context as usual
+      login(access_token, refresh_token, email);
+      document.cookie = "auth=true; path=/";
 
-      if (response.ok) {
-        const { access_token, refresh_token, user } = data;
-        login(access_token, refresh_token, user?.email ?? email);
-        document.cookie = "auth=true; path=/";
-        router.push("/dashboard");
-        setIsLoading(false);
-      } else {
-        setIsLoading(false);
-        setInfoMessage({
-          type: "error",
-          message: data?.msg || "Login failed",
-        });
-      }
+      // go straight to dashboard
+      router.push("/dashboard");
     } catch (error) {
-      setIsLoading(false);
       setInfoMessage({
         type: "error",
-        message: (error as any)?.message || "Error during authentication",
+        message: (error as any)?.message || "Mock login failed",
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
