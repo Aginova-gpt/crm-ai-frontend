@@ -23,7 +23,6 @@ import {
   IconButton,
 } from "@mui/material";
 import Grid from "@mui/material/Grid";
-import { useBackend } from "@/contexts/BackendContext";
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState("");
@@ -38,9 +37,9 @@ const LoginPage: React.FC = () => {
   const [flowState, setFlowState] = useState<"login" | "register" | "reset">(
     "login"
   );
+
   const { login } = useAuth();
   const router = useRouter();
-  const { apiURL } = useBackend();
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -57,7 +56,7 @@ const LoginPage: React.FC = () => {
         setRedirectEmail(userParam.toLowerCase());
         const hourHash = getCurrentHourHash();
         const url = `https://sandbox-dot-wiboxus.uc.r.appspot.com/redirect?user=${userParam.toLowerCase()}&hash=${hourHash}`;
-        //const url = `https://sentinelnext2.com/redirect?user=${userParam.toLowerCase()}&hash=${hourHash}`;
+        // const url = `https://sentinelnext2.com/redirect?user=${userParam.toLowerCase()}&hash=${hourHash}`;
         window.location.href = url;
       }
     }
@@ -126,7 +125,8 @@ const LoginPage: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${backendUrl}/auth/forgot-password `, {
+      // FIX: removed trailing space from the endpoint path
+      const response = await fetch(`${backendUrl}/auth/forgot-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
@@ -195,17 +195,19 @@ const LoginPage: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const url = apiURL("auth/login", "account/login");
-      const response = await fetch(url, {
+      // Use the mock API route in your Next.js app
+      const response = await fetch("/api/account/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
-        credentials: "include",
+        cache: "no-store",
       });
+
       const data = await response.json();
+
       if (response.ok) {
-        const { access_token, refresh_token } = data;
-        login(access_token, refresh_token, email);
+        const { access_token, refresh_token, user } = data;
+        login(access_token, refresh_token, user?.email ?? email);
         document.cookie = "auth=true; path=/";
         router.push("/dashboard");
         setIsLoading(false);
