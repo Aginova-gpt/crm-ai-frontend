@@ -296,7 +296,7 @@ const LoginPage: React.FC = () => {
                   ) : flowState === "register" ? (
                     "REGISTER"
                   ) : (
-                    "LOGIN"
+                    "LOGIN TO"
                   )}
                 </Button>
               </Grid>
