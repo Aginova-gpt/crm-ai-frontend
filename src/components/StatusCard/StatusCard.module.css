@@ -1,0 +1,51 @@
+.card {
+    position: relative;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 1px;
+    width: 195px;
+    height: 115px;
+    min-height: 80px;
+    padding: 16px;
+    border-radius: 12px;
+    color: #fff;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    overflow: hidden;
+  }
+  
+  .iconWrap {
+    font-size: 20px;
+    line-height: 0;
+    opacity: 1;
+    margin-bottom: 6px;
+  }
+  
+  .defaultIcon {
+    display: inline-block;
+    transform: translateY(2px);
+  }
+  
+  .title {
+    font-size: 14px;
+    opacity: 1;
+  }
+  
+  .metric {
+    font-size: 20px;
+    font-weight: 500;
+    letter-spacing: 0.2px;
+  }
+  
+  .total {
+    font-weight: 700;
+    opacity: 1;
+  }
+  
+  .linkWrapper {
+    text-decoration: none;
+    display: inline-block;
+  }
+  .linkWrapper:focus-visible .card {
+    outline: 3px solid rgba(255,255,255,0.7);
+    outline-offset: 2px;
+  }

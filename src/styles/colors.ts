@@ -8,6 +8,9 @@ export const BLUE = "#0496FF";
 export const BLUE2 = "#2D9CDB";
 export const BORDER = "#E7E8F2";
 export const PRIMARY_LIGHT = "#EAF5FF";
+export const NAVBAR_BACKGROUND1 = "#0C1D55";
+export const NAVBAR_BACKGROUND2 = "#151B6C";
+
 export const PURPLE_GRADIENT =
   "linear-gradient(60deg, #23ABEB 10%, #543CBD 100%)";
 export const RED_GRADIENT = "linear-gradient(60deg, #993557 30%, #c73546 100%)";
@@ -21,6 +24,10 @@ export const BLUE_GRADIENT =
   "linear-gradient(60deg, #4EABFF 30%, #9ED1FF 100%)";
 export const GRAY_GRADIENT =
   "linear-gradient(60deg, #A2A2A2 30%, #D2D2D2 100%)";
+  export const NAVBAR_GRADIENT = 
+  "linear-gradient(90deg, #0C1D55 0%, #151B6C 100%)";
+
+
 
 export const SELECTED_COLOR = "#D4EAFF";
 export const GREY = "#979797";
