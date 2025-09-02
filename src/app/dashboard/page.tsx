@@ -21,7 +21,8 @@ import { MdSearch, MdPersonAdd, MdInventory2, MdEdit, MdDelete } from "react-ico
 import CrmNavbar from "@/components/crmNavbar";
 import StatusCard from "@/components/StatusCard/StatusCard";
 
-const API_PATH = "/api/customers";
+// ✅ Directly call Flask endpoint
+const API_PATH = "/api/accounts";
 
 // ===== Grid: 9 equal columns; keep in sync for header + rows =====
 const GRID_COLS = "repeat(9, minmax(140px, 1fr))";
@@ -44,7 +45,7 @@ type SortDir = "asc" | "desc";
 
 const headerCols: Array<{ key: SortKey | "company" | "website" | "phone" | "actions"; label: string; sortable?: boolean }> = [
   { key: "name", label: "Name", sortable: true },
-  { key: "company", label: "Company" }, // placeholder (not in API)
+  { key: "company", label: "Company" },
   { key: "city", label: "City", sortable: true },
   { key: "website", label: "Website" },
   { key: "phone", label: "Phone" },
@@ -57,7 +58,7 @@ const headerCols: Array<{ key: SortKey | "company" | "website" | "phone" | "acti
 export default function DashboardPage() {
   const [tab, setTab] = useState(0);
 
-  // ===== Data (fetch once; no limits/offsets) =====
+  // ===== Data =====
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -77,20 +78,30 @@ export default function DashboardPage() {
     fetch(API_PATH, {
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`, // ✅ send JWT
+        "Authorization": `Bearer ${token}`,
       },
     })
       .then(async (r) => {
         if (!r.ok) {
-          if (r.status === 401) {
-            throw new Error("Unauthorized – please log in again");
-          }
+          if (r.status === 401) throw new Error("Unauthorized – please log in again");
           throw new Error(`Request failed: ${r.status}`);
         }
         return r.json();
       })
       .then((json) => {
-        setAllCustomers(json.accounts ?? []);
+        // ✅ Transform Flask accounts → Customer objects
+        const accounts = (json.accounts ?? []).map((a: any) => ({
+          id: String(a.account_id),
+          name: a.name,
+          company: undefined,
+          city: a.city ?? "",
+          website: a.website ?? "",
+          phone: a.phone ?? "",
+          assignedTo: a.assigned_to != null ? `User ${a.assigned_to}` : "",
+          openOrders: 0,
+          openQuotes: 0,
+        }));
+        setAllCustomers(accounts);
         setReceivedTime(new Date().toISOString());
       })
       .catch((e) => setErrorMsg(e.message || "Failed to load accounts"))
@@ -195,12 +206,12 @@ export default function DashboardPage() {
               </Tabs>
 
               {tab === 0 && (
-                <Box sx={{ display: "flex", alignItems: "center", columnGap: 1.5, flexWrap: "nowrap", minWidth: 0 }}>
-                  <Typography component="span" sx={{ fontWeight: 900, fontSize: 16, lineHeight: 1 }} aria-live="polite">
+                <Box sx={{ display: "flex", alignItems: "center", columnGap: 1.5 }}>
+                  <Typography component="span" sx={{ fontWeight: 900, fontSize: 16 }} aria-live="polite">
                     {loading ? "Loading…" : `${total} Customers`}
                   </Typography>
                   <Typography component="span" sx={{ opacity: 0.5 }}>•</Typography>
-                  <Typography component="span" noWrap sx={{ fontWeight: 400, fontSize: 14, lineHeight: 1, color: "#00000099" }}>
+                  <Typography component="span" noWrap sx={{ fontSize: 14, color: "#00000099" }}>
                     Last updated : {formattedReceivedTime}
                   </Typography>
                 </Box>
@@ -222,7 +233,7 @@ export default function DashboardPage() {
 
             {tab === 0 && (
               <Tooltip title="Add customer">
-                <IconButton color="primary" onClick={handleAddCustomer} aria-label="Add customer" sx={{ alignSelf: "flex-end", p: 1 }}>
+                <IconButton color="primary" onClick={handleAddCustomer} sx={{ alignSelf: "flex-end", p: 1 }}>
                   <MdPersonAdd size={32} />
                 </IconButton>
               </Tooltip>
@@ -248,7 +259,6 @@ export default function DashboardPage() {
                 bgcolor: "#EAF5FF",
                 display: "grid",
                 gridTemplateColumns: GRID_COLS,
-                alignItems: "center",
                 columnGap: 2,
                 px: 2,
                 py: 1,
@@ -260,15 +270,15 @@ export default function DashboardPage() {
               {headerCols.map(({ key, label, sortable }) => {
                 const active = sortable && (key as SortKey) === sortBy;
                 return (
-                  <Box key={`${label}-hdr`} sx={{ display: "flex", alignItems: "center", minWidth: 0 }}>
+                  <Box key={`${label}-hdr`} sx={{ display: "flex", alignItems: "center" }}>
                     {sortable ? (
                       <TableSortLabel active={active} direction={active ? sortDir : "asc"} onClick={() => toggleSort(key as SortKey)}>
-                        <Typography variant="caption" noWrap sx={{ fontWeight: 700, textTransform: "uppercase" }}>
+                        <Typography variant="caption" sx={{ fontWeight: 700, textTransform: "uppercase" }}>
                           {label}
                         </Typography>
                       </TableSortLabel>
                     ) : (
-                      <Typography variant="caption" noWrap sx={{ fontWeight: 700, textTransform: "uppercase" }}>
+                      <Typography variant="caption" sx={{ fontWeight: 700, textTransform: "uppercase" }}>
                         {label}
                       </Typography>
                     )}
@@ -278,7 +288,7 @@ export default function DashboardPage() {
             </Box>
 
             {/* Rows */}
-            <Box role="rowgroup" sx={{ position: "relative" }}>
+            <Box role="rowgroup">
               {loading && allCustomers.length === 0 && (
                 <Box sx={{ p: 3, display: "flex", alignItems: "center", gap: 1.5 }}>
                   <CircularProgress size={18} />
