@@ -27,7 +27,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { email, password } = body;
 
-    // Validate input
     if (!email || !password) {
       return NextResponse.json(
         { msg: 'Email and password are required' },
@@ -35,7 +34,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if user exists and password matches
     const user = mockUsers.find(
       u => u.email.toLowerCase() === email.toLowerCase() && u.password === password
     );
@@ -47,12 +45,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate mock tokens (in real app, these would be JWT tokens)
+    // Generate mock tokens
     const access_token = `mock_access_token_${user.email}_${Date.now()}`;
     const refresh_token = `mock_refresh_token_${user.email}_${Date.now()}`;
 
-    // Return successful login response
-    return NextResponse.json({
+    // Build response
+    const response = NextResponse.json({
       access_token,
       refresh_token,
       user: {
@@ -62,6 +60,15 @@ export async function POST(request: NextRequest) {
       },
       msg: 'Login successful'
     });
+
+    // ✅ Set "auth=true" cookie for middleware
+    response.cookies.set("auth", "true", {
+      path: "/",
+      httpOnly: false,   // front-end can still read if needed
+      sameSite: "lax"
+    });
+
+    return response;
 
   } catch (error) {
     console.error('Login error:', error);
@@ -74,22 +81,13 @@ export async function POST(request: NextRequest) {
 
 // Handle other HTTP methods
 export async function GET() {
-  return NextResponse.json(
-    { msg: 'Method not allowed' },
-    { status: 405 }
-  );
+  return NextResponse.json({ msg: 'Method not allowed' }, { status: 405 });
 }
 
 export async function PUT() {
-  return NextResponse.json(
-    { msg: 'Method not allowed' },
-    { status: 405 }
-  );
+  return NextResponse.json({ msg: 'Method not allowed' }, { status: 405 });
 }
 
 export async function DELETE() {
-  return NextResponse.json(
-    { msg: 'Method not allowed' },
-    { status: 405 }
-  );
+  return NextResponse.json({ msg: 'Method not allowed' }, { status: 405 });
 }

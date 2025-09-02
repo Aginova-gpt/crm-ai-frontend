@@ -28,28 +28,44 @@ function normalizeWebsite(url?: string | null) {
   return `https://${t}`;
 }
 
-export async function GET() {
-  const upstream = await fetch("http://34.58.37.44/api/accounts", { cache: "no-store" });
+export async function GET(req: Request) {
+  const authHeader = req.headers.get("authorization") || "";
+
+  // ✅ Only include Authorization if present
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (authHeader) {
+    headers["Authorization"] = authHeader;
+  }
+
+  const upstream = await fetch("http://34.58.37.44/api/accounts", {
+    cache: "no-store",
+    headers,
+  });
+
   if (!upstream.ok) {
-    return NextResponse.json({ error: `Upstream error: ${upstream.status}` }, { status: upstream.status });
+    const err = await upstream.text();
+    return NextResponse.json(
+      { error: `Upstream error: ${upstream.status}`, details: err },
+      { status: upstream.status }
+    );
   }
 
   const data = (await upstream.json()) as UpstreamResponse;
 
-  // Transform to your dashboard's Customer shape
   const accounts = data.accounts.map((a) => ({
     id: String(a.account_id),
     name: a.name,
-    company: undefined, // upstream doesn't provide a separate "company"
+    company: undefined,
     city: a.city ?? "",
     website: normalizeWebsite(a.website),
     phone: a.phone ?? "",
     assignedTo: a.assigned_to != null ? `User ${a.assigned_to}` : "",
-    openOrders: 0, // placeholders until you have these
+    openOrders: 0,
     openQuotes: 0,
   }));
 
-  // Keep field names familiar (accounts/total_accounts)
   return NextResponse.json({
     accounts,
     total_accounts: data.total_accounts,

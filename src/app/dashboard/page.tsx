@@ -66,9 +66,27 @@ export default function DashboardPage() {
   useEffect(() => {
     setLoading(true);
     setErrorMsg(null);
-    fetch(API_PATH)
+
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      setErrorMsg("Not logged in");
+      setLoading(false);
+      return;
+    }
+
+    fetch(API_PATH, {
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`, // ✅ send JWT
+      },
+    })
       .then(async (r) => {
-        if (!r.ok) throw new Error(`Request failed: ${r.status}`);
+        if (!r.ok) {
+          if (r.status === 401) {
+            throw new Error("Unauthorized – please log in again");
+          }
+          throw new Error(`Request failed: ${r.status}`);
+        }
         return r.json();
       })
       .then((json) => {
@@ -113,7 +131,6 @@ export default function DashboardPage() {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  // Derived: filter + sort + paginate
   const filtered = useMemo(() => {
     if (!debouncedQuery) return allCustomers;
     return allCustomers.filter((c) => {
@@ -152,7 +169,6 @@ export default function DashboardPage() {
     [sorted, page, rowsPerPage]
   );
 
-  // Actions
   const handleAddCustomer = () => {};
   const handleEditCustomer = (id: string) => console.log("Edit customer:", id);
   const handleDeleteCustomer = (id: string) => {
@@ -167,7 +183,6 @@ export default function DashboardPage() {
       <Box sx={{ flex: 1, bgcolor: "#FFFFFF", p: { xs: 1.5, sm: 2, md: 3 }, display: "flex", flexDirection: "column", gap: 2 }}>
         {/* === TOP ROW === */}
         <Box sx={{ display: "flex", alignItems: "stretch", gap: 2, bgcolor: "#FFFFFF", borderRadius: 1, p: 1.5 }}>
-          {/* LEFT: Tabs + count + search + add */}
           <Box sx={{ flex: 1, minWidth: 0, display: "flex", alignItems: "flex-start", gap: 1 }}>
             <Box sx={{ display: "inline-flex", flexDirection: "column", gap: 1, width: "fit-content", maxWidth: "100%" }}>
               <Tabs
@@ -179,22 +194,18 @@ export default function DashboardPage() {
                 <Tab label="Customers" />
               </Tabs>
 
-              {/* Count + Last updated */}
               {tab === 0 && (
                 <Box sx={{ display: "flex", alignItems: "center", columnGap: 1.5, flexWrap: "nowrap", minWidth: 0 }}>
                   <Typography component="span" sx={{ fontWeight: 900, fontSize: 16, lineHeight: 1 }} aria-live="polite">
                     {loading ? "Loading…" : `${total} Customers`}
                   </Typography>
-                  <Typography component="span" sx={{ opacity: 0.5 }}>
-                    •
-                  </Typography>
-                  <Typography component="span" noWrap sx={{ fontWeight: 400, fontSize: 14, lineHeight: 1, color: "#00000099", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <Typography component="span" sx={{ opacity: 0.5 }}>•</Typography>
+                  <Typography component="span" noWrap sx={{ fontWeight: 400, fontSize: 14, lineHeight: 1, color: "#00000099" }}>
                     Last updated : {formattedReceivedTime}
                   </Typography>
                 </Box>
               )}
 
-              {/* Search */}
               {tab === 0 && (
                 <TextField
                   value={searchQuery}
@@ -204,12 +215,11 @@ export default function DashboardPage() {
                   size="small"
                   aria-label="Search customers"
                   sx={{ width: "100%", borderRadius: 1.5 }}
-                  InputProps={{ startAdornment: <InputAdornment position="start"><MdSearch size={18} aria-hidden /></InputAdornment> }}
+                  InputProps={{ startAdornment: <InputAdornment position="start"><MdSearch size={18} /></InputAdornment> }}
                 />
               )}
             </Box>
 
-            {/* Add Customer */}
             {tab === 0 && (
               <Tooltip title="Add customer">
                 <IconButton color="primary" onClick={handleAddCustomer} aria-label="Add customer" sx={{ alignSelf: "flex-end", p: 1 }}>
@@ -219,17 +229,14 @@ export default function DashboardPage() {
             )}
           </Box>
 
-          {/* RIGHT: Status cards (placeholders) */}
           <Box sx={{ display: "flex", alignItems: "center", gap: 2, ml: "auto", flexWrap: "wrap" }}>
             <StatusCard title="Open Orders" value={25} total={100} icon={<MdInventory2 size={28} />} />
             <StatusCard title="Open Quotes" value={75} total={100} icon={<MdInventory2 size={28} />} />
           </Box>
         </Box>
 
-        {/* Error state */}
         {errorMsg && <Alert severity="error">{errorMsg}</Alert>}
 
-        {/* === CUSTOMERS LIST === */}
         <Box sx={{ flex: 1, minHeight: 0, overflow: "auto", bgcolor: "#FFFFFF", borderRadius: 1 }}>
           <Box sx={{ minWidth: HEADER_MIN_WIDTH }}>
             {/* Header */}
@@ -255,13 +262,13 @@ export default function DashboardPage() {
                 return (
                   <Box key={`${label}-hdr`} sx={{ display: "flex", alignItems: "center", minWidth: 0 }}>
                     {sortable ? (
-                      <TableSortLabel active={active} direction={active ? sortDir : "asc"} onClick={() => toggleSort(key as SortKey)} aria-label={`Sort by ${label}`}>
-                        <Typography variant="caption" noWrap sx={{ fontWeight: 700, textTransform: "uppercase", color: "text.primary" }}>
+                      <TableSortLabel active={active} direction={active ? sortDir : "asc"} onClick={() => toggleSort(key as SortKey)}>
+                        <Typography variant="caption" noWrap sx={{ fontWeight: 700, textTransform: "uppercase" }}>
                           {label}
                         </Typography>
                       </TableSortLabel>
                     ) : (
-                      <Typography variant="caption" noWrap sx={{ fontWeight: 700, textTransform: "uppercase", color: "text.primary" }}>
+                      <Typography variant="caption" noWrap sx={{ fontWeight: 700, textTransform: "uppercase" }}>
                         {label}
                       </Typography>
                     )}
@@ -293,18 +300,10 @@ export default function DashboardPage() {
                   }}
                   role="row"
                 >
-                  {/* Name */}
-                  <Typography noWrap sx={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {c.name}
-                  </Typography>
-
-                  {/* Company (placeholder) */}
+                  <Typography noWrap sx={{ fontWeight: 500 }}>{c.name}</Typography>
                   <Typography noWrap sx={{ color: "text.secondary" }}>—</Typography>
-
-                  {/* City */}
                   <Typography noWrap sx={{ color: "text.secondary" }}>{c.city || "—"}</Typography>
 
-                  {/* Website */}
                   {c.website ? (
                     <Link href={c.website} target="_blank" rel="noopener noreferrer" underline="hover" noWrap sx={{ color: "text.secondary" }}>
                       {c.website}
@@ -313,7 +312,6 @@ export default function DashboardPage() {
                     <Typography noWrap sx={{ color: "text.secondary" }}>—</Typography>
                   )}
 
-                  {/* Phone */}
                   {c.phone ? (
                     <Link href={`tel:${c.phone.replace(/[^\d+]/g, "")}`} underline="hover" noWrap sx={{ color: "text.secondary" }}>
                       {c.phone}
@@ -322,28 +320,23 @@ export default function DashboardPage() {
                     <Typography noWrap sx={{ color: "text.secondary" }}>—</Typography>
                   )}
 
-                  {/* Assigned To */}
                   <Typography noWrap sx={{ color: "text.secondary" }}>{c.assignedTo || "—"}</Typography>
-
-                  {/* Open Orders / Open Quotes (placeholders) */}
                   <Typography sx={{ fontVariantNumeric: "tabular-nums" }}>{c.openOrders ?? 0}</Typography>
                   <Typography sx={{ fontVariantNumeric: "tabular-nums" }}>{c.openQuotes ?? 0}</Typography>
 
-                  {/* Quick Actions */}
-                  <Box sx={{ display: "flex", gap: 1, flexWrap: "nowrap" }}>
+                  <Box sx={{ display: "flex", gap: 1 }}>
                     <Tooltip title="Edit">
-                      <IconButton size="small" color="primary" aria-label={`Edit ${c.name}`} onClick={() => handleEditCustomer(c.id)}>
+                      <IconButton size="small" color="primary" onClick={() => handleEditCustomer(c.id)}>
                         <MdEdit size={18} />
                       </IconButton>
                     </Tooltip>
                     <Tooltip title="Delete">
-                      <IconButton size="small" color="error" aria-label={`Delete ${c.name}`} onClick={() => handleDeleteCustomer(c.id)}>
+                      <IconButton size="small" color="error" onClick={() => handleDeleteCustomer(c.id)}>
                         <MdDelete size={18} />
                       </IconButton>
                     </Tooltip>
                   </Box>
 
-                  {/* Row divider */}
                   {idx < pagedCustomers.length - 1 && <Divider sx={{ gridColumn: "1 / -1" }} />}
                 </Box>
               ))}
@@ -353,7 +346,6 @@ export default function DashboardPage() {
               )}
             </Box>
 
-            {/* Pagination */}
             <Box sx={{ position: "sticky", bottom: 0, bgcolor: "#FFFFFF", px: 2, py: 1, borderTop: "1px solid", borderColor: "divider" }}>
               <TablePagination
                 component="div"

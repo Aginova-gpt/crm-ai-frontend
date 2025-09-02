@@ -6,10 +6,23 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Protected routes that require authentication
-  const protectedRoutes = ['/', '/dashboard', '/management', '/profiles', '/reports', '/admin', '/alarms'];
+  const protectedRoutes = [
+    "/",
+    "/dashboard",
+    "/management",
+    "/profiles",
+    "/reports",
+    "/admin",
+    "/alarms",
+  ];
 
   // Rule 1: Redirect to /login if not logged in and accessing protected routes
-  if (!isLoggedIn && protectedRoutes.some(route => pathname === route || pathname.startsWith(`${route}/`))) {
+  if (
+    !isLoggedIn &&
+    protectedRoutes.some(
+      (route) => pathname === route || pathname.startsWith(`${route}/`)
+    )
+  ) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
@@ -29,13 +42,13 @@ export function middleware(request: NextRequest) {
 // Define routes to apply middleware
 export const config = {
   matcher: [
-    '/',
-    '/dashboard/:path*',
-    '/management/:path*',
-    '/profiles/:path*',
-    '/reports/:path*',
-    '/admin/:path*',
-    '/alarms/:path*',
-    '/login'
+    "/",
+    "/dashboard/:path*",
+    "/management/:path*",
+    "/profiles/:path*",
+    "/reports/:path*",
+    "/admin/:path*",
+    "/alarms/:path*",
+    "/login",
   ],
 };
