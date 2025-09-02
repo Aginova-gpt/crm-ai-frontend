@@ -22,7 +22,10 @@ import CrmNavbar from "@/components/crmNavbar";
 import StatusCard from "@/components/StatusCard/StatusCard";
 
 // ✅ Directly call Flask endpoint
-const API_PATH = "/api/accounts";
+const API_PATH =
+  process.env.NODE_ENV === "development"
+    ? "http://34.58.37.44/api/accounts"
+    : "/api/accounts";
 
 // ===== Grid: 9 equal columns; keep in sync for header + rows =====
 const GRID_COLS = "repeat(9, minmax(140px, 1fr))";
