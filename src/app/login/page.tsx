@@ -14,6 +14,7 @@ import constants from "@/styles/constants";
 import * as colors from "@/styles/colors";
 import SnackView from "@/components/SnackView";
 import { AlertColor } from "@mui/material";
+import { useAuth } from "@/contexts/AuthContext";  
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState("");
@@ -25,13 +26,14 @@ const LoginPage: React.FC = () => {
   } | null>(null);
 
   const router = useRouter();
+  const { login } = useAuth();   
 
   const handleLogin = async () => {
     setIsLoading(true);
     try {
-      // ✅ Call Flask backend (nginx proxies /api/*)
-      const API_BASE = "http://34.58.37.44";
-      const res = await fetch(`${API_BASE}/api/login`, {
+      
+      const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://34.58.37.44";
+      const res = await fetch(`${API_BASE}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: email, password }),
@@ -44,20 +46,11 @@ const LoginPage: React.FC = () => {
 
       const data = await res.json();
 
-      // Save JWT + user info from Flask
-      localStorage.setItem("access_token", data.token);
-      localStorage.setItem(
-        "user_info",
-        JSON.stringify({
-          email: data.email,
-          role: data.role,
-          name: data.name,
-        })
-      );
+      //  Use AuthProvider to store tokens + email
+      // note: Flask currently only returns `token`, no refreshToken
+      login(data.token, data.refreshToken ?? "", data.email);
 
-      // Mark login for middleware
-      document.cookie = "auth=true; path=/";
-
+      //  Redirect after login
       router.push("/dashboard");
     } catch (error: any) {
       setInfoMessage({
