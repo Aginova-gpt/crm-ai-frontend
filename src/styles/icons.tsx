@@ -1,3 +1,7 @@
+
+import addAsset from "../assets/icons/icon_addAsset.png";
+import importAsset from "../assets/icons/icon_importAsset.png";
+
 import bell from "../assets/icons/bell.png";
 import sentinel from "../assets/icons/sentinel-brand.png";
 import cedars from "../assets/icons/cedars-brand.png";
@@ -41,6 +45,8 @@ import newCo2Icon from "../assets/product_icons/new_co2.png";
 import aiqIcon from "../assets/product_icons/AIQ-icon.png";
 
 export {
+  addAsset,
+  importAsset,
   bell,
   sentinel,
   cedars,

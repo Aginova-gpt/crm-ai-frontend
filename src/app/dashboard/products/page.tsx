@@ -177,7 +177,7 @@ export default function ProductsPage() {
     return (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {/* === TOP ROW === */}
-            <Box sx={{ display: "flex", gap: 2, p: 1.5, bgcolor: "#fff", borderRadius: 1 }}>
+            <Box sx={{ display: "flex", gap: 2, p: 1, bgcolor: "#fff", borderRadius: 1 }}>
                 <Box sx={{ flex: 1 }}>
                     <Tabs value={tab} onChange={(_, v) => setTab(v)}>
                         <Tab label="Products" />

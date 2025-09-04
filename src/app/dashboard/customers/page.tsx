@@ -148,9 +148,9 @@ export default function CustomersPage() {
   };
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
       {/* === TOP ROW === */}
-      <Box sx={{ display: "flex", alignItems: "stretch", gap: 2, bgcolor: "#FFFFFF", borderRadius: 1, p: 1.5 }}>
+      <Box sx={{ display: "flex", alignItems: "stretch", gap: 1, bgcolor: "#FFFFFF", borderRadius: 1, p: 0 }}>
         <Box sx={{ flex: 1, minWidth: 0, display: "flex", alignItems: "flex-start", gap: 1 }}>
           <Box sx={{ display: "inline-flex", flexDirection: "column", gap: 1 }}>
             <Tabs value={tab} onChange={(_, v) => setTab(v)}>
