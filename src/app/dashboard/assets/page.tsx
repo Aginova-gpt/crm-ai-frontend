@@ -1,4 +1,3 @@
-// app/dashboard/assets/page.tsx
 "use client";
 
 import * as React from "react";
@@ -12,7 +11,6 @@ import {
   InputAdornment,
   IconButton,
   Tooltip,
-  Divider,
   TablePagination,
   TableSortLabel,
   CircularProgress,
@@ -53,40 +51,40 @@ const GRID_HOSTED = `
   minmax(90px, 1fr)    /* Rate */
   minmax(130px, 1fr)   /* Subscription Start */
   minmax(140px, 1fr)   /* Subscription Expiry */
-  minmax(90px, 1fr)   /* Online Status */
-  minmax(100px, 1fr)    /* Renew */
+  minmax(90px, 1fr)    /* Online Status */
+  minmax(100px, 1fr)   /* Renew */
 `;
+
 // ===== Column definitions =====
 const assetCols = [
-    { key: "sensorId", label: "Sensor ID", sortable: true },
-    { key: "type", label: "Type" },
-    { key: "status", label: "Status" },
-    { key: "product", label: "Product# Description" },
-    { key: "probe", label: "Probe# Description" },
-    { key: "orderId", label: "Order ID" },
-    { key: "customer", label: "Customer" },
-    { key: "run", label: "Run #" },
-    { key: "dateMfg", label: "Date Mfg.", sortable: true },
-    { key: "shipped", label: "Shipped" },
-    { key: "subscriptionExpiry", label: "Subscription Expiry", sortable: true },
-    { key: "actions", label: "Quick Actions" },
-  ];
-  
-  const hostedCols = [
-    { key: "sensorId", label: "Sensor ID", sortable: true },
-    { key: "type", label: "Type" },
-    { key: "status", label: "Status" },
-    { key: "product", label: "Product #, Description" },
-    { key: "lastOrderId", label: "Last Order ID" },
-    { key: "customer", label: "Customer" },
-    { key: "shipped", label: "Shipped" },
-    { key: "rate", label: "Rate" },
-    { key: "subscriptionStart", label: "Subscription Start Date" },
-    { key: "subscriptionExpiry", label: "Subscription Expiry Date" },
-    { key: "onlineStatus", label: "Online Status" },
-    { key: "renew", label: "Renew" },
-  ];
-  
+  { key: "sensorId", label: "Sensor ID", sortable: true },
+  { key: "type", label: "Type" },
+  { key: "status", label: "Status" },
+  { key: "product", label: "Product# Description" },
+  { key: "probe", label: "Probe# Description" },
+  { key: "orderId", label: "Order ID" },
+  { key: "customer", label: "Customer" },
+  { key: "run", label: "Run #" },
+  { key: "dateMfg", label: "Date Mfg.", sortable: true },
+  { key: "shipped", label: "Shipped" },
+  { key: "subscriptionExpiry", label: "Subscription Expiry", sortable: true },
+  { key: "actions", label: "Quick Actions" },
+];
+
+const hostedCols = [
+  { key: "sensorId", label: "Sensor ID", sortable: true },
+  { key: "type", label: "Type" },
+  { key: "status", label: "Status" },
+  { key: "product", label: "Product #, Description" },
+  { key: "lastOrderId", label: "Last Order ID" },
+  { key: "customer", label: "Customer" },
+  { key: "shipped", label: "Shipped" },
+  { key: "rate", label: "Rate" },
+  { key: "subscriptionStart", label: "Subscription Start Date" },
+  { key: "subscriptionExpiry", label: "Subscription Expiry Date" },
+  { key: "onlineStatus", label: "Online Status" },
+  { key: "renew", label: "Renew" },
+];
 
 const HEADER_MIN_WIDTH = 12 * 85; // ✅ Reduced base min width
 
@@ -140,6 +138,9 @@ export default function AssetsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("sensorId");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const totalAssets = assetsData?.assets?.length || 0;
+  const totalHosted = hostedData?.hosted?.length || 0;
+  const isLoading = loadingAssets || loadingHosted;
 
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -152,8 +153,8 @@ export default function AssetsPage() {
     }
   };
 
-  const handleAdd = () => {};
-  const handleImport = () => {};
+  const handleAdd = () => { };
+  const handleImport = () => { };
   const handleEdit = (id: string) => console.log("Edit:", id);
   const handleDelete = (id: string) => {
     if (window.confirm("Delete this item?")) console.log("Delete:", id);
@@ -179,7 +180,7 @@ export default function AssetsPage() {
   const pagedRows = visibleRows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 1,  p: 0 }}>
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 1, p: 0 }}>
       {/* Header row */}
       <Box
         sx={{
@@ -200,12 +201,17 @@ export default function AssetsPage() {
           </Tabs>
 
           <Box sx={{ display: "flex", alignItems: "flex-end", gap: 1 }}>
+            <Typography sx={{ fontWeight: 700, fontSize: "14px" }}>
+              {isLoading
+                ? "Loading…"
+                : `${tab === 0 ? totalAssets : totalHosted} ${tab === 0 ? "Assets" : "Hosted"}`}
+            </Typography>
             <TextField
+              sx={{ width: 280 }}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={`Search ${tab === 0 ? "assets" : "hosted"}`}
               size="small"
-              sx={{ width: 220 }}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
@@ -300,7 +306,7 @@ export default function AssetsPage() {
           <Alert severity="error">{(tab === 0 ? errorAssets : errorHosted)?.message}</Alert>
         )}
 
-        {pagedRows.map((row, idx) => (
+        {pagedRows.map((row) => (
           <Box
             key={row.id}
             sx={{
@@ -313,29 +319,31 @@ export default function AssetsPage() {
               "&:hover": { bgcolor: "#FAFAFD" },
             }}
           >
-            {Object.entries(row).map(([k, v]) =>
-              k === "id" ? null : (
-                <Typography key={k} noWrap sx={{ color: "text.secondary" }}>
-                  {v as any}
-                </Typography>
-              )
-            )}
+            {/* ✅ Explicit mapping so columns match headers */}
+            {(tab === 0 ? assetCols : hostedCols).map((col) => {
+              if (col.key === "actions" && tab === 0) {
+                return (
+                  <Box key="actions" sx={{ display: "flex", gap: 1 }}>
+                    <Tooltip title="Edit">
+                      <IconButton size="small" color="primary" onClick={() => handleEdit(row.id)}>
+                        <MdEdit size={18} />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Delete">
+                      <IconButton size="small" color="error" onClick={() => handleDelete(row.id)}>
+                        <MdDelete size={18} />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                );
+              }
 
-            {/* Quick Actions only for Assets */}
-            {tab === 0 && (
-              <Box sx={{ display: "flex", gap: 1 }}>
-                <Tooltip title="Edit">
-                  <IconButton size="small" color="primary" onClick={() => handleEdit(row.id)}>
-                    <MdEdit size={18} />
-                  </IconButton>
-                </Tooltip>
-                <Tooltip title="Delete">
-                  <IconButton size="small" color="error" onClick={() => handleDelete(row.id)}>
-                    <MdDelete size={18} />
-                  </IconButton>
-                </Tooltip>
-              </Box>
-            )}
+              return (
+                <Typography key={col.key} noWrap sx={{ color: "text.secondary" }}>
+                  {row[col.key] ?? ""}
+                </Typography>
+              );
+            })}
           </Box>
         ))}
 

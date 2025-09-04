@@ -24,6 +24,9 @@ import StatusCard from "@/components/StatusCard/StatusCard";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBackend } from "@/contexts/BackendContext";
+import {addAsset} from "@/styles/icons";
+import Image from "next/image";
+
 
 // ===== Grid layout =====
 const GRID_COLS = "repeat(9, minmax(140px, 1fr))";
@@ -151,44 +154,40 @@ export default function CustomersPage() {
     <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
       {/* === TOP ROW === */}
       <Box sx={{ display: "flex", alignItems: "stretch", gap: 1, bgcolor: "#FFFFFF", borderRadius: 1, p: 0 }}>
-        <Box sx={{ flex: 1, minWidth: 0, display: "flex", alignItems: "flex-start", gap: 1 }}>
-          <Box sx={{ display: "inline-flex", flexDirection: "column", gap: 1 }}>
-            <Tabs value={tab} onChange={(_, v) => setTab(v)}>
-              <Tab label="Customers" />
-            </Tabs>
+      <Box sx={{ flex: 1 }}>
+          <Tabs value={tab} onChange={(_, v) => setTab(v)}>
+            <Tab label="Customers" />
+            <Tab label="End of life" />
+          </Tabs>
 
-            {tab === 0 && (
-              <Box sx={{ display: "flex", alignItems: "center", columnGap: 1.5 }}>
-                <Typography sx={{ fontWeight: 900, fontSize: 16 }}>
-                  {isLoading ? "Loading…" : `${total} Customers`}
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2, mt: 1 }}>
+            <Typography sx={{ fontWeight: 700, fontSize: "14px" }}>
+              {isLoading ? "Loading…" : `${total} Customers`}
+            </Typography>
+            <TextField sx={{ width: 280 }}
+              placeholder="Search for Customer name"
+              size="small"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <MdSearch size={18} />
+                  </InputAdornment>
+                ),
+              }}
+            />
+            <Tooltip title="Add Customer">
+              <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", mb: 0.25 }}>
+                <IconButton color="primary" onClick={handleAddCustomer} sx={{ p: 0.5 }}>
+                  <Image src={addAsset} alt="Add asset" width={36} height={36} />
+                </IconButton>
+                <Typography variant="caption" sx={{ fontSize: 11, lineHeight: 1 }}>
+                  Add
                 </Typography>
               </Box>
-            )}
-
-            {tab === 0 && (
-              <TextField
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search customers"
-                size="small"
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <MdSearch size={18} />
-                    </InputAdornment>
-                  ),
-                }}
-              />
-            )}
-          </Box>
-
-          {tab === 0 && (
-            <Tooltip title="Add customer">
-              <IconButton color="primary" onClick={handleAddCustomer}>
-                <MdPersonAdd size={32} />
-              </IconButton>
             </Tooltip>
-          )}
+          </Box>
         </Box>
 
         <Box sx={{ display: "flex", alignItems: "center", gap: 2, ml: "auto" }}>
