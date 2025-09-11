@@ -1,4 +1,3 @@
-// app/dashboard/customers/page.tsx
 "use client";
 
 import * as React from "react";
@@ -24,9 +23,11 @@ import StatusCard from "@/components/StatusCard/StatusCard";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBackend } from "@/contexts/BackendContext";
-import {addAsset} from "@/styles/icons";
+import { addAsset } from "@/styles/icons";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 
+// ✅ Import the new drawer component
 
 // ===== Grid layout =====
 const GRID_COLS = "repeat(9, minmax(140px, 1fr))";
@@ -51,16 +52,16 @@ const headerCols: Array<{
   label: string;
   sortable?: boolean;
 }> = [
-  { key: "name", label: "Name", sortable: true },
-  { key: "company", label: "Company" },
-  { key: "city", label: "City", sortable: true },
-  { key: "website", label: "Website" },
-  { key: "phone", label: "Phone" },
-  { key: "assignedTo", label: "Assigned To", sortable: true },
-  { key: "actions", label: "Open Orders" },
-  { key: "actions", label: "Open Quotes" },
-  { key: "actions", label: "Quick Actions" },
-];
+    { key: "name", label: "Name", sortable: true },
+    { key: "company", label: "Company" },
+    { key: "city", label: "City", sortable: true },
+    { key: "website", label: "Website" },
+    { key: "phone", label: "Phone" },
+    { key: "assignedTo", label: "Assigned To", sortable: true },
+    { key: "actions", label: "Open Orders" },
+    { key: "actions", label: "Open Quotes" },
+    { key: "actions", label: "Quick Actions" },
+  ];
 
 // ✅ Inline hook
 function useCustomers() {
@@ -86,6 +87,7 @@ function useCustomers() {
 export default function CustomersPage() {
   const [tab, setTab] = useState(0);
   const { data, isLoading, error } = useCustomers();
+  const router = useRouter();
 
   // ===== Transform backend response =====
   const allCustomers: Customer[] = useMemo(() => {
@@ -143,8 +145,11 @@ export default function CustomersPage() {
 
   const total = sorted.length;
 
+  // ===== Drawer state =====
+  const [openDetail, setOpenDetail] = useState(false);
+
   // ===== Actions =====
-  const handleAddCustomer = () => {};
+  const handleAddCustomer = () => { router.push("/dashboard/customers/customerDetail"); }
   const handleEditCustomer = (id: string) => console.log("Edit customer:", id);
   const handleDeleteCustomer = (id: string) => {
     if (window.confirm("Delete this customer?")) console.log("Delete customer:", id);
@@ -154,17 +159,17 @@ export default function CustomersPage() {
     <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
       {/* === TOP ROW === */}
       <Box sx={{ display: "flex", alignItems: "stretch", gap: 1, bgcolor: "#FFFFFF", borderRadius: 1, p: 0 }}>
-      <Box sx={{ flex: 1 }}>
+        <Box sx={{ flex: 1 }}>
           <Tabs value={tab} onChange={(_, v) => setTab(v)}>
             <Tab label="Customers" />
-            <Tab label="End of life" />
           </Tabs>
 
           <Box sx={{ display: "flex", alignItems: "center", gap: 2, mt: 1 }}>
             <Typography sx={{ fontWeight: 700, fontSize: "14px" }}>
               {isLoading ? "Loading…" : `${total} Customers`}
             </Typography>
-            <TextField sx={{ width: 280 }}
+            <TextField
+              sx={{ width: 280 }}
               placeholder="Search for Customer name"
               size="small"
               value={searchQuery}
@@ -223,7 +228,11 @@ export default function CustomersPage() {
             return (
               <Box key={`${label}-hdr`} sx={{ display: "flex", alignItems: "center" }}>
                 {sortable ? (
-                  <TableSortLabel active={active} direction={active ? sortDir : "asc"} onClick={() => toggleSort(key as SortKey)}>
+                  <TableSortLabel
+                    active={active}
+                    direction={active ? sortDir : "asc"}
+                    onClick={() => toggleSort(key as SortKey)}
+                  >
                     <Typography variant="caption" sx={{ fontWeight: 700, textTransform: "uppercase" }}>
                       {label}
                     </Typography>
@@ -270,7 +279,14 @@ export default function CustomersPage() {
             <Typography noWrap sx={{ color: "text.secondary" }}>{c.city || "—"}</Typography>
 
             {c.website ? (
-              <Link href={c.website} target="_blank" rel="noopener noreferrer" underline="hover" noWrap sx={{ color: "text.secondary" }}>
+              <Link
+                href={c.website}
+                target="_blank"
+                rel="noopener noreferrer"
+                underline="hover"
+                noWrap
+                sx={{ color: "text.secondary" }}
+              >
                 {c.website}
               </Link>
             ) : (
@@ -278,7 +294,12 @@ export default function CustomersPage() {
             )}
 
             {c.phone ? (
-              <Link href={`tel:${c.phone.replace(/[^\d+]/g, "")}`} underline="hover" noWrap sx={{ color: "text.secondary" }}>
+              <Link
+                href={`tel:${c.phone.replace(/[^\d+]/g, "")}`}
+                underline="hover"
+                noWrap
+                sx={{ color: "text.secondary" }}
+              >
                 {c.phone}
               </Link>
             ) : (
