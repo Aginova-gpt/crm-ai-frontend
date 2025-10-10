@@ -17,6 +17,12 @@ import {
   Link,
   CircularProgress,
   Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  Grid,
 } from "@mui/material";
 import { MdSearch, MdPersonAdd, MdInventory2, MdEdit, MdDelete } from "react-icons/md";
 import StatusCard from "@/components/StatusCard/StatusCard";
@@ -151,12 +157,52 @@ export default function CustomersPage() {
 
   const total = sorted.length;
 
-  // ===== Drawer state =====
-  const [openDetail, setOpenDetail] = useState(false);
+  // ===== Modal state =====
+  const [openEditModal, setOpenEditModal] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    city: '',
+    website: '',
+    phone: '',
+    assignedTo: ''
+  });
 
   // ===== Actions =====
   const handleAddCustomer = () => { router.push("/dashboard/customers/customerDetail"); }
-  const handleEditCustomer = (id: string) => console.log("Edit customer:", id);
+  
+  const handleEditCustomer = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setEditForm({
+      name: customer.name || '',
+      city: customer.city || '',
+      website: customer.website || '',
+      phone: customer.phone || '',
+      assignedTo: customer.assignedTo || ''
+    });
+    setOpenEditModal(true);
+  };
+  
+  const handleCloseModal = () => {
+    setOpenEditModal(false);
+    setSelectedCustomer(null);
+    setEditForm({
+      name: '',
+      city: '',
+      website: '',
+      phone: '',
+      assignedTo: ''
+    });
+  };
+  
+  const handleSaveCustomer = () => {
+    if (selectedCustomer) {
+      console.log("Saving customer:", selectedCustomer.id, editForm);
+      // Here you would typically make an API call to update the customer
+      handleCloseModal();
+    }
+  };
+  
   const handleDeleteCustomer = (id: string) => {
     if (window.confirm("Delete this customer?")) console.log("Delete customer:", id);
   };
@@ -278,7 +324,19 @@ export default function CustomersPage() {
               "&:hover": { bgcolor: "#FAFAFD" },
             }}
           >
-            <Typography noWrap sx={{ fontWeight: 500 }}>
+            <Typography 
+              noWrap 
+              sx={{ 
+                fontWeight: 500, 
+                color: 'primary.main',
+                cursor: 'pointer',
+                '&:hover': {
+                  textDecoration: 'underline',
+                  color: 'primary.dark'
+                }
+              }}
+              onClick={() => handleEditCustomer(c)}
+            >
               {c.name}
             </Typography>
             <Typography noWrap sx={{ color: "text.secondary" }}>—</Typography>
@@ -359,6 +417,71 @@ export default function CustomersPage() {
           />
         </Box>
       </Box>
+
+      {/* Edit Customer Modal */}
+      <Dialog 
+        open={openEditModal} 
+        onClose={handleCloseModal}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Edit Customer</DialogTitle>
+        <DialogContent>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Customer Name"
+                value={editForm.name}
+                onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                margin="normal"
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="City"
+                value={editForm.city}
+                onChange={(e) => setEditForm(prev => ({ ...prev, city: e.target.value }))}
+                margin="normal"
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Website"
+                value={editForm.website}
+                onChange={(e) => setEditForm(prev => ({ ...prev, website: e.target.value }))}
+                margin="normal"
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Phone"
+                value={editForm.phone}
+                onChange={(e) => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
+                margin="normal"
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Assigned To"
+                value={editForm.assignedTo}
+                onChange={(e) => setEditForm(prev => ({ ...prev, assignedTo: e.target.value }))}
+                margin="normal"
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseModal}>Cancel</Button>
+          <Button onClick={handleSaveCustomer} variant="contained">
+            Save Changes
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
