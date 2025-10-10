@@ -107,12 +107,18 @@ export default function CustomersPage() {
   // ===== Search =====
   const [searchQuery, setSearchQuery] = useState("");
   const filtered = useMemo(() => {
-    if (!searchQuery) return allCustomers;
-    return allCustomers.filter((c) =>
-      `${c.name} ${c.city} ${c.website} ${c.phone} ${c.assignedTo}`
-        .toLowerCase()
-        .includes(searchQuery.toLowerCase())
-    );
+    if (!searchQuery.trim()) return allCustomers;
+    
+    const query = searchQuery.toLowerCase().trim();
+    const searchTerms = query.split(/\s+/); // Split by whitespace
+    
+    return allCustomers.filter((c) => {
+      // Create a searchable string from all customer fields
+      const searchableText = `${c.name || ''} ${c.city || ''} ${c.website || ''} ${c.phone || ''} ${c.assignedTo || ''}`.toLowerCase();
+      
+      // Check if ALL search terms are found anywhere in the searchable text
+      return searchTerms.every(term => searchableText.includes(term));
+    });
   }, [allCustomers, searchQuery]);
 
   // ===== Sorting =====
