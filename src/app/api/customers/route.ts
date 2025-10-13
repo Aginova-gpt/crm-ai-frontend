@@ -71,3 +71,63 @@ export async function GET(req: Request) {
     total_accounts: data.total_accounts,
   });
 }
+
+export async function PUT(req: Request) {
+  const authHeader = req.headers.get("authorization") || "";
+  
+  // Parse the request body
+  const body = await req.json();
+  const { id, name, city, website, phone, assignedTo } = body;
+  
+  if (!id) {
+    return NextResponse.json(
+      { error: "Customer ID is required" },
+      { status: 400 }
+    );
+  }
+
+  // Prepare headers
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (authHeader) {
+    headers["Authorization"] = authHeader;
+  }
+
+  // Extract assigned_to number from "User X" format or set to null
+  const assigned_to = assignedTo ? 
+    parseInt(assignedTo.replace(/^User\s+/i, '')) || null : 
+    null;
+
+  // Prepare the update payload
+  const updatePayload = {
+    name: name || '',
+    city: city || null,
+    website: website || null,
+    phone: phone || null,
+    assigned_to: assigned_to,
+  };
+
+  // Make the API call to update the customer
+  const upstream = await fetch(`http://34.58.37.44/api/accounts/${id}`, {
+    method: "PUT",
+    cache: "no-store",
+    headers,
+    body: JSON.stringify(updatePayload),
+  });
+
+  if (!upstream.ok) {
+    const err = await upstream.text();
+    return NextResponse.json(
+      { error: `Failed to update customer: ${upstream.status}`, details: err },
+      { status: upstream.status }
+    );
+  }
+
+  const data = await upstream.json();
+  
+  return NextResponse.json({
+    message: "Customer updated successfully",
+    customer: data,
+  });
+}

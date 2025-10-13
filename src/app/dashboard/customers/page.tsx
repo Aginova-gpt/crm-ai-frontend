@@ -22,13 +22,14 @@ import {
   DialogContent,
   DialogActions,
   Button,
-  Grid,
+  Snackbar,
 } from "@mui/material";
 import { MdSearch, MdPersonAdd, MdInventory2, MdEdit, MdDelete } from "react-icons/md";
 import StatusCard from "@/components/StatusCard/StatusCard";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBackend } from "@/contexts/BackendContext";
+import { useApi } from "@/utils/api";
 import { addAsset } from "@/styles/icons";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -94,6 +95,9 @@ export default function CustomersPage() {
   const [tab, setTab] = useState(0);
   const { data, isLoading, error } = useCustomers();
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const { fetchWithAuth } = useApi();
+  const { apiURL } = useBackend();
 
   // ===== Transform backend response =====
   const allCustomers: Customer[] = useMemo(() => {
@@ -167,6 +171,52 @@ export default function CustomersPage() {
     phone: '',
     assignedTo: ''
   });
+  const [snackMessage, setSnackMessage] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+
+  // ===== Mutation for updating customer =====
+  const updateCustomerMutation = useMutation({
+    mutationFn: async (customerData: {
+      id: string;
+      name: string;
+      city: string;
+      website: string;
+      phone: string;
+      assignedTo: string;
+    }) => {
+      const response = await fetchWithAuth(
+        apiURL("customers", "customers"),
+        {
+          method: "PUT",
+          body: JSON.stringify(customerData),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to update customer");
+      }
+
+      return response.json();
+    },
+    onSuccess: () => {
+      // Invalidate and refetch customers data
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      setSnackMessage({
+        type: "success",
+        message: "Customer updated successfully!",
+      });
+      handleCloseModal();
+    },
+    onError: (error: Error) => {
+      setSnackMessage({
+        type: "error",
+        message: error.message || "Failed to update customer",
+      });
+    },
+  });
 
   // ===== Actions =====
   const handleAddCustomer = () => { router.push("/dashboard/customers/customerDetail"); }
@@ -197,9 +247,10 @@ export default function CustomersPage() {
   
   const handleSaveCustomer = () => {
     if (selectedCustomer) {
-      console.log("Saving customer:", selectedCustomer.id, editForm);
-      // Here you would typically make an API call to update the customer
-      handleCloseModal();
+      updateCustomerMutation.mutate({
+        id: selectedCustomer.id,
+        ...editForm,
+      });
     }
   };
   
@@ -376,7 +427,7 @@ export default function CustomersPage() {
 
             <Box sx={{ display: "flex", gap: 1 }}>
               <Tooltip title="Edit">
-                <IconButton size="small" color="primary" onClick={() => handleEditCustomer(c.id)}>
+                <IconButton size="small" color="primary" onClick={() => handleEditCustomer(c)}>
                   <MdEdit size={18} />
                 </IconButton>
               </Tooltip>
@@ -427,61 +478,82 @@ export default function CustomersPage() {
       >
         <DialogTitle>Edit Customer</DialogTitle>
         <DialogContent>
-          <Grid container spacing={2} sx={{ mt: 1 }}>
-            <Grid item xs={12} sm={6}>
+          <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
               <TextField
-                fullWidth
+                sx={{ flex: 1, minWidth: 250 }}
                 label="Customer Name"
                 value={editForm.name}
                 onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
                 margin="normal"
               />
-            </Grid>
-            <Grid item xs={12} sm={6}>
               <TextField
-                fullWidth
+                sx={{ flex: 1, minWidth: 250 }}
                 label="City"
                 value={editForm.city}
                 onChange={(e) => setEditForm(prev => ({ ...prev, city: e.target.value }))}
                 margin="normal"
               />
-            </Grid>
-            <Grid item xs={12} sm={6}>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
               <TextField
-                fullWidth
+                sx={{ flex: 1, minWidth: 250 }}
                 label="Website"
                 value={editForm.website}
                 onChange={(e) => setEditForm(prev => ({ ...prev, website: e.target.value }))}
                 margin="normal"
               />
-            </Grid>
-            <Grid item xs={12} sm={6}>
               <TextField
-                fullWidth
+                sx={{ flex: 1, minWidth: 250 }}
                 label="Phone"
                 value={editForm.phone}
                 onChange={(e) => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
                 margin="normal"
               />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="Assigned To"
-                value={editForm.assignedTo}
-                onChange={(e) => setEditForm(prev => ({ ...prev, assignedTo: e.target.value }))}
-                margin="normal"
-              />
-            </Grid>
-          </Grid>
+            </Box>
+            <TextField
+              fullWidth
+              label="Assigned To"
+              value={editForm.assignedTo}
+              onChange={(e) => setEditForm(prev => ({ ...prev, assignedTo: e.target.value }))}
+              margin="normal"
+            />
+          </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCloseModal}>Cancel</Button>
-          <Button onClick={handleSaveCustomer} variant="contained">
-            Save Changes
+          <Button 
+            onClick={handleCloseModal}
+            disabled={updateCustomerMutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleSaveCustomer} 
+            variant="contained"
+            disabled={updateCustomerMutation.isPending}
+            startIcon={updateCustomerMutation.isPending ? <CircularProgress size={16} /> : null}
+          >
+            {updateCustomerMutation.isPending ? "Saving..." : "Save Changes"}
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Success/Error Snackbar */}
+      <Snackbar
+        open={!!snackMessage}
+        autoHideDuration={6000}
+        onClose={() => setSnackMessage(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          onClose={() => setSnackMessage(null)}
+          severity={snackMessage?.type || 'info'}
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {snackMessage?.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }
