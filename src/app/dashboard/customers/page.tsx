@@ -53,7 +53,7 @@ type Customer = {
   openQuotes?: number;
 };
 
-type SortKey = "name" |  "company" | "industry" | "city" | "assignedTo" ;
+type SortKey = "name" | "company" | "industry" | "city" | "website" | "phone" | "assignedTo";
 type SortDir = "asc" | "desc";
 
 const headerCols: Array<{
@@ -66,7 +66,7 @@ const headerCols: Array<{
     { key: "industry", label: "Industry", sortable: true },
     { key: "city", label: "City", sortable: true },
     { key: "website", label: "Website", sortable: true },
-    { key: "phone", label: "Phone" },
+    { key: "phone", label: "Phone", sortable: true },
     { key: "assignedTo", label: "Assigned To", sortable: true },
     { key: "actions", label: "Open Orders" },
     { key: "actions", label: "Open Quotes" },
