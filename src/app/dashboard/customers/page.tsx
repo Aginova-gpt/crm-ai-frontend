@@ -184,6 +184,8 @@ export default function CustomersPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [editForm, setEditForm] = useState({
     name: '',
+    company: '',
+    industry: '',
     city: '',
     website: '',
     phone: '',
@@ -245,6 +247,8 @@ export default function CustomersPage() {
     setSelectedCustomer(customer);
     setEditForm({
       name: customer.name || '',
+      company: customer.company || '',
+      industry: customer.industry || '',
       city: customer.city || '',
       website: customer.website || '',
       phone: customer.phone || '',
@@ -258,6 +262,8 @@ export default function CustomersPage() {
     setSelectedCustomer(null);
     setEditForm({
       name: '',
+      company: '',
+      industry: '',
       city: '',
       website: '',
       phone: '',
@@ -506,6 +512,22 @@ export default function CustomersPage() {
                 label="Customer Name"
                 value={editForm.name}
                 onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                margin="normal"
+              />
+              <TextField
+                sx={{ flex: 1, minWidth: 250 }}
+                label="Company"
+                value={editForm.company}
+                onChange={(e) => setEditForm(prev => ({ ...prev, company: e.target.value }))}
+                margin="normal"
+              />
+            </Box>
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+              <TextField
+                sx={{ flex: 1, minWidth: 250 }}
+                label="Industry"
+                value={editForm.industry}
+                onChange={(e) => setEditForm(prev => ({ ...prev, industry: e.target.value }))}
                 margin="normal"
               />
               <TextField
