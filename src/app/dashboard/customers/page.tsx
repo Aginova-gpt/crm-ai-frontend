@@ -37,12 +37,14 @@ import { useRouter } from "next/navigation";
 // ✅ Import the new drawer component
 
 // ===== Grid layout =====
-const GRID_COLS = "repeat(9, minmax(140px, 1fr))";
-const HEADER_MIN_WIDTH = 9 * 140;
+const GRID_COLS = "repeat(10, minmax(120px, 1fr))";
+const HEADER_MIN_WIDTH = 10 * 120;
 
 type Customer = {
   id: string;
   name: string;
+  company?: string;
+  industry?: string;
   city?: string;
   website?: string;
   phone?: string;
@@ -51,18 +53,19 @@ type Customer = {
   openQuotes?: number;
 };
 
-type SortKey = "name" | "city" | "assignedTo";
+type SortKey = "name" |  "company" | "industry" | "city" | "assignedTo" ;
 type SortDir = "asc" | "desc";
 
 const headerCols: Array<{
-  key: SortKey | "company" | "website" | "phone" | "actions";
+  key: SortKey | "company" | "industry" | "website" | "city" | "actions";
   label: string;
   sortable?: boolean;
 }> = [
     { key: "name", label: "Name", sortable: true },
-    { key: "company", label: "Company" },
+    { key: "company", label: "Company", sortable: true },
+    { key: "industry", label: "Industry", sortable: true },
     { key: "city", label: "City", sortable: true },
-    { key: "website", label: "Website" },
+    { key: "website", label: "Website", sortable: true },
     { key: "phone", label: "Phone" },
     { key: "assignedTo", label: "Assigned To", sortable: true },
     { key: "actions", label: "Open Orders" },
@@ -102,16 +105,31 @@ export default function CustomersPage() {
   // ===== Transform backend response =====
   const allCustomers: Customer[] = useMemo(() => {
     if (!data?.accounts) return [];
-    return data.accounts.map((a: any) => ({
-      id: String(a.account_id),
-      name: a.name,
-      city: a.city ?? "",
-      website: a.website ?? "",
-      phone: a.phone ?? "",
-      assignedTo: a.assigned_to != null ? `User ${a.assigned_to}` : "",
-      openOrders: 0,
-      openQuotes: 0,
-    }));
+    
+    // Deduplicate by account_id and map to Customer objects
+    const seenIds = new Set();
+    return data.accounts
+      .filter((a: any) => {
+        const id = String(a.account_id);
+        if (seenIds.has(id)) {
+          console.warn(`Duplicate customer ID found: ${id}`);
+          return false;
+        }
+        seenIds.add(id);
+        return true;
+      })
+      .map((a: any) => ({
+        id: String(a.account_id),
+        name: a.name,
+        company: a.companyName ?? "", 
+        industry: a.industry ?? "",
+        city: a.city ?? "",
+        website: a.website ?? "", 
+        phone: a.phone ?? "",
+        assignedTo: a.assigned_to != null ? a.assigned_to : "",
+        openOrders: 0,
+        openQuotes: 0,
+      }));
   }, [data]);
 
   // ===== Search =====
@@ -122,9 +140,9 @@ export default function CustomersPage() {
     const query = searchQuery.toLowerCase().trim();
     const searchTerms = query.split(/\s+/); // Split by whitespace
     
-    return allCustomers.filter((c) => {
+    return allCustomers.filter((c) => {   
       // Create a searchable string from all customer fields
-      const searchableText = `${c.name || ''} ${c.city || ''} ${c.website || ''} ${c.phone || ''} ${c.assignedTo || ''}`.toLowerCase();
+      const searchableText = `${c.name || ''} ${c.city || ''} ${c.industry || ''} ${c.phone || ''} ${c.assignedTo || ''}`.toLowerCase();
       
       // Check if ALL search terms are found anywhere in the searchable text
       return searchTerms.every(term => searchableText.includes(term));
@@ -181,6 +199,8 @@ export default function CustomersPage() {
     mutationFn: async (customerData: {
       id: string;
       name: string;
+      company: string;
+      industry: string;
       city: string;
       website: string;
       phone: string;
@@ -390,7 +410,8 @@ export default function CustomersPage() {
             >
               {c.name}
             </Typography>
-            <Typography noWrap sx={{ color: "text.secondary" }}>—</Typography>
+            <Typography noWrap sx={{ color: "text.secondary" }}>{c.company || "—"}</Typography>
+            <Typography noWrap sx={{ color: "text.secondary" }}>{c.industry || "—"}</Typography>
             <Typography noWrap sx={{ color: "text.secondary" }}>{c.city || "—"}</Typography>
 
             {c.website ? (
