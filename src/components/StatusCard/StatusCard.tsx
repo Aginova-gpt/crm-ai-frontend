@@ -12,6 +12,7 @@ type StatusCardProps = {
   href?: string;                 // optional: make the card clickable
   gradient?: [string, string];   // optional: override gradient [from, to]
   className?: string;            // optional: extra classes
+  selected?: boolean;            // optional: selected state
 };
 
 export default function StatusCard({
@@ -22,10 +23,11 @@ export default function StatusCard({
   href,
   gradient = ['#7FC6FF', '#4EA7FF'],
   className = '',
+  selected = false,
 }: StatusCardProps) {
   const Card = (
     <div
-      className={`${styles.card} ${className}`}
+    className={`${styles.card} ${className} ${selected ? styles.selected : ''}`}
       style={{
         backgroundImage: `linear-gradient(135deg, ${gradient[0]}, ${gradient[1]})`,
       }}

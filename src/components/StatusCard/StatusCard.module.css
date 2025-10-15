@@ -49,3 +49,23 @@
     outline: 3px solid rgba(255,255,255,0.7);
     outline-offset: 2px;
   }
+
+  /* Smooth hover + selected transitions */
+.card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, outline 0.2s ease;
+  cursor: pointer;
+}
+
+/* When hovered */
+.card:hover {
+  transform: scale(1.03);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+}
+
+/* When selected (active filter) */
+.selected {
+  border: 3px solid #000000;           /* ✅ MUI blue border */
+  box-shadow: 0 4px 12px rgba(25, 118, 210, 0.25);
+  transform: scale(1.03);
+  transition: all 0.2s ease-in-out;
+}

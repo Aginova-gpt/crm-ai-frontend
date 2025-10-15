@@ -361,10 +361,11 @@ export default function CustomersPage() {
             }}
           >
             <StatusCard
-              title={`Open Orders (${contributingCounts.openOrders})`}
+              title={"Open Orders"}
               value={currentSummary?.total_orders ?? 0}
               total={currentSummary?.total_open_orders ?? 0}
               icon={<MdInventory2 size={28} />}
+              selected={statusFilter === "openOrders"}
             />
           </Box>
 
@@ -379,10 +380,11 @@ export default function CustomersPage() {
             }}
           >
             <StatusCard
-              title={`Open Quotes (${contributingCounts.openQuotes})`}
+              title={"Open Quotes"}
               value={currentSummary?.total_quotes ?? 0}
               total={currentSummary?.total_open_quotes ?? 0}
               icon={<MdInventory2 size={28} />}
+              selected={statusFilter === "openQuotes"}
             />
           </Box>
         </Box>
