@@ -4,9 +4,11 @@
 import * as React from "react";
 import Box from "@mui/material/Box";
 import CrmNavbar from "@/components/crmNavbar";
+import { CompanyProvider } from "@/contexts/CompanyContext";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
+    <CompanyProvider>
     <Box sx={{ minHeight: "100vh", display: "flex", flexDirection: "column", bgcolor: "background.default" }}>
       {/* ✅ Navbar stays persistent */}
       <CrmNavbar />
@@ -16,5 +18,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {children}
       </Box>
     </Box>
+    </CompanyProvider>
   );
 }

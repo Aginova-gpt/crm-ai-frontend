@@ -11,6 +11,7 @@ import { useRouter, usePathname } from "next/navigation";  // ✅ added usePathn
 import BadgedIcon from "./BadgedIcon/BadgedIcon";
 import { MdNotifications, MdMail, MdShoppingCart, MdAssignment } from "react-icons/md";
 
+
 type BadgeConfig = {
   icon: React.ReactNode;
   count: number;
@@ -106,6 +107,8 @@ export default function CrmNavbar() {
         break;
     }
   };
+
+  
 
   const handleLogout = () => {
     try {

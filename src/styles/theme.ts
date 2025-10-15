@@ -1,3 +1,4 @@
+"use client";
 import { createTheme } from "@mui/material/styles";
 import * as colors from "./colors";
 import "@fontsource/roboto";
