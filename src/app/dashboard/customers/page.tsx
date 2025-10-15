@@ -17,26 +17,16 @@ import {
   Link,
   CircularProgress,
   Alert,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Button,
-  Snackbar,
 } from "@mui/material";
-import { MdSearch, MdPersonAdd, MdInventory2, MdEdit, MdDelete } from "react-icons/md";
+import { MdSearch, MdInventory2, MdEdit, MdDelete } from "react-icons/md";
 import StatusCard from "@/components/StatusCard/StatusCard";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBackend } from "@/contexts/BackendContext";
-import { useApi } from "@/utils/api";
-import { addAsset } from "@/styles/icons";
 import Image from "next/image";
+import { addAsset } from "@/styles/icons";
 import { useRouter } from "next/navigation";
 
-// ✅ Import the new drawer component
-
-// ===== Grid layout =====
 const GRID_COLS = "repeat(10, minmax(120px, 1fr))";
 const HEADER_MIN_WIDTH = 10 * 120;
 
@@ -53,27 +43,29 @@ type Customer = {
   openQuotes?: number;
 };
 
-type SortKey = "name" | "company" | "industry" | "city" | "website" | "phone" | "assignedTo";
+type SortKey =
+  | "name"
+  | "company"
+  | "industry"
+  | "city"
+  | "website"
+  | "phone"
+  | "assignedTo";
 type SortDir = "asc" | "desc";
 
-const headerCols: Array<{
-  key: SortKey | "company" | "industry" | "website" | "city" | "actions";
-  label: string;
-  sortable?: boolean;
-}> = [
-    { key: "name", label: "Name", sortable: true },
-    { key: "company", label: "Company", sortable: true },
-    { key: "industry", label: "Industry", sortable: true },
-    { key: "city", label: "City", sortable: true },
-    { key: "website", label: "Website", sortable: true },
-    { key: "phone", label: "Phone", sortable: true },
-    { key: "assignedTo", label: "Assigned To", sortable: true },
-    { key: "actions", label: "Open Orders" },
-    { key: "actions", label: "Open Quotes" },
-    { key: "actions", label: "Quick Actions" },
-  ];
+const headerCols = [
+  { key: "name", label: "Name", sortable: true },
+  { key: "company", label: "Company", sortable: true },
+  { key: "industry", label: "Industry", sortable: true },
+  { key: "city", label: "City", sortable: true },
+  { key: "website", label: "Website", sortable: true },
+  { key: "phone", label: "Phone", sortable: true },
+  { key: "assignedTo", label: "Assigned To", sortable: true },
+  { key: "actions", label: "Open Orders" },
+  { key: "actions", label: "Open Quotes" },
+  { key: "actions", label: "Quick Actions" },
+];
 
-// ✅ Inline hook
 function useCustomers() {
   const { token, isLoggedIn } = useAuth();
   const { apiURL } = useBackend();
@@ -85,7 +77,8 @@ function useCustomers() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
-        if (res.status === 401) throw new Error("Unauthorized – please log in again");
+        if (res.status === 401)
+          throw new Error("Unauthorized – please log in again");
         throw new Error(`Request failed: ${res.status}`);
       }
       return res.json();
@@ -98,35 +91,26 @@ export default function CustomersPage() {
   const [tab, setTab] = useState(0);
   const { data, isLoading, error } = useCustomers();
   const router = useRouter();
-  const queryClient = useQueryClient();
-  const { fetchWithAuth } = useApi();
-  const { apiURL } = useBackend();
 
-  // ===== Transform backend response =====
   const allCustomers: Customer[] = useMemo(() => {
     if (!data?.accounts) return [];
-    
-    // Deduplicate by account_id and map to Customer objects
     const seenIds = new Set();
     return data.accounts
       .filter((a: any) => {
         const id = String(a.account_id);
-        if (seenIds.has(id)) {
-          console.warn(`Duplicate customer ID found: ${id}`);
-          return false;
-        }
+        if (seenIds.has(id)) return false;
         seenIds.add(id);
         return true;
       })
       .map((a: any) => ({
         id: String(a.account_id),
         name: a.name,
-        company: a.companyName ?? "", 
+        company: a.companyName ?? "",
         industry: a.industry ?? "",
         city: a.city ?? "",
-        website: a.website ?? "", 
+        website: a.website ?? "",
         phone: a.phone ?? "",
-        assignedTo: a.assigned_to != null ? a.assigned_to : "",
+        assignedTo: a.assigned_to ?? "",
         openOrders: 0,
         openQuotes: 0,
       }));
@@ -136,16 +120,11 @@ export default function CustomersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const filtered = useMemo(() => {
     if (!searchQuery.trim()) return allCustomers;
-    
     const query = searchQuery.toLowerCase().trim();
-    const searchTerms = query.split(/\s+/); // Split by whitespace
-    
-    return allCustomers.filter((c) => {   
-      // Create a searchable string from all customer fields
-      const searchableText = `${c.name || ''} ${c.city || ''} ${c.industry || ''} ${c.phone || ''} ${c.assignedTo || ''}`.toLowerCase();
-      
-      // Check if ALL search terms are found anywhere in the searchable text
-      return searchTerms.every(term => searchableText.includes(term));
+    const searchTerms = query.split(/\s+/);
+    return allCustomers.filter((c) => {
+      const text = `${c.name} ${c.city} ${c.industry} ${c.phone} ${c.assignedTo}`.toLowerCase();
+      return searchTerms.every((term) => text.includes(term));
     });
   }, [allCustomers, searchQuery]);
 
@@ -153,12 +132,8 @@ export default function CustomersPage() {
   const [sortBy, setSortBy] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const toggleSort = (key: SortKey) => {
-    if (key === sortBy) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortBy(key);
-      setSortDir("asc");
-    }
+    if (key === sortBy) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else setSortBy(key);
   };
 
   const sorted = useMemo(() => {
@@ -176,118 +151,36 @@ export default function CustomersPage() {
     () => sorted.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage),
     [sorted, page, rowsPerPage]
   );
-
   const total = sorted.length;
 
-  // ===== Modal state =====
-  const [openEditModal, setOpenEditModal] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [editForm, setEditForm] = useState({
-    name: '',
-    company: '',
-    industry: '',
-    city: '',
-    website: '',
-    phone: '',
-    assignedTo: ''
-  });
-  const [snackMessage, setSnackMessage] = useState<{
-    type: 'success' | 'error';
-    message: string;
-  } | null>(null);
-
-  // ===== Mutation for updating customer =====
-  const updateCustomerMutation = useMutation({
-    mutationFn: async (customerData: {
-      id: string;
-      name: string;
-      company: string;
-      industry: string;
-      city: string;
-      website: string;
-      phone: string;
-      assignedTo: string;
-    }) => {
-      const response = await fetchWithAuth(
-        apiURL("customers", "customers"),
-        {
-          method: "PUT",
-          body: JSON.stringify(customerData),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to update customer");
-      }
-
-      return response.json();
-    },
-    onSuccess: () => {
-      // Invalidate and refetch customers data
-      queryClient.invalidateQueries({ queryKey: ["customers"] });
-      setSnackMessage({
-        type: "success",
-        message: "Customer updated successfully!",
-      });
-      handleCloseModal();
-    },
-    onError: (error: Error) => {
-      setSnackMessage({
-        type: "error",
-        message: error.message || "Failed to update customer",
-      });
-    },
-  });
-
-  // ===== Actions =====
-  const handleAddCustomer = () => { router.push("/dashboard/customers/customerDetail"); }
-  
-  const handleEditCustomer = (customer: Customer) => {
-    setSelectedCustomer(customer);
-    setEditForm({
-      name: customer.name || '',
-      company: customer.company || '',
-      industry: customer.industry || '',
-      city: customer.city || '',
-      website: customer.website || '',
-      phone: customer.phone || '',
-      assignedTo: customer.assignedTo || ''
-    });
-    setOpenEditModal(true);
+  // ===== Quick Action placeholders =====
+  const handleEditCustomer = (c: Customer) => {
+    console.log("Edit clicked for:", c.name);
+    // TODO: Add edit modal or page navigation later
   };
-  
-  const handleCloseModal = () => {
-    setOpenEditModal(false);
-    setSelectedCustomer(null);
-    setEditForm({
-      name: '',
-      company: '',
-      industry: '',
-      city: '',
-      website: '',
-      phone: '',
-      assignedTo: ''
-    });
+
+  const handleDeleteCustomer = (c: Customer) => {
+    console.log("Delete clicked for:", c.name);
+    // TODO: Add delete confirmation + API later
   };
-  
-  const handleSaveCustomer = () => {
-    if (selectedCustomer) {
-      updateCustomerMutation.mutate({
-        id: selectedCustomer.id,
-        ...editForm,
-      });
-    }
-  };
-  
-  const handleDeleteCustomer = (id: string) => {
-    if (window.confirm("Delete this customer?")) console.log("Delete customer:", id);
+
+  const handleAddCustomer = () => {
+    router.push("/dashboard/customers/customerDetail");
   };
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-      {/* === TOP ROW === */}
-      <Box sx={{ display: "flex", alignItems: "stretch", gap: 1, bgcolor: "#FFFFFF", borderRadius: 1, p: 0 }}>
+      {/* === HEADER === */}
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "stretch",
+          gap: 1,
+          bgcolor: "#FFFFFF",
+          borderRadius: 1,
+          p: 0,
+        }}
+      >
         <Box sx={{ flex: 1 }}>
           <Tabs value={tab} onChange={(_, v) => setTab(v)}>
             <Tab label="Customers" />
@@ -312,7 +205,14 @@ export default function CustomersPage() {
               }}
             />
             <Tooltip title="Add Customer">
-              <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", mb: 0.25 }}>
+              <Box
+                sx={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  mb: 0.25,
+                }}
+              >
                 <IconButton color="primary" onClick={handleAddCustomer} sx={{ p: 0.5 }}>
                   <Image src={addAsset} alt="Add asset" width={36} height={36} />
                 </IconButton>
@@ -325,16 +225,34 @@ export default function CustomersPage() {
         </Box>
 
         <Box sx={{ display: "flex", alignItems: "center", gap: 2, ml: "auto" }}>
-          <StatusCard title="Open Orders" value={25} total={100} icon={<MdInventory2 size={28} />} />
-          <StatusCard title="Open Quotes" value={75} total={100} icon={<MdInventory2 size={28} />} />
+          <StatusCard
+            title="Open Orders"
+            value={25}
+            total={100}
+            icon={<MdInventory2 size={28} />}
+          />
+          <StatusCard
+            title="Open Quotes"
+            value={75}
+            total={100}
+            icon={<MdInventory2 size={28} />}
+          />
         </Box>
       </Box>
 
       {error && <Alert severity="error">{(error as Error).message}</Alert>}
 
       {/* === TABLE === */}
-      <Box sx={{ flex: 1, minHeight: 0, overflow: "auto", bgcolor: "#FFFFFF", borderRadius: 1 }}>
-        {/* ✅ Header */}
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          overflow: "auto",
+          bgcolor: "#FFFFFF",
+          borderRadius: 1,
+        }}
+      >
+        {/* Header Row */}
         <Box
           sx={{
             position: "sticky",
@@ -350,7 +268,6 @@ export default function CustomersPage() {
             borderColor: "divider",
             minWidth: HEADER_MIN_WIDTH,
           }}
-          role="row"
         >
           {headerCols.map(({ key, label, sortable }) => {
             const active = sortable && (key as SortKey) === sortBy;
@@ -362,12 +279,18 @@ export default function CustomersPage() {
                     direction={active ? sortDir : "asc"}
                     onClick={() => toggleSort(key as SortKey)}
                   >
-                    <Typography variant="caption" sx={{ fontWeight: 700, textTransform: "uppercase" }}>
+                    <Typography
+                      variant="caption"
+                      sx={{ fontWeight: 700, textTransform: "uppercase" }}
+                    >
                       {label}
                     </Typography>
                   </TableSortLabel>
                 ) : (
-                  <Typography variant="caption" sx={{ fontWeight: 700, textTransform: "uppercase" }}>
+                  <Typography
+                    variant="caption"
+                    sx={{ fontWeight: 700, textTransform: "uppercase" }}
+                  >
                     {label}
                   </Typography>
                 )}
@@ -376,7 +299,7 @@ export default function CustomersPage() {
           })}
         </Box>
 
-        {/* ✅ Rows */}
+        {/* Data Rows */}
         {isLoading && (
           <Box sx={{ p: 3, display: "flex", alignItems: "center", gap: 1.5 }}>
             <CircularProgress size={18} />
@@ -385,7 +308,9 @@ export default function CustomersPage() {
         )}
 
         {!isLoading && !error && pagedCustomers.length === 0 && (
-          <Box sx={{ p: 3, textAlign: "center", color: "text.secondary" }}>No customers found.</Box>
+          <Box sx={{ p: 3, textAlign: "center", color: "text.secondary" }}>
+            No customers found.
+          </Box>
         )}
 
         {pagedCustomers.map((c, idx) => (
@@ -401,25 +326,18 @@ export default function CustomersPage() {
               "&:hover": { bgcolor: "#FAFAFD" },
             }}
           >
-            <Typography 
-              noWrap 
-              sx={{ 
-                fontWeight: 500, 
-                color: 'primary.main',
-                cursor: 'pointer',
-                '&:hover': {
-                  textDecoration: 'underline',
-                  color: 'primary.dark'
-                }
-              }}
-              onClick={() => handleEditCustomer(c)}
-            >
+            <Typography sx={{ fontWeight: 500, color: "primary.main" }}>
               {c.name}
             </Typography>
-            <Typography noWrap sx={{ color: "text.secondary" }}>{c.company || "—"}</Typography>
-            <Typography noWrap sx={{ color: "text.secondary" }}>{c.industry || "—"}</Typography>
-            <Typography noWrap sx={{ color: "text.secondary" }}>{c.city || "—"}</Typography>
-
+            <Typography noWrap sx={{ color: "text.secondary" }}>
+              {c.company || "—"}
+            </Typography>
+            <Typography noWrap sx={{ color: "text.secondary" }}>
+              {c.industry || "—"}
+            </Typography>
+            <Typography noWrap sx={{ color: "text.secondary" }}>
+              {c.city || "—"}
+            </Typography>
             {c.website ? (
               <Link
                 href={c.website}
@@ -434,7 +352,6 @@ export default function CustomersPage() {
             ) : (
               <Typography noWrap sx={{ color: "text.secondary" }}>—</Typography>
             )}
-
             {c.phone ? (
               <Link
                 href={`tel:${c.phone.replace(/[^\d+]/g, "")}`}
@@ -447,11 +364,17 @@ export default function CustomersPage() {
             ) : (
               <Typography noWrap sx={{ color: "text.secondary" }}>—</Typography>
             )}
+            <Typography noWrap sx={{ color: "text.secondary" }}>
+              {c.assignedTo || "—"}
+            </Typography>
+            <Typography sx={{ fontVariantNumeric: "tabular-nums" }}>
+              {c.openOrders ?? 0}
+            </Typography>
+            <Typography sx={{ fontVariantNumeric: "tabular-nums" }}>
+              {c.openQuotes ?? 0}
+            </Typography>
 
-            <Typography noWrap sx={{ color: "text.secondary" }}>{c.assignedTo || "—"}</Typography>
-            <Typography sx={{ fontVariantNumeric: "tabular-nums" }}>{c.openOrders ?? 0}</Typography>
-            <Typography sx={{ fontVariantNumeric: "tabular-nums" }}>{c.openQuotes ?? 0}</Typography>
-
+            {/* ✅ Quick Actions */}
             <Box sx={{ display: "flex", gap: 1 }}>
               <Tooltip title="Edit">
                 <IconButton size="small" color="primary" onClick={() => handleEditCustomer(c)}>
@@ -459,7 +382,7 @@ export default function CustomersPage() {
                 </IconButton>
               </Tooltip>
               <Tooltip title="Delete">
-                <IconButton size="small" color="error" onClick={() => handleDeleteCustomer(c.id)}>
+                <IconButton size="small" color="error" onClick={() => handleDeleteCustomer(c)}>
                   <MdDelete size={18} />
                 </IconButton>
               </Tooltip>
@@ -469,7 +392,7 @@ export default function CustomersPage() {
           </Box>
         ))}
 
-        {/* ✅ Pagination */}
+        {/* Pagination */}
         <Box
           sx={{
             position: "sticky",
@@ -487,116 +410,18 @@ export default function CustomersPage() {
             page={page}
             onPageChange={(_, p) => setPage(p)}
             rowsPerPage={rowsPerPage}
-            onRowsPerPageChange={(e) => setRowsPerPage(parseInt(e.target.value, 10))}
+            onRowsPerPageChange={(e) =>
+              setRowsPerPage(parseInt(e.target.value, 10))
+            }
             rowsPerPageOptions={[10, 25, 50, 100]}
-            labelDisplayedRows={({ from, to, count }) => `${from}-${to} of ${count}`}
+            labelDisplayedRows={({ from, to, count }) =>
+              `${from}-${to} of ${count}`
+            }
             showFirstButton
             showLastButton
           />
         </Box>
       </Box>
-
-      {/* Edit Customer Modal */}
-      <Dialog 
-        open={openEditModal} 
-        onClose={handleCloseModal}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle>Edit Customer</DialogTitle>
-        <DialogContent>
-          <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-              <TextField
-                sx={{ flex: 1, minWidth: 250 }}
-                label="Customer Name"
-                value={editForm.name}
-                onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
-                margin="normal"
-              />
-              <TextField
-                sx={{ flex: 1, minWidth: 250 }}
-                label="Company"
-                value={editForm.company}
-                onChange={(e) => setEditForm(prev => ({ ...prev, company: e.target.value }))}
-                margin="normal"
-              />
-            </Box>
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-              <TextField
-                sx={{ flex: 1, minWidth: 250 }}
-                label="Industry"
-                value={editForm.industry}
-                onChange={(e) => setEditForm(prev => ({ ...prev, industry: e.target.value }))}
-                margin="normal"
-              />
-              <TextField
-                sx={{ flex: 1, minWidth: 250 }}
-                label="City"
-                value={editForm.city}
-                onChange={(e) => setEditForm(prev => ({ ...prev, city: e.target.value }))}
-                margin="normal"
-              />
-            </Box>
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-              <TextField
-                sx={{ flex: 1, minWidth: 250 }}
-                label="Website"
-                value={editForm.website}
-                onChange={(e) => setEditForm(prev => ({ ...prev, website: e.target.value }))}
-                margin="normal"
-              />
-              <TextField
-                sx={{ flex: 1, minWidth: 250 }}
-                label="Phone"
-                value={editForm.phone}
-                onChange={(e) => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
-                margin="normal"
-              />
-            </Box>
-            <TextField
-              fullWidth
-              label="Assigned To"
-              value={editForm.assignedTo}
-              onChange={(e) => setEditForm(prev => ({ ...prev, assignedTo: e.target.value }))}
-              margin="normal"
-            />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button 
-            onClick={handleCloseModal}
-            disabled={updateCustomerMutation.isPending}
-          >
-            Cancel
-          </Button>
-          <Button 
-            onClick={handleSaveCustomer} 
-            variant="contained"
-            disabled={updateCustomerMutation.isPending}
-            startIcon={updateCustomerMutation.isPending ? <CircularProgress size={16} /> : null}
-          >
-            {updateCustomerMutation.isPending ? "Saving..." : "Save Changes"}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Success/Error Snackbar */}
-      <Snackbar
-        open={!!snackMessage}
-        autoHideDuration={6000}
-        onClose={() => setSnackMessage(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      >
-        <Alert
-          onClose={() => setSnackMessage(null)}
-          severity={snackMessage?.type || 'info'}
-          variant="filled"
-          sx={{ width: '100%' }}
-        >
-          {snackMessage?.message}
-        </Alert>
-      </Snackbar>
     </Box>
   );
 }

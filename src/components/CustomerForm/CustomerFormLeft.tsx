@@ -18,6 +18,7 @@ import {
 import { MdDelete } from "react-icons/md";
 
 export default function CustomerFormLeft() {
+    
     const [contacts, setContacts] = React.useState([
         { name: "John Doe", phone: "707-406-3060", email: "john.doe@aginova.com" },
         { name: "Jane Doe", phone: "707-405-7069", email: "jane.doe@aginova.com" },

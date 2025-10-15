@@ -1,3 +1,4 @@
+// src/components/StatusCard/StatusCard.tsx
 'use client';
 
 import React from 'react';
