@@ -45,8 +45,8 @@ type Customer = {
   website?: string;
   phone?: string;
   assignedTo?: string;
-  openOrders?: number;
-  openQuotes?: number;
+  openOrders?: string;
+  openQuotes?: string;
 };
 
 type SortKey =
