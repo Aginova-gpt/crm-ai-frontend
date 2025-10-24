@@ -56,6 +56,7 @@ const tabBadges: Record<number, BadgeConfig[] | undefined> = {
   5: undefined,
   6: [{ icon: <MdNotifications size={22} />, count: 7, toolTip: "Manufacturing alerts" }],
   7: undefined,
+  8: undefined,
 };
 
 export default function CrmNavbar() {
@@ -76,6 +77,7 @@ export default function CrmNavbar() {
     if (pathname.includes("/dashboard/bills")) return 5;
     if (pathname.includes("/dashboard/manufacturing")) return 6;
     if (pathname.includes("/dashboard/reports")) return 7;
+    if (pathname.includes("/dashboard/items-correction")) return 8;
     return 0; 
   }, [pathname]);
 
@@ -104,6 +106,9 @@ export default function CrmNavbar() {
         break;
       case 7:
         router.push("/dashboard/reports");
+        break;
+      case 8:
+        router.push("/dashboard/items-correction");
         break;
     }
   };
@@ -162,6 +167,7 @@ export default function CrmNavbar() {
           <Tab label="BILLS" />
           <Tab label="MANUFACTURING" />
           <Tab label="REPORTS" />
+          <Tab label="ITEMS CORRECTION" />
         </Tabs>
 
         <Box sx={{ flexGrow: 1 }} />
