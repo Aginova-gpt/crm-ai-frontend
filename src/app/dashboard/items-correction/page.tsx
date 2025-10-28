@@ -27,7 +27,9 @@ import ItemCorrectionToolbar, {
 } from "./components/ItemCorrectionToolbar";
 import ItemCorrectionTablePlain from "./components/ItemCorrectionTablePlain";
 import { useItemSave } from "./hooks/useItemSave";
+import AddSubcategoryDialog from "./components/AddSubcategoryDialog";
 
+// utility
 function withinWindow(refIso: string | null | undefined, win: EditedWindow): boolean {
   if (!refIso) return false;
   if (win === "all") return true;
@@ -61,9 +63,7 @@ export default function ItemCorrectionPage() {
   const [editedWindow, setEditedWindow] = React.useState<EditedWindow>("all");
 
   const [workingRows, setWorkingRows] = React.useState<ItemCorrectionRow[]>([]);
-  const [baselineById, setBaselineById] = React.useState<Record<string | number, ItemCorrectionRow>>(
-    {}
-  );
+  const [baselineById, setBaselineById] = React.useState<Record<string | number, ItemCorrectionRow>>({});
 
   // company-switch confirmation
   const [pendingCompany, setPendingCompany] = React.useState<string | null>(null);
@@ -74,6 +74,7 @@ export default function ItemCorrectionPage() {
   const [lastSavedCount, setLastSavedCount] = React.useState(0);
   const [lastSavedCodes, setLastSavedCodes] = React.useState<string[]>([]);
 
+  // --- fetch items
   const { data, isLoading, error, refetch } = useQuery<{ items: ItemCorrectionRow[] }, Error>({
     queryKey: ["item-corrections", String(selectedCompanyId ?? "none")],
     enabled: !!selectedCompanyId && selectedCompanyId !== "all",
@@ -93,6 +94,34 @@ export default function ItemCorrectionPage() {
       return (await res.json()) as { items: ItemCorrectionRow[] };
     },
   });
+
+  // --- lookups query (safe fallbacks below)
+  const {
+    data: lookupsData,
+    isLoading: lookupsLoading,
+    refetch: refetchLookups,
+  } = useQuery({
+    queryKey: ["item-lookups"],
+    queryFn: async () => {
+      const res = await fetchWithAuth(
+        apiURL("item-corrections/lookups", "item-corrections-lookups.json"),
+        { requiresAuth: true }
+      );
+      if (!res.ok) throw new Error(`Lookups fetch failed (${res.status})`);
+      return (await res.json()) as {
+        categories: string[];
+        subcategories_by_category: Record<string, string[]>;
+        item_statuses: string[];
+        item_types: string[];
+      };
+    },
+  });
+
+  const categories = React.useMemo(() => lookupsData?.categories ?? [], [lookupsData]);
+  const subcategoriesByCategory = React.useMemo(
+    () => lookupsData?.subcategories_by_category ?? {},
+    [lookupsData]
+  );
 
   // Normalize in_reference to boolean ONCE when data arrives
   React.useEffect(() => {
@@ -141,33 +170,22 @@ export default function ItemCorrectionPage() {
     return items;
   }, [workingRows, typeFilter, correctionFilter, editedWindow]);
 
-  const dirtyCount = React.useMemo(
-    () => workingRows.filter((r) => r.dirty).length,
-    [workingRows]
-  );
+  const dirtyCount = React.useMemo(() => workingRows.filter((r) => r.dirty).length, [workingRows]);
 
-  // 👉 Optimistic update after save so blue dot shows immediately
   const handleSave = React.useCallback(async () => {
     const dirty = workingRows.filter((r) => r.dirty);
     if (dirty.length === 0) return;
 
-    // keep a list for the success dialog
     const codes = Array.from(new Set(dirty.map((d) => d.item_code))).slice(0, 10);
 
     await saveBulk(dirty);
 
     const nowIso = new Date().toISOString();
 
-    // Optimistically mark saved items as in_reference + clear dirty + bump ref_updated_at
     setWorkingRows((prev) =>
-      prev.map((r) =>
-        r.dirty
-          ? { ...r, in_reference: true, ref_updated_at: nowIso, dirty: false }
-          : r
-      )
+      prev.map((r) => (r.dirty ? { ...r, in_reference: true, ref_updated_at: nowIso, dirty: false } : r))
     );
 
-    // Update baseline so they won't re-appear as dirty
     setBaselineById((prev) => {
       const next = { ...prev };
       for (const r of dirty) {
@@ -182,12 +200,10 @@ export default function ItemCorrectionPage() {
       return next;
     });
 
-    // Show success dialog
     setLastSavedCount(dirty.length);
     setLastSavedCodes(codes);
     setSaveDialogOpen(true);
 
-    // Reconcile with backend (will also update timestamps if server differs)
     await refetch();
   }, [workingRows, saveBulk, refetch]);
 
@@ -250,6 +266,11 @@ export default function ItemCorrectionPage() {
     });
   }, []);
 
+  // Add Subcategory dialog
+  const [addOpen, setAddOpen] = React.useState(false);
+  const openAddDialog = () => setAddOpen(true);
+  const closeAddDialog = () => setAddOpen(false);
+
   return (
     <Box sx={{ p: 2, display: "flex", flexDirection: "column", gap: 2 }}>
       <ItemCorrectionToolbar
@@ -271,27 +292,22 @@ export default function ItemCorrectionPage() {
           <Typography>Loading items…</Typography>
         </Box>
       ) : error ? (
-        <Alert severity="error">
-          {(error as Error).message || "Failed to load items"}
-        </Alert>
+        <Alert severity="error">{(error as Error).message || "Failed to load items"}</Alert>
       ) : !filteredItems.length ? (
-        <Typography sx={{ color: "text.secondary" }}>
-          No items found for this company.
-        </Typography>
+        <Typography sx={{ color: "text.secondary" }}>No items found for this company.</Typography>
       ) : (
         <ItemCorrectionTablePlain
           data={filteredItems}
           originals={baselineById}
           onRowsChange={handleRowsChange}
           isSaving={isSaving}
+          onRequestAddSubcategory={openAddDialog}
+          plusDisabled={lookupsLoading}
         />
       )}
 
       {/* saving overlay */}
-      <Backdrop
-        open={!!isSaving}
-        sx={{ color: "#fff", zIndex: (theme) => theme.zIndex.modal + 1 }}
-      >
+      <Backdrop open={!!isSaving} sx={{ color: "#fff", zIndex: (t) => t.zIndex.modal + 1 }}>
         <CircularProgress color="inherit" />
       </Backdrop>
 
@@ -300,7 +316,8 @@ export default function ItemCorrectionPage() {
         <DialogTitle>Unsaved changes</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            You have {dirtyCount} pending change{dirtyCount > 1 ? "s" : ""}. Do you want to save them before switching the company?
+            You have {dirtyCount} pending change{dirtyCount > 1 ? "s" : ""}. Do you want to save them before switching
+            the company?
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
@@ -335,6 +352,17 @@ export default function ItemCorrectionPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Add Subcategory */}
+      <AddSubcategoryDialog
+        open={addOpen}
+        onClose={closeAddDialog}
+        categories={categories}
+        subcategoriesByCategory={subcategoriesByCategory}
+        onCreated={async () => {
+          await refetchLookups();
+        }}
+      />
     </Box>
   );
 }

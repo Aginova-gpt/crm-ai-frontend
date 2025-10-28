@@ -1,4 +1,3 @@
-// src/app/dashboard/items-correction/components/ItemCorrectionTablePlain.tsx
 "use client";
 
 import * as React from "react";
@@ -21,20 +20,37 @@ import {
   Typography,
   Checkbox,
   Tooltip,
+  IconButton,
+  Stack,
 } from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
 import { ItemCorrectionRow, ItemStatusWide } from "../types";
+import { NAVBAR_GRADIENT } from "@/styles/colors";
 
 const STATUSES: Exclude<ItemStatusWide, null>[] = [
-  "ACTIVE","INACTIVE","DEPLOYED","END-OF-LIFE","IN-DEV",
-  "ON-HOLD","PLANNED","PRODUCTION","PROPOSED","NONE",
+  "ACTIVE",
+  "INACTIVE",
+  "DEPLOYED",
+  "END-OF-LIFE",
+  "IN-DEV",
+  "ON-HOLD",
+  "PLANNED",
+  "PRODUCTION",
+  "PROPOSED",
+  "NONE",
 ];
 
 type ItemType = "PART" | "PRODUCT";
 
-// --- helpers for dirty detection ---
 const FIELDS_TO_COMPARE: (keyof ItemCorrectionRow)[] = [
-  "item_name","item_type","item_status","category","subcategory","notes",
+  "item_name",
+  "item_type",
+  "item_status",
+  "category",
+  "subcategory",
+  "notes",
 ];
+
 const norm = (v: unknown) => {
   if (v === undefined || v === null) return null;
   if (typeof v === "string") {
@@ -44,15 +60,14 @@ const norm = (v: unknown) => {
   return v;
 };
 const equalish = (a: unknown, b: unknown) => norm(a) === norm(b);
+
 function isRowDirty(cur: ItemCorrectionRow, orig?: ItemCorrectionRow | undefined) {
   if (!orig) return false;
   for (const k of FIELDS_TO_COMPARE) if (!equalish(cur[k], orig[k])) return true;
   return false;
 }
 
-// --- NEW: build a lightweight signature so we resync when in_reference/ref_updated_at change ---
 function buildSignature(arr: ItemCorrectionRow[]) {
-  // Include length, ids, and the couple of fields that affect the blue dot / sorting
   const parts: string[] = [String(arr.length)];
   for (const r of arr) {
     parts.push(
@@ -71,25 +86,27 @@ export default function ItemCorrectionTablePlain({
   originals = {},
   onRowsChange,
   isSaving = false,
+  onRequestAddSubcategory,
+  plusDisabled = false,
 }: {
   data?: ItemCorrectionRow[];
   originals?: Record<string | number, ItemCorrectionRow>;
   onRowsChange?: (rows: ItemCorrectionRow[]) => void;
   isSaving?: boolean;
+  /** Click handler for the ➕ on the Subcategory column header */
+  onRequestAddSubcategory?: () => void;
+  /** Disable the plus icon while lookups are loading */
+  plusDisabled?: boolean;
 }) {
   const [rows, setRows] = React.useState<ItemCorrectionRow[]>(() => data);
   const syncingFromParentRef = React.useRef(false);
   const dataSigRef = React.useRef<string>(buildSignature(data));
 
-  // ⬇️ resync when IDs/order OR (in_reference/ref_updated_at) change
   React.useEffect(() => {
     const nextSig = buildSignature(data);
     const shouldResync =
       rows.length !== data.length ||
-      // fast id check
-      (rows.length === data.length &&
-        rows.some((r, i) => r.item_id !== data[i]?.item_id)) ||
-      // NEW: signature changed (e.g., in_reference flips after save+refetch)
+      (rows.length === data.length && rows.some((r, i) => r.item_id !== data[i]?.item_id)) ||
       nextSig !== dataSigRef.current;
 
     if (shouldResync) {
@@ -101,7 +118,6 @@ export default function ItemCorrectionTablePlain({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, originals]);
 
-  // notify parent AFTER local rows change (skip immediate notify right after a parent sync)
   React.useEffect(() => {
     if (!onRowsChange) return;
     if (syncingFromParentRef.current) {
@@ -111,13 +127,12 @@ export default function ItemCorrectionTablePlain({
     onRowsChange(rows);
   }, [rows, onRowsChange]);
 
-  // pagination
   const [page, setPage] = React.useState(0);
   const [rowsPerPage, setRowsPerPage] = React.useState(25);
 
   const categories: Record<string, string[]> = {
-    SENSOR_AND_CONTROLLER: ["SENSOR","PROBE","CONTROLLER","CUSTOM_ELECTRONICS"],
-    FRIDGE: ["REFRIGERATOR","FREEZER","ULTRA_FREEZER","BACKUP_BATTERY"],
+    SENSOR_AND_CONTROLLER: ["SENSOR", "PROBE", "CONTROLLER", "CUSTOM_ELECTRONICS"],
+    FRIDGE: ["REFRIGERATOR", "FREEZER", "ULTRA_FREEZER", "BACKUP_BATTERY"],
     SERVICE: ["CALIBRATION"],
     HOSTED: ["SUBSCRIPTION"],
     ACCESSORIES: ["BATTERY"],
@@ -137,11 +152,7 @@ export default function ItemCorrectionTablePlain({
     );
   };
 
-  const setRowValue = <K extends keyof ItemCorrectionRow>(
-    id: string | number,
-    key: K,
-    value: ItemCorrectionRow[K]
-  ) => {
+  const setRowValue = <K extends keyof ItemCorrectionRow>(id: string | number, key: K, value: ItemCorrectionRow[K]) => {
     patchRow(id, { [key]: value } as Partial<ItemCorrectionRow>);
   };
 
@@ -157,17 +168,17 @@ export default function ItemCorrectionTablePlain({
   const sortedRows = React.useMemo(() => {
     return [...rows].sort((a, b) => {
       const codeCmp = (a.item_code ?? "").localeCompare(b.item_code ?? "", undefined, {
-        numeric: true, sensitivity: "base",
+        numeric: true,
+        sensitivity: "base",
       });
       if (codeCmp !== 0) return codeCmp;
 
-      const tCmp =
-        typeRank(normalizeType(a.item_type as any)) -
-        typeRank(normalizeType(b.item_type as any));
+      const tCmp = typeRank(normalizeType(a.item_type as any)) - typeRank(normalizeType(b.item_type as any));
       if (tCmp !== 0) return tCmp;
 
       const nameCmp = (a.item_name ?? "").localeCompare(b.item_name ?? "", undefined, {
-        numeric: true, sensitivity: "base",
+        numeric: true,
+        sensitivity: "base",
       });
       if (nameCmp !== 0) return nameCmp;
 
@@ -192,7 +203,36 @@ export default function ItemCorrectionTablePlain({
                 <TableCell sx={{ minWidth: 220 }}>Type</TableCell>
                 <TableCell sx={{ minWidth: 200 }}>Status</TableCell>
                 <TableCell sx={{ minWidth: 180 }}>Category</TableCell>
-                <TableCell sx={{ minWidth: 180 }}>Subcategory</TableCell>
+                <TableCell sx={{ minWidth: 180 }}>
+                  <Stack direction="row" alignItems="center" spacing={1}>
+                    <span>Subcategory</span>
+                    <Tooltip title="Add subcategory">
+                      <span>
+                        <IconButton
+                          size="small"
+                          onClick={onRequestAddSubcategory}
+                          disabled={isSaving || plusDisabled}
+                          sx={{
+                            width: 24,
+                            height: 24,
+                            p: 0,
+                            borderRadius: "4px",
+                            backgroundImage: NAVBAR_GRADIENT,
+                            color: "#fff",
+                            "&:disabled": {
+                              opacity: 0.5,
+                              backgroundImage: "none",
+                              backgroundColor: (t) => t.palette.action.disabledBackground,
+                              color: (t) => t.palette.action.disabled,
+                            },
+                          }}
+                        >
+                          <AddIcon fontSize="inherit" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  </Stack>
+                </TableCell>
                 <TableCell sx={{ minWidth: 160 }}>Legacy Status</TableCell>
                 <TableCell sx={{ minWidth: 160 }}>Legacy Category</TableCell>
                 <TableCell sx={{ minWidth: 260 }}>Notes</TableCell>
@@ -201,7 +241,7 @@ export default function ItemCorrectionTablePlain({
 
             <TableBody>
               {pageRows.map((row) => {
-                const vType = normalizeType(row.item_type as any);
+                const vType = (row.item_type === "PRODUCT" ? "PRODUCT" : "PART") as ItemType;
                 const availableSubs = categories[row.category ?? "UNCATEGORIZED"] ?? ["UNCATEGORIZED"];
                 const isDirty = !!row.dirty;
                 const inRef = row.in_reference === true;
@@ -232,8 +272,11 @@ export default function ItemCorrectionTablePlain({
                         >
                           <Box
                             sx={{
-                              width: 10, height: 10, borderRadius: "50%",
-                              bgcolor: "#2563eb", mx: "auto",
+                              width: 10,
+                              height: 10,
+                              borderRadius: "50%",
+                              bgcolor: "#2563eb",
+                              mx: "auto",
                             }}
                           />
                         </Tooltip>
@@ -264,9 +307,7 @@ export default function ItemCorrectionTablePlain({
                               size="small"
                               disabled={isSaving}
                               checked={vType === "PART"}
-                              onChange={(_, checked) =>
-                                setItemType(row.item_id, checked ? "PART" : "PRODUCT")
-                              }
+                              onChange={(_, checked) => setItemType(row.item_id, checked ? "PART" : "PRODUCT")}
                             />
                           }
                           label="PART"
@@ -277,9 +318,7 @@ export default function ItemCorrectionTablePlain({
                               size="small"
                               disabled={isSaving}
                               checked={vType === "PRODUCT"}
-                              onChange={(_, checked) =>
-                                setItemType(row.item_id, checked ? "PRODUCT" : "PART")
-                              }
+                              onChange={(_, checked) => setItemType(row.item_id, checked ? "PRODUCT" : "PART")}
                             />
                           }
                           label="PRODUCT"
@@ -294,11 +333,7 @@ export default function ItemCorrectionTablePlain({
                         disabled={isSaving}
                         value={(row.item_status ?? "") as string}
                         onChange={(e: SelectChangeEvent<string>) =>
-                          setRowValue(
-                            row.item_id,
-                            "item_status",
-                            (e.target.value || null) as ItemStatusWide
-                          )
+                          setRowValue(row.item_id, "item_status", (e.target.value || null) as ItemStatusWide)
                         }
                         renderValue={(v) => (v && (v as string).length ? (v as string) : "—")}
                       >
@@ -316,7 +351,7 @@ export default function ItemCorrectionTablePlain({
                         fullWidth
                         disabled={isSaving}
                         value={row.category ?? ""}
-                        onChange={(e: SelectChangeEvent<string>) => setCategory(row.item_id, e.target.value)}
+                        onChange={(e) => setCategory(row.item_id, e.target.value as string)}
                         renderValue={(v) => (v && (v as string).length ? (v as string) : "—")}
                       >
                         {Object.keys(categories).map((c) => (
@@ -333,9 +368,7 @@ export default function ItemCorrectionTablePlain({
                         fullWidth
                         disabled={isSaving}
                         value={row.subcategory ?? ""}
-                        onChange={(e: SelectChangeEvent<string>) =>
-                          setRowValue(row.item_id, "subcategory", e.target.value)
-                        }
+                        onChange={(e) => setRowValue(row.item_id, "subcategory", e.target.value)}
                         renderValue={(v) => (v && (v as string).length ? (v as string) : "—")}
                       >
                         {availableSubs.map((sc) => (

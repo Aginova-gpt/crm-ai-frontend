@@ -1,15 +1,6 @@
 export type ItemStatusWide =
-  | "ACTIVE"
-  | "INACTIVE"
-  | "END-OF-LIFE"
-  | "DEPLOYED"
-  | "IN-DEV"
-  | "ON-HOLD"
-  | "PLANNED"
-  | "PRODUCTION"
-  | "PROPOSED"
-  | "NONE"
-  | null;
+  | "ACTIVE" | "INACTIVE" | "END-OF-LIFE" | "DEPLOYED" | "IN-DEV"
+  | "ON-HOLD" | "PLANNED" | "PRODUCTION" | "PROPOSED" | "NONE" | null;
 
 export type ItemCorrectionRow = {
   item_id: string | number;
