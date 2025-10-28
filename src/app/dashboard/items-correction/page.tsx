@@ -95,7 +95,7 @@ export default function ItemCorrectionPage() {
     },
   });
 
-  // --- lookups query (safe fallbacks below)
+  // --- lookups query
   const {
     data: lookupsData,
     isLoading: lookupsLoading,
@@ -303,6 +303,9 @@ export default function ItemCorrectionPage() {
           isSaving={isSaving}
           onRequestAddSubcategory={openAddDialog}
           plusDisabled={lookupsLoading}
+          // ✅ pass lookups down
+          categories={categories}
+          subcategoriesByCategory={subcategoriesByCategory}
         />
       )}
 

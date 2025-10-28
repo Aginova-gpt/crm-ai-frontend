@@ -19,22 +19,21 @@ import {
   Alert,
 } from "@mui/material";
 import { NAVBAR_GRADIENT } from "@/styles/colors";
+import { useAuth } from "@/contexts/AuthContext";
+import { useBackend } from "@/contexts/BackendContext";
 
 type Mode = "existing" | "new";
 
 type Props = {
   open: boolean;
   onClose: () => void;
-
   /** Existing canonical category names (UPPER_SNAKE) */
   categories: string[];
-
   /**
    * Mapping of category -> array of subcategory names (UPPER_SNAKE)
    * Used for duplicate detection across/same categories.
    */
   subcategoriesByCategory: Record<string, string[]>;
-
   /** Called after a successful create so caller can refresh lookups. */
   onCreated?: () => Promise<void> | void;
 };
@@ -48,6 +47,9 @@ export default function AddSubcategoryDialog({
   subcategoriesByCategory,
   onCreated,
 }: Props) {
+  const { token } = useAuth();              // ← same source as your Customers page
+  const { apiURL } = useBackend();          // ← consistent URL builder
+
   const [mode, setMode] = React.useState<Mode>("existing");
 
   const [categoryName, setCategoryName] = React.useState("");
@@ -142,7 +144,6 @@ export default function AddSubcategoryDialog({
       if (subs.includes(subKey)) whereExists.push(cat);
     }
     if (whereExists.length > 0) {
-      // Disallow duplicates anywhere.
       setSubError(
         `Subcategory '${subKey}' already exists under ${whereExists.join(
           ", "
@@ -169,6 +170,12 @@ export default function AddSubcategoryDialog({
   const save = async () => {
     if (!canSubmit) return;
 
+    // mimic Customers page: require token and send Authorization header
+    if (!token) {
+      setGlobalInfo("Unauthorized – please log in again.");
+      return;
+    }
+
     setSaving(true);
     try {
       const payload = {
@@ -179,12 +186,15 @@ export default function AddSubcategoryDialog({
         category_label: mode === "new" ? categoryLabel || categoryName : undefined,
       };
 
-      const API_BASE =
-        process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:5000";
-      const res = await fetch(`${API_BASE}/item-corrections/lookups/subcategory`, {
+      const url = apiURL("item-corrections/lookups/subcategory", "item-corrections.json");
+
+      const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,   // ← same auth string method
+        },
+        credentials: "include", // keep if you also use cookies
         body: JSON.stringify(payload),
       });
 
@@ -194,7 +204,6 @@ export default function AddSubcategoryDialog({
       }
 
       await onCreated?.(); // refresh lookups on the caller
-
       onClose();
     } catch (err: any) {
       setGlobalInfo(err?.message || "Failed to create subcategory");
@@ -289,10 +298,7 @@ export default function AddSubcategoryDialog({
           onClick={save}
           disabled={!canSubmit}
           variant="contained"
-          sx={{
-            backgroundImage: NAVBAR_GRADIENT,
-            color: "#fff",
-          }}
+          sx={{ backgroundImage: NAVBAR_GRADIENT, color: "#fff" }}
         >
           Save
         </Button>

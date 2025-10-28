@@ -88,6 +88,10 @@ export default function ItemCorrectionTablePlain({
   isSaving = false,
   onRequestAddSubcategory,
   plusDisabled = false,
+
+  // ✅ lookups now come from parent; default safely
+  categories = [],
+  subcategoriesByCategory = {},
 }: {
   data?: ItemCorrectionRow[];
   originals?: Record<string | number, ItemCorrectionRow>;
@@ -97,10 +101,18 @@ export default function ItemCorrectionTablePlain({
   onRequestAddSubcategory?: () => void;
   /** Disable the plus icon while lookups are loading */
   plusDisabled?: boolean;
+
+  /** Lookup lists (optional in type, but defaulted above) */
+  categories?: string[];
+  subcategoriesByCategory?: Record<string, string[]>;
 }) {
   const [rows, setRows] = React.useState<ItemCorrectionRow[]>(() => data);
   const syncingFromParentRef = React.useRef(false);
   const dataSigRef = React.useRef<string>(buildSignature(data));
+
+  // ✅ always-use-safe vars when reading lookups
+  const catList = Array.isArray(categories) ? categories : [];
+  const subsByCat: Record<string, string[]> = subcategoriesByCategory || {};
 
   React.useEffect(() => {
     const nextSig = buildSignature(data);
@@ -130,15 +142,6 @@ export default function ItemCorrectionTablePlain({
   const [page, setPage] = React.useState(0);
   const [rowsPerPage, setRowsPerPage] = React.useState(25);
 
-  const categories: Record<string, string[]> = {
-    SENSOR_AND_CONTROLLER: ["SENSOR", "PROBE", "CONTROLLER", "CUSTOM_ELECTRONICS"],
-    FRIDGE: ["REFRIGERATOR", "FREEZER", "ULTRA_FREEZER", "BACKUP_BATTERY"],
-    SERVICE: ["CALIBRATION"],
-    HOSTED: ["SUBSCRIPTION"],
-    ACCESSORIES: ["BATTERY"],
-    UNCATEGORIZED: ["UNCATEGORIZED"],
-  };
-
   const normalizeType = (v: unknown): ItemType => (v === "PRODUCT" ? "PRODUCT" : "PART");
 
   const patchRow = (id: string | number, patch: Partial<ItemCorrectionRow>) => {
@@ -159,7 +162,8 @@ export default function ItemCorrectionTablePlain({
   const setItemType = (id: string | number, next: ItemType) => setRowValue(id, "item_type", next);
 
   const setCategory = (id: string | number, cat: string) => {
-    const firstSub = categories[cat]?.[0] ?? "UNCATEGORIZED";
+    const list = Array.isArray(subsByCat[cat]) ? subsByCat[cat] : [];
+    const firstSub = list.length ? list[0] : "UNCATEGORIZED";
     patchRow(id, { category: cat, subcategory: firstSub });
   };
 
@@ -242,7 +246,10 @@ export default function ItemCorrectionTablePlain({
             <TableBody>
               {pageRows.map((row) => {
                 const vType = (row.item_type === "PRODUCT" ? "PRODUCT" : "PART") as ItemType;
-                const availableSubs = categories[row.category ?? "UNCATEGORIZED"] ?? ["UNCATEGORIZED"];
+                const availableSubs =
+                  row.category && Array.isArray(subsByCat[row.category]) && subsByCat[row.category].length
+                    ? subsByCat[row.category]
+                    : ["UNCATEGORIZED"];
                 const isDirty = !!row.dirty;
                 const inRef = row.in_reference === true;
 
@@ -354,7 +361,7 @@ export default function ItemCorrectionTablePlain({
                         onChange={(e) => setCategory(row.item_id, e.target.value as string)}
                         renderValue={(v) => (v && (v as string).length ? (v as string) : "—")}
                       >
-                        {Object.keys(categories).map((c) => (
+                        {catList.map((c) => (
                           <MenuItem key={c} value={c}>
                             {c}
                           </MenuItem>
