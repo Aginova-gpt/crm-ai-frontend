@@ -461,7 +461,7 @@ export default function CustomersPage() {
           </Box>
         ) : (
           pagedCustomers.map((c, idx) => (
-            <React.Fragment key={c.id}>
+            <React.Fragment key={`${c.company_id ?? "all"}-${c.id}-${idx}`}>
               <Box
                 sx={{
                   display: "grid",
