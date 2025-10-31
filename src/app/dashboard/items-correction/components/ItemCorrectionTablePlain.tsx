@@ -202,6 +202,7 @@ export default function ItemCorrectionTablePlain({
             <TableHead>
               <TableRow>
                 <TableCell padding="checkbox" sx={{ width: 40 }} />
+                <TableCell sx={{ width: 60 }}>#</TableCell>
                 <TableCell sx={{ minWidth: 140 }}>Item Code</TableCell>
                 <TableCell sx={{ minWidth: 220 }}>Item Name</TableCell>
                 <TableCell sx={{ minWidth: 220 }}>Type</TableCell>
@@ -244,7 +245,8 @@ export default function ItemCorrectionTablePlain({
             </TableHead>
 
             <TableBody>
-              {pageRows.map((row) => {
+              {pageRows.map((row, idx) => {
+                const serial = start + idx + 1;
                 const vType = (row.item_type === "PRODUCT" ? "PRODUCT" : "PART") as ItemType;
                 const availableSubs =
                   row.category && Array.isArray(subsByCat[row.category]) && subsByCat[row.category].length
@@ -289,6 +291,8 @@ export default function ItemCorrectionTablePlain({
                         </Tooltip>
                       ) : null}
                     </TableCell>
+
+                    <TableCell sx={{ width: 60, fontFamily: "monospace" }}>{serial}</TableCell>
 
                     <TableCell>
                       <Typography variant="body2" sx={{ fontFamily: "monospace" }}>

@@ -57,6 +57,7 @@ type SortDir = "asc" | "desc";
 
 // ===== Table Headers =====
 const headerCols = [
+  { key: "#", label: "#" },
   { key: "productNumber", label: "Product Number", sortable: true },
   { key: "systemNo", label: "System No.", sortable: true },
   { key: "internalName", label: "Internal Name", sortable: true },
@@ -292,6 +293,7 @@ export default function ProductsPage() {
               fontSize: "12px",
             }}
           >
+            <Typography sx={{ fontSize: "12px", fontFamily: "monospace" }}>{page * rowsPerPage + idx + 1}</Typography>
             <Typography sx={{ fontSize: "12px" }}>{p.productNumber}</Typography>
             <Typography sx={{ fontSize: "12px" }}>{p.systemNo}</Typography>
             <Typography sx={{ fontSize: "12px" }}>{p.internalName}</Typography>

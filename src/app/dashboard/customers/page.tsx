@@ -32,8 +32,8 @@ import Image from "next/image";
 import { addAsset } from "@/styles/icons";
 import { useRouter } from "next/navigation";
 
-const GRID_COLS = "repeat(10, minmax(120px, 1fr))";
-const HEADER_MIN_WIDTH = 10 * 120;
+const GRID_COLS = "repeat(11, minmax(110px, 1fr))";
+const HEADER_MIN_WIDTH = 11 * 110;
 
 type Customer = {
   id: string;
@@ -60,6 +60,7 @@ type SortKey =
 type SortDir = "asc" | "desc";
 
 const headerCols = [
+  { key: "#", label: "#" },
   { key: "name", label: "Name", sortable: true },
   { key: "company", label: "Company", sortable: true },
   { key: "industry", label: "Industry", sortable: true },
@@ -473,6 +474,9 @@ export default function CustomersPage() {
                   "&:hover": { bgcolor: "#FAFAFD" },
                 }}
               >
+                <Typography sx={{ fontFamily: "monospace", color: "text.secondary" }}>
+                  {page * rowsPerPage + idx + 1}
+                </Typography>
                 <Typography sx={{ fontWeight: 500, color: "text.secondary" }}>
                   {c.name}
                 </Typography>
