@@ -25,6 +25,9 @@ type Customer = {
   company_id?: string;
 };
 
+// ✅ Explicitly type Contact so useState doesn’t infer never[]
+type Contact = { name: string; phone: string; email: string };
+
 function useCustomers() {
   const { token, isLoggedIn } = useAuth();
   const { apiURL } = useBackend();
@@ -54,6 +57,7 @@ export default function CustomerDetailPage() {
   const router = useRouter();
   const { fetchWithAuth } = useApi();
   const { apiURL } = useBackend();
+
   const [assignedTo, setAssignedTo] = React.useState("");
   const [customerName, setCustomerName] = React.useState("");
   const [companyName, setCompanyName] = React.useState("");
@@ -72,11 +76,19 @@ export default function CustomerDetailPage() {
   const [shippingCode, setShippingCode] = React.useState("");
   const [shippingCountry, setShippingCountry] = React.useState("");
   const [notes, setNotes] = React.useState("");
-  const [contacts, setContacts] = React.useState([]);
+
+  // ✅ Properly typed contacts state
+  const [contacts, setContacts] = React.useState<Contact[]>([]);
+
+  // ✅ Wrapper so the child can keep a simple `(value: Contact[]) => void` prop
+  const setContactsPlain = React.useCallback(
+    (value: Contact[]) => setContacts(value),
+    []
+  );
 
   // Fetch customers for parent dropdown
   const { data: customersData } = useCustomers();
-  
+
   const customers: Customer[] = useMemo(() => {
     if (!customersData?.data) return [];
     return customersData.data
@@ -84,21 +96,11 @@ export default function CustomerDetailPage() {
         company.data.map((acc: any) => ({
           id: String(acc.id),
           name: acc.name,
-          company_id: company.company_id,
+          company_id: company.company_id as string | undefined,
         }))
       )
       .sort((a: Customer, b: Customer) => a.name.localeCompare(b.name));
   }, [customersData]);
-  
-
-
-
-  //const { fetchWithAuth } = useApi();
-
-  // Normally from backend
-  //const customerName = "Customer Name";
-  //const createdAt = "2025-09-11 10:30 AM";
-  //const modifiedAt = "2025-09-11 11:15 AM";
 
   const handleSave = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -106,7 +108,7 @@ export default function CustomerDetailPage() {
     const payload = {
       assignedTo: assignedTo,
       customerName: customerName,
-      customerPhone: customerPhone, 
+      customerPhone: customerPhone,
       companyName: companyName || "Hidden",
       parent: parent,
       customerEmail: customerEmail,
@@ -131,10 +133,14 @@ export default function CustomerDetailPage() {
         method: "POST",
         body: JSON.stringify(payload),
       });
-console.log( JSON.stringify(payload));
+      console.log(JSON.stringify(payload));
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: "Failed to save customer" }));
-        throw new Error(error.error || `Failed to save customer: ${response.status}`);
+        const error = await response
+          .json()
+          .catch(() => ({ error: "Failed to save customer" }));
+        throw new Error(
+          error.error || `Failed to save customer: ${response.status}`
+        );
       }
 
       const data = await response.json();
@@ -169,23 +175,25 @@ console.log( JSON.stringify(payload));
         }}
       >
         {/* Left: constrained to left column width */}
-        <Box sx={{ flex: "0 0 50%", display: "flex", flexDirection: "column", gap: 0.5 }}>
+        <Box
+          sx={{ flex: "0 0 50%", display: "flex", flexDirection: "column", gap: 0.5 }}
+        >
           {/* Row 1: Customer name + AssignedTo */}
-          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-           
-            <Box sx={{ display: "flex", gap: 3, alignItems:"left" }}>
-            <Typography variant="body1" color="text.secondary" fontSize={30}>
-              Create New Account
-            </Typography>
-            
-          </Box>
+          <Box
+            sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+          >
+            <Box sx={{ display: "flex", gap: 3, alignItems: "left" }}>
+              <Typography variant="body1" color="text.secondary" fontSize={30}>
+                Create New Account
+              </Typography>
+            </Box>
             <FormControl size="small" sx={{ minWidth: 300, marginRight: "30px" }}>
               <InputLabel id="assigned-to-label">Assigned To</InputLabel>
               <Select
                 labelId="assigned-to-label"
                 value={assignedTo}
                 label="Assigned To"
-                onChange={(e) => setAssignedTo(e.target.value)}
+                onChange={(e) => setAssignedTo(e.target.value as string)}
               >
                 <MenuItem value="User 1">User 1</MenuItem>
                 <MenuItem value="User 2">User 2</MenuItem>
@@ -195,15 +203,11 @@ console.log( JSON.stringify(payload));
           </Box>
 
           {/* Row 2: Created + Modified */}
-         
         </Box>
 
         {/* Right: Actions */}
         <Box sx={{ display: "flex", gap: 1 }}>
-          <Button
-            variant="outlined"
-            onClick={() => router.push("/dashboard/customers")}
-          >
+          <Button variant="outlined" onClick={() => router.push("/dashboard/customers")}>
             Cancel
           </Button>
           <Button type="submit" variant="contained" form="customer-form">
@@ -215,9 +219,14 @@ console.log( JSON.stringify(payload));
       <Divider />
 
       {/* === Main Layout: Left Form + Right Tables === */}
-      <Box component="form" id="customer-form" onSubmit={handleSave} sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 3 }}>
+      <Box
+        component="form"
+        id="customer-form"
+        onSubmit={handleSave}
+        sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 3 }}
+      >
         {/* Left side form */}
-        <CustomerFormLeft 
+        <CustomerFormLeft
           customerName={customerName}
           setCustomerName={setCustomerName}
           customerPhone={customerPhone}
@@ -251,11 +260,12 @@ console.log( JSON.stringify(payload));
           notes={notes}
           setNotes={setNotes}
           contacts={contacts}
-          setContacts={setContacts}
-        companyName={companyName}
+          // ✅ Pass wrapped setter to match child’s plain function prop
+          setContacts={setContactsPlain}
+          companyName={companyName}
           setCompanyName={setCompanyName}
           customers={customers}
-        />  
+        />
 
         {/* Right side placeholders */}
         <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
