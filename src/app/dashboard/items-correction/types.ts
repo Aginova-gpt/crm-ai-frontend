@@ -1,6 +1,15 @@
 export type ItemStatusWide =
-  | "ACTIVE" | "INACTIVE" | "END-OF-LIFE" | "DEPLOYED" | "IN-DEV"
-  | "ON-HOLD" | "PLANNED" | "PRODUCTION" | "PROPOSED" | "NONE" | null;
+  | "ACTIVE"
+  | "INACTIVE"
+  | "END-OF-LIFE"
+  | "DEPLOYED"
+  | "IN-DEV"
+  | "ON-HOLD"
+  | "PLANNED"
+  | "PRODUCTION"
+  | "PROPOSED"
+  | "NONE"
+  | null;
 
 export type ItemCorrectionRow = {
   item_id: string | number;
@@ -12,6 +21,10 @@ export type ItemCorrectionRow = {
   item_status?: ItemStatusWide;
   category?: string | null;
   subcategory?: string | null;
+
+  vendor_part_no?: string | null;
+  vendor_names?: string | null; // comma-separated human names
+  vendor_count?: number | null;
 
   // corrected values (from reference DB)
   correct_item_type?: "PRODUCT" | "PART" | null;
@@ -25,8 +38,8 @@ export type ItemCorrectionRow = {
   legacy_category?: string | null;
 
   // reference flags
-  in_reference?: boolean;          // already saved to reference?
-  ref_updated_at?: string | null;  // ISO datetime of last update in reference
+  in_reference?: boolean; // already saved to reference?
+  ref_updated_at?: string | null; // ISO datetime of last update in reference
 
   notes?: string | null;
 
