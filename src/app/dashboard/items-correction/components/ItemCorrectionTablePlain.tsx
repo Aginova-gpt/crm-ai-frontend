@@ -205,10 +205,10 @@ export default function ItemCorrectionTablePlain({
                 <TableCell sx={{ width: 60 }}>#</TableCell>
                 <TableCell sx={{ minWidth: 140 }}>Item Code</TableCell>
                 <TableCell sx={{ minWidth: 220 }}>Item Name</TableCell>
-                <TableCell sx={{ minWidth: 220 }}>Type</TableCell>
-                <TableCell sx={{ minWidth: 200 }}>Status</TableCell>
-                <TableCell sx={{ minWidth: 180 }}>Category</TableCell>
-                <TableCell sx={{ minWidth: 180 }}>
+                <TableCell sx={{ minWidth: 140 }}>Type</TableCell>
+                <TableCell sx={{ minWidth: 130 }}>Status</TableCell>
+                <TableCell sx={{ minWidth: 160 }}>Category</TableCell>
+                <TableCell sx={{ minWidth: 160 }}>
                   <Stack direction="row" alignItems="center" spacing={1}>
                     <span>Subcategory</span>
                     <Tooltip title="Add subcategory">
@@ -238,6 +238,8 @@ export default function ItemCorrectionTablePlain({
                     </Tooltip>
                   </Stack>
                 </TableCell>
+                <TableCell sx={{ minWidth: 160 }}>Vendor Part No.</TableCell>
+                <TableCell sx={{ minWidth: 220 }}>Vendors</TableCell>
                 <TableCell sx={{ minWidth: 160 }}>Legacy Status</TableCell>
                 <TableCell sx={{ minWidth: 160 }}>Legacy Category</TableCell>
                 <TableCell sx={{ minWidth: 260 }}>Notes</TableCell>
@@ -388,6 +390,27 @@ export default function ItemCorrectionTablePlain({
                           </MenuItem>
                         ))}
                       </Select>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" sx={{ fontFamily: "monospace", whiteSpace: "nowrap" }}>
+                        {row.vendor_part_no ?? "—"}
+                      </Typography>
+                    </TableCell>
+
+                    {/* NEW: Vendors (read-only) */}
+                    <TableCell>
+                      {row.vendor_names ? (
+                        <Tooltip title={row.vendor_names}>
+                          <Typography variant="body2" noWrap>
+                            {row.vendor_names}
+                            {typeof row.vendor_count === "number" && row.vendor_count > 1
+                              ? `  (+${row.vendor_count - 1} more)`
+                              : ""}
+                          </Typography>
+                        </Tooltip>
+                      ) : (
+                        <Typography variant="body2" color="text.secondary">—</Typography>
+                      )}
                     </TableCell>
 
                     <TableCell>{row.legacy_status ?? ""}</TableCell>
