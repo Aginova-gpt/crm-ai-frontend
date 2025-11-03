@@ -13,19 +13,137 @@ import {
 } from "@mui/material";
 import { useRouter } from "next/navigation";
 import CustomerFormLeft from "@/components/CustomerForm/CustomerFormLeft";
+import { useApi } from "@/utils/api";
+import { useBackend } from "@/contexts/BackendContext";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
+import { useMemo } from "react";
+
+type Customer = {
+  id: string;
+  name: string;
+  company_id?: string;
+};
+
+function useCustomers() {
+  const { token, isLoggedIn } = useAuth();
+  const { apiURL } = useBackend();
+
+  return useQuery({
+    queryKey: ["customers"],
+    queryFn: async () => {
+      const url = apiURL("accounts", "accounts.json");
+
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        if (res.status === 401)
+          throw new Error("Unauthorized – please log in again");
+        throw new Error(`Request failed: ${res.status}`);
+      }
+      return res.json();
+    },
+    enabled: isLoggedIn && !!token,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+}
 
 export default function CustomerDetailPage() {
   const router = useRouter();
+  const { fetchWithAuth } = useApi();
+  const { apiURL } = useBackend();
   const [assignedTo, setAssignedTo] = React.useState("");
+  const [customerName, setCustomerName] = React.useState("");
+  const [companyName, setCompanyName] = React.useState("");
+  const [customerPhone, setCustomerPhone] = React.useState("");
+  const [parent, setParent] = React.useState("");
+  const [customerEmail, setCustomerEmail] = React.useState("");
+  const [childrenList, setChildrenList] = React.useState("");
+  const [billingAddress, setBillingAddress] = React.useState("");
+  const [billingCity, setBillingCity] = React.useState("");
+  const [billingState, setBillingState] = React.useState("");
+  const [billingCode, setBillingCode] = React.useState("");
+  const [billingCountry, setBillingCountry] = React.useState("");
+  const [shippingAddress, setShippingAddress] = React.useState("");
+  const [shippingCity, setShippingCity] = React.useState("");
+  const [shippingState, setShippingState] = React.useState("");
+  const [shippingCode, setShippingCode] = React.useState("");
+  const [shippingCountry, setShippingCountry] = React.useState("");
+  const [notes, setNotes] = React.useState("");
+  const [contacts, setContacts] = React.useState([]);
+
+  // Fetch customers for parent dropdown
+  const { data: customersData } = useCustomers();
+  
+  const customers: Customer[] = useMemo(() => {
+    if (!customersData?.data) return [];
+    return customersData.data
+      .flatMap((company: any) =>
+        company.data.map((acc: any) => ({
+          id: String(acc.id),
+          name: acc.name,
+          company_id: company.company_id,
+        }))
+      )
+      .sort((a: Customer, b: Customer) => a.name.localeCompare(b.name));
+  }, [customersData]);
+  
+
+
+
+  //const { fetchWithAuth } = useApi();
 
   // Normally from backend
-  const customerName = "Customer Name";
-  const createdAt = "2025-09-11 10:30 AM";
-  const modifiedAt = "2025-09-11 11:15 AM";
+  //const customerName = "Customer Name";
+  //const createdAt = "2025-09-11 10:30 AM";
+  //const modifiedAt = "2025-09-11 11:15 AM";
 
-  const handleSave = () => {
-    console.log("Saving customer:", { assignedTo });
-    router.push("/dashboard/customers");
+  const handleSave = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+
+    const payload = {
+      assignedTo: assignedTo,
+      customerName: customerName,
+      customerPhone: customerPhone, 
+      companyName: companyName || "Hidden",
+      parent: parent,
+      customerEmail: customerEmail,
+      childrenList: childrenList,
+      billingAddress: billingAddress,
+      billingCity: billingCity,
+      billingState: billingState,
+      billingCode: billingCode,
+      billingCountry: billingCountry,
+      shippingAddress: shippingAddress,
+      shippingCity: shippingCity,
+      shippingState: shippingState,
+      shippingCode: shippingCode,
+      shippingCountry: shippingCountry,
+      notes: notes,
+      contacts: contacts,
+    };
+
+    try {
+      const url = apiURL("api/accounts", "customers");
+      const response = await fetchWithAuth(url, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+console.log( JSON.stringify(payload));
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: "Failed to save customer" }));
+        throw new Error(error.error || `Failed to save customer: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log("Customer saved successfully:", data);
+      router.push("/dashboard/customers");
+    } catch (error: any) {
+      console.error("Error saving customer:", error);
+      alert(error.message || "Failed to save customer");
+    }
   };
 
   return (
@@ -54,9 +172,13 @@ export default function CustomerDetailPage() {
         <Box sx={{ flex: "0 0 50%", display: "flex", flexDirection: "column", gap: 0.5 }}>
           {/* Row 1: Customer name + AssignedTo */}
           <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <Typography variant="h6" fontWeight={700} fontSize={16}>
-              {customerName}
+           
+            <Box sx={{ display: "flex", gap: 3, alignItems:"left" }}>
+            <Typography variant="body1" color="text.secondary" fontSize={30}>
+              Create New Account
             </Typography>
+            
+          </Box>
             <FormControl size="small" sx={{ minWidth: 300, marginRight: "30px" }}>
               <InputLabel id="assigned-to-label">Assigned To</InputLabel>
               <Select
@@ -73,14 +195,7 @@ export default function CustomerDetailPage() {
           </Box>
 
           {/* Row 2: Created + Modified */}
-          <Box sx={{ display: "flex", gap: 3 }}>
-            <Typography variant="body2" color="text.secondary" fontSize={12}>
-              Created: {createdAt}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" fontSize={12}>
-              Modified: {modifiedAt}
-            </Typography>
-          </Box>
+         
         </Box>
 
         {/* Right: Actions */}
@@ -91,7 +206,7 @@ export default function CustomerDetailPage() {
           >
             Cancel
           </Button>
-          <Button variant="contained" onClick={handleSave}>
+          <Button type="submit" variant="contained" form="customer-form">
             Save
           </Button>
         </Box>
@@ -100,9 +215,47 @@ export default function CustomerDetailPage() {
       <Divider />
 
       {/* === Main Layout: Left Form + Right Tables === */}
-      <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 3 }}>
+      <Box component="form" id="customer-form" onSubmit={handleSave} sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 3 }}>
         {/* Left side form */}
-        <CustomerFormLeft />
+        <CustomerFormLeft 
+          customerName={customerName}
+          setCustomerName={setCustomerName}
+          customerPhone={customerPhone}
+          setCustomerPhone={setCustomerPhone}
+          parent={parent}
+          setParent={setParent}
+          customerEmail={customerEmail}
+          setCustomerEmail={setCustomerEmail}
+          childrenList={childrenList}
+          setChildrenList={setChildrenList}
+          billingAddress={billingAddress}
+          setBillingAddress={setBillingAddress}
+          billingCity={billingCity}
+          setBillingCity={setBillingCity}
+          billingState={billingState}
+          setBillingState={setBillingState}
+          billingCode={billingCode}
+          setBillingCode={setBillingCode}
+          billingCountry={billingCountry}
+          setBillingCountry={setBillingCountry}
+          shippingAddress={shippingAddress}
+          setShippingAddress={setShippingAddress}
+          shippingCity={shippingCity}
+          setShippingCity={setShippingCity}
+          shippingState={shippingState}
+          setShippingState={setShippingState}
+          shippingCode={shippingCode}
+          setShippingCode={setShippingCode}
+          shippingCountry={shippingCountry}
+          setShippingCountry={setShippingCountry}
+          notes={notes}
+          setNotes={setNotes}
+          contacts={contacts}
+          setContacts={setContacts}
+        companyName={companyName}
+          setCompanyName={setCompanyName}
+          customers={customers}
+        />  
 
         {/* Right side placeholders */}
         <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
