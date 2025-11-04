@@ -233,8 +233,8 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                         filterOptions={(options, { inputValue }) => {
                             // Early return - no filtering needed if no input
                             if (!inputValue || inputValue.trim() === "") {
-                                // Return first 50 options for initial display to improve performance
-                                return options.slice(0, 50);
+                                // Return first 100 options for initial display to improve performance
+                                return options.slice(0, 100);
                             }
                             
                             // Optimized filtering: use for loop with early exit conditions
@@ -243,7 +243,7 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                             const maxResults = 100; // Limit results for better performance
                             
                             // Early exit if query is too short but still meaningful
-                            if (query.length < 1) return options.slice(0, 50);
+                            if (query.length < 1) return options.slice(0, 100);
                             
                             for (let i = 0; i < options.length && filtered.length < maxResults; i++) {
                                 const option = options[i];

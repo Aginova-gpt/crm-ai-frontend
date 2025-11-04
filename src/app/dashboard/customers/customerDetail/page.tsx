@@ -122,10 +122,25 @@ export default function CustomerDetailPage() {
           phone: customer.phone || "",
           email: customer.email || "",
           city: customer.city || "",
-          state: customer.state || "",
           street: customer.street || "",
+          state: customer.state || "",
           country: customer.country || "",
-          website: customer.website || "",
+          code: customer.address_code || "",
+
+          shipping_address: customer.shipping_address || "",
+          shipping_city: customer.shipping_city || "",
+          shipping_state: customer.shipping_state || "",
+          shipping_code: customer.shipping_code || "",
+          shipping_country: customer.shipping_country || "",
+
+        
+
+          notes: customer.notes || "",
+          contacts: customer.contacts || [],
+
+          children_list: customer.children_list || "",
+          parent: customer.parent_account_id || "",
+          company_name: customer.company_name || "",
           assigned_to: customer.assigned_to || null,
           // Add other fields as needed based on your API response
         };
@@ -144,6 +159,11 @@ export default function CustomerDetailPage() {
       setBillingState(customerToEdit.state || "");
       setBillingAddress(customerToEdit.street || "");
       setBillingCountry(customerToEdit.country || "");
+      setShippingAddress(customerToEdit.street || "");
+      setShippingCity(customerToEdit.city || "");
+      setShippingState(customerToEdit.state || "");
+      setShippingCode(customerToEdit.code || "");
+      setShippingCountry(customerToEdit.country || "");
       // Set assigned to if available
       if (customerToEdit.assigned_to) {
         setAssignedTo(`User ${customerToEdit.assigned_to}`);
@@ -194,6 +214,24 @@ export default function CustomerDetailPage() {
             city: billingCity,
             phone: customerPhone,
             assignedTo: assignedTo,
+            street: billingAddress,
+            country: billingCountry,
+            notes: notes,
+            contacts: contacts,
+            parent: parent,
+            childrenList: childrenList,
+            billingAddress: billingAddress,
+            billingCity: billingCity,
+            billingState: billingState,
+            billingCode: billingCode,
+            billingCountry: billingCountry,
+            shippingAddress: shippingAddress,
+            shippingCity: shippingCity,
+            shippingState: shippingState,
+            shippingCode: shippingCode,
+            shippingCountry: shippingCountry,
+
+
           }),
         });
 
