@@ -126,14 +126,22 @@ export default function CustomerDetailPage() {
       notes: notes,
       contacts: contacts,
     };
-
+console.log("Payload sent:", JSON.stringify(payload));
     try {
-      const url = apiURL("api/accounts", "customers");
-      const response = await fetchWithAuth(url, {
+      const response = await fetch("https://pythonify.info/savecustomer.py", {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(payload),
       });
+<<<<<<< Updated upstream
       console.log(JSON.stringify(payload));
+=======
+      
+      
+    
+>>>>>>> Stashed changes
       if (!response.ok) {
         const error = await response
           .json()
@@ -143,7 +151,7 @@ export default function CustomerDetailPage() {
         );
       }
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({ message: "Customer saved successfully" }));
       console.log("Customer saved successfully:", data);
       router.push("/dashboard/customers");
     } catch (error: any) {
@@ -179,6 +187,7 @@ export default function CustomerDetailPage() {
           sx={{ flex: "0 0 50%", display: "flex", flexDirection: "column", gap: 0.5 }}
         >
           {/* Row 1: Customer name + AssignedTo */}
+<<<<<<< Updated upstream
           <Box
             sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
           >
@@ -187,6 +196,16 @@ export default function CustomerDetailPage() {
                 Create New Account
               </Typography>
             </Box>
+=======
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+           
+            <Box sx={{ display: "flex", gap: 3, alignItems:"left" }}>
+            <Typography variant="body1" color="text.secondary" fontSize={30}>
+              Create New Customer
+            </Typography>
+            
+          </Box>
+>>>>>>> Stashed changes
             <FormControl size="small" sx={{ minWidth: 300, marginRight: "30px" }}>
               <InputLabel id="assigned-to-label">Assigned To</InputLabel>
               <Select

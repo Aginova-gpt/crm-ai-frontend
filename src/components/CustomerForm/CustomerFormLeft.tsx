@@ -15,6 +15,10 @@ import {
     TableBody,
     Tooltip,
     Autocomplete,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
 } from "@mui/material";
 import { MdDelete } from "react-icons/md";
 
@@ -121,8 +125,31 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
         return filtered.sort((a, b) => a.name.localeCompare(b.name));
     }, [customers, selectedCustomer]);
 
+    const [modalOpen, setModalOpen] = React.useState(false);
+    const [newContactName, setNewContactName] = React.useState("");
+    const [newContactPhone, setNewContactPhone] = React.useState("");
+    const [newContactEmail, setNewContactEmail] = React.useState("");
+
     const handleAddContact = () => {
-        setContacts([...contacts, { name: "", phone: "", email: "" }]);
+        setModalOpen(true);
+    };
+
+    const handleCloseModal = () => {
+        setModalOpen(false);
+        setNewContactName("");
+        setNewContactPhone("");
+        setNewContactEmail("");
+    };
+
+    const handleSaveContact = () => {
+        if (newContactName.trim()) {
+            setContacts([...contacts, { 
+                name: newContactName.trim(), 
+                phone: newContactPhone.trim(), 
+                email: newContactEmail.trim() 
+            }]);
+            handleCloseModal();
+        }
     };
 
     const handleDeleteContact = (index: number) => {
@@ -265,7 +292,7 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                         size="small"
                         label="Children List"
                         value={childrenList} 
-                        onChange={(e) => setChildrenList(e.target.value)} slotProps={{
+                       slotProps={{
                             input: { sx: { height: 32, fontSize: 12, paddingY: 0,},
                             },
                             inputLabel: {
@@ -435,6 +462,89 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                     </TableBody>
                 </Table>
             </Box>
+
+            {/* Add Contact Modal */}
+            <Dialog
+                open={modalOpen}
+                onClose={handleCloseModal}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle>Add Contact</DialogTitle>
+                <DialogContent>
+                    <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
+                        <TextField
+                            autoFocus
+                            label="Name"
+                            fullWidth
+                            size="small"
+                            required
+                            value={newContactName}
+                            onChange={(e) => setNewContactName(e.target.value)}
+                            onKeyPress={(e) => {
+                                if (e.key === "Enter") {
+                                    handleSaveContact();
+                                }
+                            }}
+                            slotProps={{
+                                input: { sx: { height: 32, fontSize: 12, paddingY: 0 } },
+                                inputLabel: {
+                                    sx: { fontSize: 12 },
+                                },
+                            }}
+                        />
+                        <TextField
+                            label="Phone"
+                            fullWidth
+                            size="small"
+                            value={newContactPhone}
+                            onChange={(e) => setNewContactPhone(e.target.value)}
+                            onKeyPress={(e) => {
+                                if (e.key === "Enter") {
+                                    handleSaveContact();
+                                }
+                            }}
+                            slotProps={{
+                                input: { sx: { height: 32, fontSize: 12, paddingY: 0 } },
+                                inputLabel: {
+                                    sx: { fontSize: 12 },
+                                },
+                            }}
+                        />
+                        <TextField
+                            label="Email"
+                            fullWidth
+                            size="small"
+                            value={newContactEmail}
+                            onChange={(e) => setNewContactEmail(e.target.value)}
+                            onKeyPress={(e) => {
+                                if (e.key === "Enter") {
+                                    handleSaveContact();
+                                }
+                            }}
+                            slotProps={{
+                                input: { sx: { height: 32, fontSize: 12, paddingY: 0 } },
+                                inputLabel: {
+                                    sx: { fontSize: 12 },
+                                },
+                            }}
+                        />
+                    </Box>
+                </DialogContent>
+                <DialogActions sx={{ marginRight: "15px", marginBottom: "10px" }}>
+                    <Button onClick={handleCloseModal} sx={{ color: "black" }}>
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleSaveContact}
+                        variant="contained"
+                        color="primary"
+                        disabled={!newContactName.trim()}
+                    >
+                        Save
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 }
