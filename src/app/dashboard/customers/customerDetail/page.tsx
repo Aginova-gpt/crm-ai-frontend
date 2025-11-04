@@ -135,13 +135,10 @@ console.log("Payload sent:", JSON.stringify(payload));
         },
         body: JSON.stringify(payload),
       });
-<<<<<<< Updated upstream
       console.log(JSON.stringify(payload));
-=======
       
       
     
->>>>>>> Stashed changes
       if (!response.ok) {
         const error = await response
           .json()
@@ -187,25 +184,14 @@ console.log("Payload sent:", JSON.stringify(payload));
           sx={{ flex: "0 0 50%", display: "flex", flexDirection: "column", gap: 0.5 }}
         >
           {/* Row 1: Customer name + AssignedTo */}
-<<<<<<< Updated upstream
           <Box
             sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
           >
             <Box sx={{ display: "flex", gap: 3, alignItems: "left" }}>
               <Typography variant="body1" color="text.secondary" fontSize={30}>
-                Create New Account
+                Create New Customer
               </Typography>
             </Box>
-=======
-          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-           
-            <Box sx={{ display: "flex", gap: 3, alignItems:"left" }}>
-            <Typography variant="body1" color="text.secondary" fontSize={30}>
-              Create New Customer
-            </Typography>
-            
-          </Box>
->>>>>>> Stashed changes
             <FormControl size="small" sx={{ minWidth: 300, marginRight: "30px" }}>
               <InputLabel id="assigned-to-label">Assigned To</InputLabel>
               <Select
