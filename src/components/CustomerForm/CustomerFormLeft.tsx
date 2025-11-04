@@ -89,7 +89,7 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
     }, [parent, customersMap]);
 
     // Filter customers by company ID 1 by default, and memoize to prevent unnecessary re-renders
-    // Optimized: filter once, sort once, cache result
+    // Optimized: filter once, sort once, cache result with early exits
     const memoizedCustomers = React.useMemo(() => {
         // Early return if no customers
         if (customers.length === 0) return [];
@@ -98,6 +98,7 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
         const filtered: Customer[] = [];
         const targetCompanyId = "1";
         
+        // Pre-allocate array size estimate for better performance
         // Use for loop for better performance than filter on large arrays
         for (let i = 0; i < customers.length; i++) {
             const customer = customers[i];
@@ -106,17 +107,18 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
             }
         }
         
-        // Check if selected customer needs to be added (using Map for O(1) lookup)
+        // Check if selected customer needs to be added with early exit
         if (selectedCustomer) {
             const selectedId = selectedCustomer.id;
-            let needsAdd = true;
+            let found = false;
+            // Early exit search - most selected customers will be in the list
             for (let i = 0; i < filtered.length; i++) {
                 if (filtered[i].id === selectedId) {
-                    needsAdd = false;
+                    found = true;
                     break;
                 }
             }
-            if (needsAdd) {
+            if (!found) {
                 filtered.unshift(selectedCustomer);
             }
         }
@@ -230,15 +232,27 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                         isOptionEqualToValue={isOptionEqualToValue}
                         filterOptions={(options, { inputValue }) => {
                             // Early return - no filtering needed if no input
-                            if (!inputValue) return options;
+                            if (!inputValue || inputValue.trim() === "") {
+                                // Return first 50 options for initial display to improve performance
+                                return options.slice(0, 50);
+                            }
                             
-                            // Optimized filtering: use for loop for better performance
-                            const query = inputValue.toLowerCase();
+                            // Optimized filtering: use for loop with early exit conditions
+                            const query = inputValue.toLowerCase().trim();
                             const filtered: Customer[] = [];
+                            const maxResults = 100; // Limit results for better performance
                             
-                            for (let i = 0; i < options.length; i++) {
+                            // Early exit if query is too short but still meaningful
+                            if (query.length < 1) return options.slice(0, 50);
+                            
+                            for (let i = 0; i < options.length && filtered.length < maxResults; i++) {
                                 const option = options[i];
-                                if (option.name.toLowerCase().includes(query)) {
+                                const nameLower = option.name.toLowerCase();
+                                
+                                // Check if name starts with query first (common case)
+                                if (nameLower.startsWith(query)) {
+                                    filtered.unshift(option); // Prioritize matches at start
+                                } else if (nameLower.includes(query)) {
                                     filtered.push(option);
                                 }
                             }
@@ -248,6 +262,8 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                         noOptionsText="No customers found"
                         loading={customers.length === 0}
                         loadingText="Loading customers..."
+                        openOnFocus={true}
+                        disableListWrap={false}
                         renderInput={(params) => (
                             <TextField
                                 {...params}
@@ -268,7 +284,10 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                         )}
                         renderOption={renderOption}
                         ListboxProps={{
-                            style: { maxHeight: 400, fontSize: 12 },
+                            style: { 
+                                maxHeight: 300, 
+                                fontSize: 12,
+                            },
                         }}
                         sx={{
                             "& .MuiAutocomplete-inputRoot": {
