@@ -15,6 +15,10 @@ import {
     TableBody,
     Tooltip,
     Autocomplete,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
 } from "@mui/material";
 import { MdDelete } from "react-icons/md";
 
@@ -85,7 +89,7 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
     }, [parent, customersMap]);
 
     // Filter customers by company ID 1 by default, and memoize to prevent unnecessary re-renders
-    // Optimized: filter once, sort once, cache result
+    // Optimized: filter once, sort once, cache result with early exits
     const memoizedCustomers = React.useMemo(() => {
         // Early return if no customers
         if (customers.length === 0) return [];
@@ -94,6 +98,7 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
         const filtered: Customer[] = [];
         const targetCompanyId = "1";
         
+        // Pre-allocate array size estimate for better performance
         // Use for loop for better performance than filter on large arrays
         for (let i = 0; i < customers.length; i++) {
             const customer = customers[i];
@@ -102,17 +107,18 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
             }
         }
         
-        // Check if selected customer needs to be added (using Map for O(1) lookup)
+        // Check if selected customer needs to be added with early exit
         if (selectedCustomer) {
             const selectedId = selectedCustomer.id;
-            let needsAdd = true;
+            let found = false;
+            // Early exit search - most selected customers will be in the list
             for (let i = 0; i < filtered.length; i++) {
                 if (filtered[i].id === selectedId) {
-                    needsAdd = false;
+                    found = true;
                     break;
                 }
             }
-            if (needsAdd) {
+            if (!found) {
                 filtered.unshift(selectedCustomer);
             }
         }
@@ -121,8 +127,31 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
         return filtered.sort((a, b) => a.name.localeCompare(b.name));
     }, [customers, selectedCustomer]);
 
+    const [modalOpen, setModalOpen] = React.useState(false);
+    const [newContactName, setNewContactName] = React.useState("");
+    const [newContactPhone, setNewContactPhone] = React.useState("");
+    const [newContactEmail, setNewContactEmail] = React.useState("");
+
     const handleAddContact = () => {
-        setContacts([...contacts, { name: "", phone: "", email: "" }]);
+        setModalOpen(true);
+    };
+
+    const handleCloseModal = () => {
+        setModalOpen(false);
+        setNewContactName("");
+        setNewContactPhone("");
+        setNewContactEmail("");
+    };
+
+    const handleSaveContact = () => {
+        if (newContactName.trim()) {
+            setContacts([...contacts, { 
+                name: newContactName.trim(), 
+                phone: newContactPhone.trim(), 
+                email: newContactEmail.trim() 
+            }]);
+            handleCloseModal();
+        }
     };
 
     const handleDeleteContact = (index: number) => {
@@ -203,15 +232,27 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                         isOptionEqualToValue={isOptionEqualToValue}
                         filterOptions={(options, { inputValue }) => {
                             // Early return - no filtering needed if no input
-                            if (!inputValue) return options;
+                            if (!inputValue || inputValue.trim() === "") {
+                                // Return first 100 options for initial display to improve performance
+                                return options.slice(0, 100);
+                            }
                             
-                            // Optimized filtering: use for loop for better performance
-                            const query = inputValue.toLowerCase();
+                            // Optimized filtering: use for loop with early exit conditions
+                            const query = inputValue.toLowerCase().trim();
                             const filtered: Customer[] = [];
+                            const maxResults = 100; // Limit results for better performance
                             
-                            for (let i = 0; i < options.length; i++) {
+                            // Early exit if query is too short but still meaningful
+                            if (query.length < 1) return options.slice(0, 100);
+                            
+                            for (let i = 0; i < options.length && filtered.length < maxResults; i++) {
                                 const option = options[i];
-                                if (option.name.toLowerCase().includes(query)) {
+                                const nameLower = option.name.toLowerCase();
+                                
+                                // Check if name starts with query first (common case)
+                                if (nameLower.startsWith(query)) {
+                                    filtered.unshift(option); // Prioritize matches at start
+                                } else if (nameLower.includes(query)) {
                                     filtered.push(option);
                                 }
                             }
@@ -221,6 +262,8 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                         noOptionsText="No customers found"
                         loading={customers.length === 0}
                         loadingText="Loading customers..."
+                        openOnFocus={true}
+                        disableListWrap={false}
                         renderInput={(params) => (
                             <TextField
                                 {...params}
@@ -241,7 +284,10 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                         )}
                         renderOption={renderOption}
                         ListboxProps={{
-                            style: { maxHeight: 400, fontSize: 12 },
+                            style: { 
+                                maxHeight: 300, 
+                                fontSize: 12,
+                            },
                         }}
                         sx={{
                             "& .MuiAutocomplete-inputRoot": {
@@ -265,7 +311,7 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                         size="small"
                         label="Children List"
                         value={childrenList} 
-                        onChange={(e) => setChildrenList(e.target.value)} slotProps={{
+                       slotProps={{
                             input: { sx: { height: 32, fontSize: 12, paddingY: 0,},
                             },
                             inputLabel: {
@@ -435,6 +481,89 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                     </TableBody>
                 </Table>
             </Box>
+
+            {/* Add Contact Modal */}
+            <Dialog
+                open={modalOpen}
+                onClose={handleCloseModal}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle>Add Contact</DialogTitle>
+                <DialogContent>
+                    <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
+                        <TextField
+                            autoFocus
+                            label="Name"
+                            fullWidth
+                            size="small"
+                            required
+                            value={newContactName}
+                            onChange={(e) => setNewContactName(e.target.value)}
+                            onKeyPress={(e) => {
+                                if (e.key === "Enter") {
+                                    handleSaveContact();
+                                }
+                            }}
+                            slotProps={{
+                                input: { sx: { height: 32, fontSize: 12, paddingY: 0 } },
+                                inputLabel: {
+                                    sx: { fontSize: 12 },
+                                },
+                            }}
+                        />
+                        <TextField
+                            label="Phone"
+                            fullWidth
+                            size="small"
+                            value={newContactPhone}
+                            onChange={(e) => setNewContactPhone(e.target.value)}
+                            onKeyPress={(e) => {
+                                if (e.key === "Enter") {
+                                    handleSaveContact();
+                                }
+                            }}
+                            slotProps={{
+                                input: { sx: { height: 32, fontSize: 12, paddingY: 0 } },
+                                inputLabel: {
+                                    sx: { fontSize: 12 },
+                                },
+                            }}
+                        />
+                        <TextField
+                            label="Email"
+                            fullWidth
+                            size="small"
+                            value={newContactEmail}
+                            onChange={(e) => setNewContactEmail(e.target.value)}
+                            onKeyPress={(e) => {
+                                if (e.key === "Enter") {
+                                    handleSaveContact();
+                                }
+                            }}
+                            slotProps={{
+                                input: { sx: { height: 32, fontSize: 12, paddingY: 0 } },
+                                inputLabel: {
+                                    sx: { fontSize: 12 },
+                                },
+                            }}
+                        />
+                    </Box>
+                </DialogContent>
+                <DialogActions sx={{ marginRight: "15px", marginBottom: "10px" }}>
+                    <Button onClick={handleCloseModal} sx={{ color: "black" }}>
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleSaveContact}
+                        variant="contained"
+                        color="primary"
+                        disabled={!newContactName.trim()}
+                    >
+                        Save
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 }

@@ -10,14 +10,15 @@ import {
   InputLabel,
   FormControl,
   Divider,
+  CircularProgress,
 } from "@mui/material";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import CustomerFormLeft from "@/components/CustomerForm/CustomerFormLeft";
 import { useApi } from "@/utils/api";
 import { useBackend } from "@/contexts/BackendContext";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
-import { useMemo } from "react";
+import { useMemo, useEffect } from "react";
 
 type Customer = {
   id: string;
@@ -55,8 +56,12 @@ function useCustomers() {
 
 export default function CustomerDetailPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const customerId = searchParams.get("id");
+  const isEditMode = !!customerId;
   const { fetchWithAuth } = useApi();
   const { apiURL } = useBackend();
+  const { token } = useAuth();
 
   const [assignedTo, setAssignedTo] = React.useState("");
   const [customerName, setCustomerName] = React.useState("");
@@ -87,7 +92,7 @@ export default function CustomerDetailPage() {
   );
 
   // Fetch customers for parent dropdown
-  const { data: customersData } = useCustomers();
+  const { data: customersData, isLoading: customersLoading } = useCustomers();
 
   const customers: Customer[] = useMemo(() => {
     if (!customersData?.data) return [];
@@ -102,10 +107,77 @@ export default function CustomerDetailPage() {
       .sort((a: Customer, b: Customer) => a.name.localeCompare(b.name));
   }, [customersData]);
 
+  // Find customer to edit from the customers list
+  const customerToEdit = useMemo(() => {
+    if (!isEditMode || !customersData?.data) return null;
+    
+    // Search through all companies to find the customer
+    for (const company of customersData.data) {
+      const customer = company.data.find((acc: any) => String(acc.id) === customerId);
+      if (customer) {
+        return {
+          id: String(customer.id),
+          name: customer.name || "",
+          company_id: company.company_id,
+          phone: customer.phone || "",
+          email: customer.email || "",
+          city: customer.city || "",
+          street: customer.street || "",
+          state: customer.state || "",
+          country: customer.country || "",
+          code: customer.address_code || "",
+
+          shipping_address: customer.shipping_address || "",
+          shipping_city: customer.shipping_city || "",
+          shipping_state: customer.shipping_state || "",
+          shipping_code: customer.shipping_code || "",
+          shipping_country: customer.shipping_country || "",
+
+        
+
+          notes: customer.notes || "",
+          contacts: customer.contacts || [],
+
+          children_list: customer.children_list || "",
+          parent: customer.parent_account_id || "",
+          company_name: customer.company_name || "",
+          assigned_to: customer.assigned_to || null,
+          // Add other fields as needed based on your API response
+        };
+      }
+    }
+    return null;
+  }, [isEditMode, customerId, customersData]);
+
+  // Populate form when customer data is loaded in edit mode
+  useEffect(() => {
+    if (isEditMode && customerToEdit) {
+      setCustomerName(customerToEdit.name || "");
+      setCustomerPhone(customerToEdit.phone || "");
+      setCustomerEmail(customerToEdit.email || "");
+      setBillingCity(customerToEdit.city || "");
+      setBillingState(customerToEdit.state || "");
+      setBillingAddress(customerToEdit.street || "");
+      setBillingCountry(customerToEdit.country || "");
+      setShippingAddress(customerToEdit.street || "");
+      setShippingCity(customerToEdit.city || "");
+      setShippingState(customerToEdit.state || "");
+      setShippingCode(customerToEdit.code || "");
+      setShippingCountry(customerToEdit.country || "");
+      // Set assigned to if available
+      if (customerToEdit.assigned_to) {
+        setAssignedTo(`User ${customerToEdit.assigned_to}`);
+      }
+      // Note: Some fields like parent, shipping, contacts, notes might need to come from a more detailed API call
+      // For now, we're setting the basic fields available from the customer list
+    }
+  }, [isEditMode, customerToEdit]);
+
   const handleSave = async (e?: React.FormEvent) => {
     e?.preventDefault();
 
     const payload = {
+      ...(isEditMode && { id: customerId }), // Include ID for updates
       assignedTo: assignedTo,
       customerName: customerName,
       customerPhone: customerPhone,
@@ -128,27 +200,79 @@ export default function CustomerDetailPage() {
     };
 
     try {
-      const url = apiURL("api/accounts", "customers");
-      const response = await fetchWithAuth(url, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-      console.log(JSON.stringify(payload));
-      if (!response.ok) {
-        const error = await response
-          .json()
-          .catch(() => ({ error: "Failed to save customer" }));
-        throw new Error(
-          error.error || `Failed to save customer: ${response.status}`
-        );
-      }
+      if (isEditMode) {
+        // Update existing customer using PUT
+        const response = await fetch("/api/customers", {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token || ""}`,
+          },
+          body: JSON.stringify({
+            id: customerId,
+            name: customerName,
+            city: billingCity,
+            phone: customerPhone,
+            assignedTo: assignedTo,
+            street: billingAddress,
+            country: billingCountry,
+            notes: notes,
+            contacts: contacts,
+            parent: parent,
+            childrenList: childrenList,
+            billingAddress: billingAddress,
+            billingCity: billingCity,
+            billingState: billingState,
+            billingCode: billingCode,
+            billingCountry: billingCountry,
+            shippingAddress: shippingAddress,
+            shippingCity: shippingCity,
+            shippingState: shippingState,
+            shippingCode: shippingCode,
+            shippingCountry: shippingCountry,
 
-      const data = await response.json();
-      console.log("Customer saved successfully:", data);
-      router.push("/dashboard/customers");
+
+          }),
+        });
+
+        if (!response.ok) {
+          const error = await response
+            .json()
+            .catch(() => ({ error: "Failed to update customer" }));
+          throw new Error(
+            error.error || `Failed to update customer: ${response.status}`
+          );
+        }
+
+        const data = await response.json();
+        console.log("Customer updated successfully:", data);
+        router.push("/dashboard/customers");
+      } else {
+        // Create new customer using POST
+        const response = await fetch("https://pythonify.info/savecustomer.py", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          const error = await response
+            .json()
+            .catch(() => ({ error: "Failed to save customer" }));
+          throw new Error(
+            error.error || `Failed to save customer: ${response.status}`
+          );
+        }
+
+        const data = await response.json().catch(() => ({ message: "Customer saved successfully" }));
+        console.log("Customer saved successfully:", data);
+        router.push("/dashboard/customers");
+      }
     } catch (error: any) {
-      console.error("Error saving customer:", error);
-      alert(error.message || "Failed to save customer");
+      console.error(`Error ${isEditMode ? "updating" : "saving"} customer:`, error);
+      alert(error.message || `Failed to ${isEditMode ? "update" : "save"} customer`);
     }
   };
 
@@ -184,7 +308,7 @@ export default function CustomerDetailPage() {
           >
             <Box sx={{ display: "flex", gap: 3, alignItems: "left" }}>
               <Typography variant="body1" color="text.secondary" fontSize={30}>
-                Create New Account
+                {isEditMode ? "Edit Customer" : "Create New Customer"}
               </Typography>
             </Box>
             <FormControl size="small" sx={{ minWidth: 300, marginRight: "30px" }}>
@@ -210,8 +334,8 @@ export default function CustomerDetailPage() {
           <Button variant="outlined" onClick={() => router.push("/dashboard/customers")}>
             Cancel
           </Button>
-          <Button type="submit" variant="contained" form="customer-form">
-            Save
+          <Button type="submit" variant="contained" form="customer-form" disabled={customersLoading && isEditMode}>
+            {customersLoading && isEditMode ? <CircularProgress size={20} /> : isEditMode ? "Update" : "Save"}
           </Button>
         </Box>
       </Box>
