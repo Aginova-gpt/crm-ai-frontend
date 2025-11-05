@@ -243,13 +243,13 @@ export default function CustomersPage() {
 
   // ===== Placeholder Actions =====
   const handleEditCustomer = (c: Customer) => {
-    router.push(`/dashboard/customers/customerDetail?id=${c.id}`);
+    router.push(`/dashboard/customers/customerDetail/${c.id}`);
   };
   const handleDeleteCustomer = (c: Customer) => {
     console.log("Delete clicked for:", c.name);
   };
   const handleAddCustomer = () => {
-    router.push("/dashboard/customers/customerDetail");
+    router.push(`/dashboard/customers/customerDetail/new`);  
   };
 
   return (

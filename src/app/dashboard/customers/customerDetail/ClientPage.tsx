@@ -1,13 +1,11 @@
-// app/dashboard/customers/customerDetail/page.tsx
 "use client";
 
 import * as React from "react";
-import { Suspense } from "react";
 import {
   Box, Typography, Button, MenuItem, Select, InputLabel,
   FormControl, Divider, CircularProgress,
 } from "@mui/material";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";              // ⬅️ keep router
 import CustomerFormLeft from "@/components/CustomerForm/CustomerFormLeft";
 import { useApi } from "@/utils/api";
 import { useBackend } from "@/contexts/BackendContext";
@@ -15,8 +13,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMemo, useEffect } from "react";
 
-export const dynamic = "force-dynamic";     // <-- prevents static prerender issues
-export const revalidate = 0;                // <-- (optional) ensure request-time behavior
+// ⬇️ Add props type. No search params here.
+type Props = { customerId?: string };
 
 type Customer = {
   id: string;
@@ -47,12 +45,9 @@ function useCustomers() {
   });
 }
 
-/** All your original logic moved here */
-function CustomerDetailContent() {
+export default function ClientPage({ customerId }: Props) {
   const router = useRouter();
-  const searchParams = useSearchParams();              // <-- hook stays here
-  const customerId = searchParams.get("id");
-  const isEditMode = !!customerId;
+  const isEditMode = !!customerId;                           // ⬅️ drive mode from prop
   const { fetchWithAuth } = useApi();
   const { apiURL } = useBackend();
   const { token } = useAuth();
@@ -75,6 +70,7 @@ function CustomerDetailContent() {
   const [shippingCode, setShippingCode] = React.useState("");
   const [shippingCountry, setShippingCountry] = React.useState("");
   const [notes, setNotes] = React.useState("");
+
   const [contacts, setContacts] = React.useState<Contact[]>([]);
   const setContactsPlain = React.useCallback((value: Contact[]) => setContacts(value), []);
 
@@ -146,6 +142,7 @@ function CustomerDetailContent() {
 
   const handleSave = async (e?: React.FormEvent) => {
     e?.preventDefault();
+
     const payload = {
       ...(isEditMode && { id: customerId }),
       assignedTo,
@@ -298,14 +295,5 @@ function CustomerDetailContent() {
         </Box>
       </Box>
     </Box>
-  );
-}
-
-/** Page export that wraps the content in Suspense */
-export default function CustomerDetailPage() {
-  return (
-    <Suspense fallback={<div style={{ padding: 16 }}>Loading customer…</div>}>
-      <CustomerDetailContent />
-    </Suspense>
   );
 }
