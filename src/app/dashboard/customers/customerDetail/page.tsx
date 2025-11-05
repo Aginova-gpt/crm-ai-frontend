@@ -1,16 +1,11 @@
+// app/dashboard/customers/customerDetail/page.tsx
 "use client";
 
 import * as React from "react";
+import { Suspense } from "react";
 import {
-  Box,
-  Typography,
-  Button,
-  MenuItem,
-  Select,
-  InputLabel,
-  FormControl,
-  Divider,
-  CircularProgress,
+  Box, Typography, Button, MenuItem, Select, InputLabel,
+  FormControl, Divider, CircularProgress,
 } from "@mui/material";
 import { useRouter, useSearchParams } from "next/navigation";
 import CustomerFormLeft from "@/components/CustomerForm/CustomerFormLeft";
@@ -20,13 +15,15 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMemo, useEffect } from "react";
 
+export const dynamic = "force-dynamic";     // <-- prevents static prerender issues
+export const revalidate = 0;                // <-- (optional) ensure request-time behavior
+
 type Customer = {
   id: string;
   name: string;
   company_id?: string;
 };
 
-// ✅ Explicitly type Contact so useState doesn’t infer never[]
 type Contact = { name: string; phone: string; email: string };
 
 function useCustomers() {
@@ -37,13 +34,9 @@ function useCustomers() {
     queryKey: ["customers"],
     queryFn: async () => {
       const url = apiURL("accounts", "accounts.json");
-
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) {
-        if (res.status === 401)
-          throw new Error("Unauthorized – please log in again");
+        if (res.status === 401) throw new Error("Unauthorized – please log in again");
         throw new Error(`Request failed: ${res.status}`);
       }
       return res.json();
@@ -54,9 +47,10 @@ function useCustomers() {
   });
 }
 
-export default function CustomerDetailPage() {
+/** All your original logic moved here */
+function CustomerDetailContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams();              // <-- hook stays here
   const customerId = searchParams.get("id");
   const isEditMode = !!customerId;
   const { fetchWithAuth } = useApi();
@@ -81,17 +75,9 @@ export default function CustomerDetailPage() {
   const [shippingCode, setShippingCode] = React.useState("");
   const [shippingCountry, setShippingCountry] = React.useState("");
   const [notes, setNotes] = React.useState("");
-
-  // ✅ Properly typed contacts state
   const [contacts, setContacts] = React.useState<Contact[]>([]);
+  const setContactsPlain = React.useCallback((value: Contact[]) => setContacts(value), []);
 
-  // ✅ Wrapper so the child can keep a simple `(value: Contact[]) => void` prop
-  const setContactsPlain = React.useCallback(
-    (value: Contact[]) => setContacts(value),
-    []
-  );
-
-  // Fetch customers for parent dropdown
   const { data: customersData, isLoading: customersLoading } = useCustomers();
 
   const customers: Customer[] = useMemo(() => {
@@ -107,11 +93,8 @@ export default function CustomerDetailPage() {
       .sort((a: Customer, b: Customer) => a.name.localeCompare(b.name));
   }, [customersData]);
 
-  // Find customer to edit from the customers list
   const customerToEdit = useMemo(() => {
     if (!isEditMode || !customersData?.data) return null;
-    
-    // Search through all companies to find the customer
     for (const company of customersData.data) {
       const customer = company.data.find((acc: any) => String(acc.id) === customerId);
       if (customer) {
@@ -126,30 +109,23 @@ export default function CustomerDetailPage() {
           state: customer.state || "",
           country: customer.country || "",
           code: customer.address_code || "",
-
           shipping_address: customer.shipping_address || "",
           shipping_city: customer.shipping_city || "",
           shipping_state: customer.shipping_state || "",
           shipping_code: customer.shipping_code || "",
           shipping_country: customer.shipping_country || "",
-
-        
-
           notes: customer.notes || "",
           contacts: customer.contacts || [],
-
           children_list: customer.children_list || "",
           parent: customer.parent_account_id || "",
           company_name: customer.company_name || "",
           assigned_to: customer.assigned_to || null,
-          // Add other fields as needed based on your API response
         };
       }
     }
     return null;
   }, [isEditMode, customerId, customersData]);
 
-  // Populate form when customer data is loaded in edit mode
   useEffect(() => {
     if (isEditMode && customerToEdit) {
       setCustomerName(customerToEdit.name || "");
@@ -164,44 +140,37 @@ export default function CustomerDetailPage() {
       setShippingState(customerToEdit.state || "");
       setShippingCode(customerToEdit.code || "");
       setShippingCountry(customerToEdit.country || "");
-      // Set assigned to if available
-      if (customerToEdit.assigned_to) {
-        setAssignedTo(`User ${customerToEdit.assigned_to}`);
-      }
-      // Note: Some fields like parent, shipping, contacts, notes might need to come from a more detailed API call
-      // For now, we're setting the basic fields available from the customer list
+      if (customerToEdit.assigned_to) setAssignedTo(`User ${customerToEdit.assigned_to}`);
     }
   }, [isEditMode, customerToEdit]);
 
   const handleSave = async (e?: React.FormEvent) => {
     e?.preventDefault();
-
     const payload = {
-      ...(isEditMode && { id: customerId }), // Include ID for updates
-      assignedTo: assignedTo,
-      customerName: customerName,
-      customerPhone: customerPhone,
+      ...(isEditMode && { id: customerId }),
+      assignedTo,
+      customerName,
+      customerPhone,
       companyName: companyName || "Hidden",
-      parent: parent,
-      customerEmail: customerEmail,
-      childrenList: childrenList,
-      billingAddress: billingAddress,
-      billingCity: billingCity,
-      billingState: billingState,
-      billingCode: billingCode,
-      billingCountry: billingCountry,
-      shippingAddress: shippingAddress,
-      shippingCity: shippingCity,
-      shippingState: shippingState,
-      shippingCode: shippingCode,
-      shippingCountry: shippingCountry,
-      notes: notes,
-      contacts: contacts,
+      parent,
+      customerEmail,
+      childrenList,
+      billingAddress,
+      billingCity,
+      billingState,
+      billingCode,
+      billingCountry,
+      shippingAddress,
+      shippingCity,
+      shippingState,
+      shippingCode,
+      shippingCountry,
+      notes,
+      contacts,
     };
 
     try {
       if (isEditMode) {
-        // Update existing customer using PUT
         const response = await fetch("/api/customers", {
           method: "PUT",
           headers: {
@@ -213,61 +182,42 @@ export default function CustomerDetailPage() {
             name: customerName,
             city: billingCity,
             phone: customerPhone,
-            assignedTo: assignedTo,
+            assignedTo,
             street: billingAddress,
             country: billingCountry,
-            notes: notes,
-            contacts: contacts,
-            parent: parent,
-            childrenList: childrenList,
-            billingAddress: billingAddress,
-            billingCity: billingCity,
-            billingState: billingState,
-            billingCode: billingCode,
-            billingCountry: billingCountry,
-            shippingAddress: shippingAddress,
-            shippingCity: shippingCity,
-            shippingState: shippingState,
-            shippingCode: shippingCode,
-            shippingCountry: shippingCountry,
-
-
+            notes,
+            contacts,
+            parent,
+            childrenList,
+            billingAddress,
+            billingCity,
+            billingState,
+            billingCode,
+            billingCountry,
+            shippingAddress,
+            shippingCity,
+            shippingState,
+            shippingCode,
+            shippingCountry,
           }),
         });
-
         if (!response.ok) {
-          const error = await response
-            .json()
-            .catch(() => ({ error: "Failed to update customer" }));
-          throw new Error(
-            error.error || `Failed to update customer: ${response.status}`
-          );
+          const error = await response.json().catch(() => ({ error: "Failed to update customer" }));
+          throw new Error(error.error || `Failed to update customer: ${response.status}`);
         }
-
-        const data = await response.json();
-        console.log("Customer updated successfully:", data);
+        await response.json().catch(() => ({}));
         router.push("/dashboard/customers");
       } else {
-        // Create new customer using POST
         const response = await fetch("https://pythonify.info/savecustomer.py", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-
         if (!response.ok) {
-          const error = await response
-            .json()
-            .catch(() => ({ error: "Failed to save customer" }));
-          throw new Error(
-            error.error || `Failed to save customer: ${response.status}`
-          );
+          const error = await response.json().catch(() => ({ error: "Failed to save customer" }));
+          throw new Error(error.error || `Failed to save customer: ${response.status}`);
         }
-
-        const data = await response.json().catch(() => ({ message: "Customer saved successfully" }));
-        console.log("Customer saved successfully:", data);
+        await response.json().catch(() => ({}));
         router.push("/dashboard/customers");
       }
     } catch (error: any) {
@@ -277,35 +227,10 @@ export default function CustomerDetailPage() {
   };
 
   return (
-    <Box
-      sx={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 2,
-        bgcolor: "#FAFAFD",
-        p: 2,
-        borderRadius: 1,
-      }}
-    >
-      {/* === Top Section === */}
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          bgcolor: "#FFF",
-          p: 2,
-          borderRadius: 1,
-        }}
-      >
-        {/* Left: constrained to left column width */}
-        <Box
-          sx={{ flex: "0 0 50%", display: "flex", flexDirection: "column", gap: 0.5 }}
-        >
-          {/* Row 1: Customer name + AssignedTo */}
-          <Box
-            sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
-          >
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 2, bgcolor: "#FAFAFD", p: 2, borderRadius: 1 }}>
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", bgcolor: "#FFF", p: 2, borderRadius: 1 }}>
+        <Box sx={{ flex: "0 0 50%", display: "flex", flexDirection: "column", gap: 0.5 }}>
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <Box sx={{ display: "flex", gap: 3, alignItems: "left" }}>
               <Typography variant="body1" color="text.secondary" fontSize={30}>
                 {isEditMode ? "Edit Customer" : "Create New Customer"}
@@ -325,15 +250,10 @@ export default function CustomerDetailPage() {
               </Select>
             </FormControl>
           </Box>
-
-          {/* Row 2: Created + Modified */}
         </Box>
 
-        {/* Right: Actions */}
         <Box sx={{ display: "flex", gap: 1 }}>
-          <Button variant="outlined" onClick={() => router.push("/dashboard/customers")}>
-            Cancel
-          </Button>
+          <Button variant="outlined" onClick={() => router.push("/dashboard/customers")}>Cancel</Button>
           <Button type="submit" variant="contained" form="customer-form" disabled={customersLoading && isEditMode}>
             {customersLoading && isEditMode ? <CircularProgress size={20} /> : isEditMode ? "Update" : "Save"}
           </Button>
@@ -342,74 +262,50 @@ export default function CustomerDetailPage() {
 
       <Divider />
 
-      {/* === Main Layout: Left Form + Right Tables === */}
-      <Box
-        component="form"
-        id="customer-form"
-        onSubmit={handleSave}
-        sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 3 }}
-      >
-        {/* Left side form */}
+      <Box component="form" id="customer-form" onSubmit={handleSave} sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 3 }}>
         <CustomerFormLeft
-          customerName={customerName}
-          setCustomerName={setCustomerName}
-          customerPhone={customerPhone}
-          setCustomerPhone={setCustomerPhone}
-          parent={parent}
-          setParent={setParent}
-          customerEmail={customerEmail}
-          setCustomerEmail={setCustomerEmail}
-          childrenList={childrenList}
-          setChildrenList={setChildrenList}
-          billingAddress={billingAddress}
-          setBillingAddress={setBillingAddress}
-          billingCity={billingCity}
-          setBillingCity={setBillingCity}
-          billingState={billingState}
-          setBillingState={setBillingState}
-          billingCode={billingCode}
-          setBillingCode={setBillingCode}
-          billingCountry={billingCountry}
-          setBillingCountry={setBillingCountry}
-          shippingAddress={shippingAddress}
-          setShippingAddress={setShippingAddress}
-          shippingCity={shippingCity}
-          setShippingCity={setShippingCity}
-          shippingState={shippingState}
-          setShippingState={setShippingState}
-          shippingCode={shippingCode}
-          setShippingCode={setShippingCode}
-          shippingCountry={shippingCountry}
-          setShippingCountry={setShippingCountry}
-          notes={notes}
-          setNotes={setNotes}
-          contacts={contacts}
-          // ✅ Pass wrapped setter to match child’s plain function prop
-          setContacts={setContactsPlain}
-          companyName={companyName}
-          setCompanyName={setCompanyName}
+          customerName={customerName} setCustomerName={setCustomerName}
+          customerPhone={customerPhone} setCustomerPhone={setCustomerPhone}
+          parent={parent} setParent={setParent}
+          customerEmail={customerEmail} setCustomerEmail={setCustomerEmail}
+          childrenList={childrenList} setChildrenList={setChildrenList}
+          billingAddress={billingAddress} setBillingAddress={setBillingAddress}
+          billingCity={billingCity} setBillingCity={setBillingCity}
+          billingState={billingState} setBillingState={setBillingState}
+          billingCode={billingCode} setBillingCode={setBillingCode}
+          billingCountry={billingCountry} setBillingCountry={setBillingCountry}
+          shippingAddress={shippingAddress} setShippingAddress={setShippingAddress}
+          shippingCity={shippingCity} setShippingCity={setShippingCity}
+          shippingState={shippingState} setShippingState={setShippingState}
+          shippingCode={shippingCode} setShippingCode={setShippingCode}
+          shippingCountry={shippingCountry} setShippingCountry={setShippingCountry}
+          notes={notes} setNotes={setNotes}
+          contacts={contacts} setContacts={setContactsPlain}
+          companyName={companyName} setCompanyName={setCompanyName}
           customers={customers}
         />
 
-        {/* Right side placeholders */}
         <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
           <Box sx={{ bgcolor: "#FFF", p: 2, borderRadius: 1 }}>
-            <Typography fontWeight={600} sx={{ mb: 1 }}>
-              Orders
-            </Typography>
+            <Typography fontWeight={600} sx={{ mb: 1 }}>Orders</Typography>
           </Box>
           <Box sx={{ bgcolor: "#FFF", p: 2, borderRadius: 1 }}>
-            <Typography fontWeight={600} sx={{ mb: 1 }}>
-              Quotes
-            </Typography>
+            <Typography fontWeight={600} sx={{ mb: 1 }}>Quotes</Typography>
           </Box>
           <Box sx={{ bgcolor: "#FFF", p: 2, borderRadius: 1 }}>
-            <Typography fontWeight={600} sx={{ mb: 1 }}>
-              Invoices
-            </Typography>
+            <Typography fontWeight={600} sx={{ mb: 1 }}>Invoices</Typography>
           </Box>
         </Box>
       </Box>
     </Box>
+  );
+}
+
+/** Page export that wraps the content in Suspense */
+export default function CustomerDetailPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 16 }}>Loading customer…</div>}>
+      <CustomerDetailContent />
+    </Suspense>
   );
 }
