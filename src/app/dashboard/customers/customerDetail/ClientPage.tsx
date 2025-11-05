@@ -3,7 +3,7 @@
 import * as React from "react";
 import {
   Box, Typography, Button, MenuItem, Select, InputLabel,
-  FormControl, Divider, CircularProgress,
+  FormControl, Divider, CircularProgress, TextField,
 } from "@mui/material";
 import { useRouter } from "next/navigation";              // ⬅️ keep router
 import CustomerFormLeft from "@/components/CustomerForm/CustomerFormLeft";
@@ -11,6 +11,7 @@ import { useApi } from "@/utils/api";
 import { useBackend } from "@/contexts/BackendContext";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCompany } from "@/contexts/CompanyContext";
 import { useMemo, useEffect } from "react";
 
 // ⬇️ Add props type. No search params here.
@@ -45,12 +46,34 @@ function useCustomers() {
   });
 }
 
+function useUsers(companyId: number | string) {
+  const { token, isLoggedIn } = useAuth();
+  const { fetchWithAuth } = useApi();
+
+  return useQuery({
+    queryKey: ["users", companyId],
+    queryFn: async () => {
+      const url = `http://34.58.37.44/api/users?company_id=${companyId}`;
+      const res = await fetchWithAuth(url);
+      if (!res.ok) {
+        if (res.status === 401) throw new Error("Unauthorized – please log in again");
+        throw new Error(`Request failed: ${res.status}`);
+      }
+      return res.json();
+    },
+    enabled: isLoggedIn && !!token && !!companyId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+  });
+}
+
 export default function ClientPage({ customerId }: Props) {
   const router = useRouter();
   const isEditMode = !!customerId;                           // ⬅️ drive mode from prop
   const { fetchWithAuth } = useApi();
   const { apiURL } = useBackend();
   const { token } = useAuth();
+  const { selectedCompanyName, selectedCompanyId } = useCompany();
 
   const [assignedTo, setAssignedTo] = React.useState("");
   const [customerName, setCustomerName] = React.useState("");
@@ -122,6 +145,30 @@ export default function ClientPage({ customerId }: Props) {
     return null;
   }, [isEditMode, customerId, customersData]);
 
+  // Determine company ID for users API
+  const companyIdForUsers = useMemo(() => {
+    if (isEditMode && customerToEdit?.company_id) {
+      return customerToEdit.company_id;
+    }
+    return selectedCompanyId && selectedCompanyId !== "all" ? selectedCompanyId : "1";
+  }, [isEditMode, customerToEdit?.company_id, selectedCompanyId]);
+
+  const { data: usersData, isLoading: usersLoading } = useUsers(companyIdForUsers);
+
+  // Extract and format users from API response
+  const users = useMemo(() => {
+    if (!usersData?.data) return [];
+    // The API returns data as { "CompanyName": [users...] }
+    const usersArray = Object.values(usersData.data).flat() as any[];
+    return usersArray
+      .map((user: any) => ({
+        id: user.user_id,
+        username: user.username || `User ${user.user_id}`,
+        value: String(user.user_id),
+      }))
+      .sort((a, b) => a.username.localeCompare(b.username));
+  }, [usersData]);
+
   useEffect(() => {
     if (isEditMode && customerToEdit) {
       setCustomerName(customerToEdit.name || "");
@@ -136,16 +183,31 @@ export default function ClientPage({ customerId }: Props) {
       setShippingState(customerToEdit.state || "");
       setShippingCode(customerToEdit.code || "");
       setShippingCountry(customerToEdit.country || "");
-      if (customerToEdit.assigned_to) setAssignedTo(`User ${customerToEdit.assigned_to}`);
+      if (customerToEdit.assigned_to) setAssignedTo(String(customerToEdit.assigned_to));
+      setCompanyName(customerToEdit.company_name || "");
+      setParent(customerToEdit.parent || "");
+      setChildrenList(customerToEdit.children_list || "");
+      setNotes(customerToEdit.notes || "");
+      if (customerToEdit.contacts) setContacts(customerToEdit.contacts);
     }
   }, [isEditMode, customerToEdit]);
+
+  // Auto-populate company name when creating a new customer
+  useEffect(() => {
+    if (!isEditMode && selectedCompanyName && selectedCompanyId && selectedCompanyId !== "all") {
+      setCompanyName(selectedCompanyName);
+    }
+  }, [isEditMode, selectedCompanyName, selectedCompanyId]);
 
   const handleSave = async (e?: React.FormEvent) => {
     e?.preventDefault();
 
+    // Format assignedTo as "User X" for API compatibility, or null if empty
+    const formattedAssignedTo = assignedTo ? (assignedTo.startsWith("User ") ? assignedTo : `User ${assignedTo}`) : null;
+
     const payload = {
       ...(isEditMode && { id: customerId }),
-      assignedTo,
+      assignedTo: formattedAssignedTo,
       customerName,
       customerPhone,
       companyName: companyName || "Hidden",
@@ -179,7 +241,7 @@ export default function ClientPage({ customerId }: Props) {
             name: customerName,
             city: billingCity,
             phone: customerPhone,
-            assignedTo,
+            assignedTo: formattedAssignedTo,
             street: billingAddress,
             country: billingCountry,
             notes,
@@ -227,25 +289,60 @@ export default function ClientPage({ customerId }: Props) {
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2, bgcolor: "#FAFAFD", p: 2, borderRadius: 1 }}>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", bgcolor: "#FFF", p: 2, borderRadius: 1 }}>
         <Box sx={{ flex: "0 0 50%", display: "flex", flexDirection: "column", gap: 0.5 }}>
-          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "left" }}>
             <Box sx={{ display: "flex", gap: 3, alignItems: "left" }}>
-              <Typography variant="body1" color="text.secondary" fontSize={30}>
+              <Typography variant="body1" color="text.secondary" fontSize={30} sx={{ whiteSpace: "nowrap" }}>
                 {isEditMode ? "Edit Customer" : "Create New Customer"}
               </Typography>
             </Box>
-            <FormControl size="small" sx={{ minWidth: 300, marginRight: "30px" }}>
-              <InputLabel id="assigned-to-label">Assigned To</InputLabel>
-              <Select
-                labelId="assigned-to-label"
-                value={assignedTo}
-                label="Assigned To"
-                onChange={(e) => setAssignedTo(e.target.value as string)}
-              >
-                <MenuItem value="User 1">User 1</MenuItem>
-                <MenuItem value="User 2">User 2</MenuItem>
-                <MenuItem value="User 3">User 3</MenuItem>
-              </Select>
-            </FormControl>
+            <Box sx={{ display: "flex", gap: 2, alignItems: "center", marginLeft: "5%" }}>
+              <TextField 
+                fullWidth 
+                size="small" 
+                label="Company Name" 
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                slotProps={{
+                  input: { sx: { height: 32, fontSize: 12, paddingY: 0 } },
+                  inputLabel: {
+                    sx: { fontSize: 12 },
+                  },
+                }}
+                sx={{ minWidth: 200 }}
+              />
+              <FormControl size="small" sx={{ minWidth: 300, marginRight: "10px" }}>
+                <InputLabel id="assigned-to-label" sx={{ fontSize: 12 }}>Assigned To</InputLabel>
+                <Select
+                  labelId="assigned-to-label"
+                  value={assignedTo}
+                  label="Assigned To"
+                  onChange={(e) => setAssignedTo(e.target.value as string)}
+                  disabled={usersLoading}
+                  sx={{
+                    height: 32,
+                    fontSize: 12,
+                    "& .MuiOutlinedInput-notchedOutline": {
+                      fontSize: 12,
+                    },
+                  }}
+                >
+                  {usersLoading ? (
+                    <MenuItem disabled>
+                      <CircularProgress size={16} sx={{ mr: 1 }} />
+                      Loading users...
+                    </MenuItem>
+                  ) : users.length > 0 ? (
+                    users.map((user) => (
+                      <MenuItem key={user.id} value={user.value}>
+                        {user.username}
+                      </MenuItem>
+                    ))
+                  ) : (
+                    <MenuItem disabled>No users available</MenuItem>
+                  )}
+                </Select>
+              </FormControl>
+            </Box>
           </Box>
         </Box>
 
@@ -278,7 +375,6 @@ export default function ClientPage({ customerId }: Props) {
           shippingCountry={shippingCountry} setShippingCountry={setShippingCountry}
           notes={notes} setNotes={setNotes}
           contacts={contacts} setContacts={setContactsPlain}
-          companyName={companyName} setCompanyName={setCompanyName}
           customers={customers}
         />
 

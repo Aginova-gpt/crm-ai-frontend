@@ -94,9 +94,10 @@ export async function PUT(req: Request) {
     headers["Authorization"] = authHeader;
   }
 
-  // Extract assigned_to number from "User X" format or set to null
+  // Extract assigned_to number from "User X" format, plain number/string, or set to null
   const assigned_to = assignedTo ? 
-    parseInt(assignedTo.replace(/^User\s+/i, '')) || null : 
+    (typeof assignedTo === 'number' ? assignedTo : 
+     parseInt(String(assignedTo).replace(/^User\s+/i, '')) || null) : 
     null;
 
   // Prepare the update payload

@@ -19,6 +19,10 @@ import {
     DialogTitle,
     DialogContent,
     DialogActions,
+    Select,
+    MenuItem,
+    FormControl,
+    InputLabel,
 } from "@mui/material";
 import { MdDelete } from "react-icons/md";
 
@@ -31,8 +35,8 @@ interface Customer {
 interface CustomerFormLeftProps {
     customerName: string;
     setCustomerName: (value: string) => void;   
-    companyName: string;
-    setCompanyName: (value: string) => void;        
+    accountType: string;
+    setAccountType: (value: string) => void;        
     customerPhone: string;
     setCustomerPhone: (value: string) => void;
     parent: string;
@@ -69,7 +73,7 @@ interface CustomerFormLeftProps {
 }
 
 export default function CustomerFormLeft({ customerName, setCustomerName, customerPhone, setCustomerPhone,
-     companyName, setCompanyName, parent, setParent, customerEmail, setCustomerEmail, childrenList,
+     accountType, setAccountType, parent, setParent, customerEmail, setCustomerEmail, childrenList,
       setChildrenList, billingAddress, setBillingAddress, billingCity, setBillingCity, billingState, 
       setBillingState, billingCode, setBillingCode, billingCountry, setBillingCountry, shippingAddress, 
       setShippingAddress, shippingCity, setShippingCity, shippingState, setShippingState, shippingCode, 
@@ -203,13 +207,27 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                             sx: { fontSize: 12 }, 
                         },
                     }} /> 
-                    <TextField fullWidth size="small" label="Company Name" value="Aginova" slotProps={{
-                        input: { sx: { height: 32, fontSize: 12, paddingY: 0,},
-                        },
-                        inputLabel: {
-                            sx: { fontSize: 12 },
-                        },
-                    }}/>
+                    <FormControl fullWidth size="small">
+                        <InputLabel id="account-type-label" sx={{ fontSize: 12 }}>Account Type</InputLabel>
+                        <Select
+                            labelId="account-type-label"
+                            value={accountType}
+                            label="Account Type"
+                            onChange={(e) => setAccountType(e.target.value)}
+                            sx={{
+                                height: 32,
+                                fontSize: 12,
+                                "& .MuiOutlinedInput-notchedOutline": {
+                                    fontSize: 12,
+                                },
+                            }}
+                        >
+                            <MenuItem value="Customer">Customer</MenuItem>
+                            <MenuItem value="Vendor">Vendor</MenuItem>
+                            <MenuItem value="Partner">Partner</MenuItem>
+                            <MenuItem value="Other">Other</MenuItem>
+                        </Select>
+                    </FormControl>
 
                     {/* Row 2 */}
                     <TextField fullWidth size="small" label="Customer Phone" value={customerPhone} 
