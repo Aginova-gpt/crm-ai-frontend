@@ -345,7 +345,7 @@ export default function EditVendorsDialog({
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle>Edit Vendors{itemCode ? ` — ${itemCode}` : ""}</DialogTitle>
+      <DialogTitle>Part Number{itemCode ? ` — ${itemCode}` : ""}</DialogTitle>
 
       <DialogContent dividers>
         {/* Linked vendors */}
