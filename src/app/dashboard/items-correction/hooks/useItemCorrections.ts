@@ -20,7 +20,7 @@ export function useItemCorrections(companyId: string, filters: any) {
         category: filters.category ?? "",
       });
       const res = await fetchWithAuth(
-        apiURL(`items-correction?${query}`, "items-correction")
+        apiURL(`items-corrections?${query}`, "items-correction")
       );
       if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
       const json = await res.json();

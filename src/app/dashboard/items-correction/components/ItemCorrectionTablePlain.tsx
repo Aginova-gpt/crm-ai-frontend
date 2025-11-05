@@ -22,6 +22,7 @@ import {
   Tooltip,
   IconButton,
   Stack,
+  Button,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import { ItemCorrectionRow, ItemStatusWide } from "../types";
@@ -88,10 +89,10 @@ export default function ItemCorrectionTablePlain({
   isSaving = false,
   onRequestAddSubcategory,
   plusDisabled = false,
-
-  // ✅ lookups now come from parent; default safely
   categories = [],
   subcategoriesByCategory = {},
+  onEditVendors,
+  onRequestAddVendor, // ⬅️ NEW
 }: {
   data?: ItemCorrectionRow[];
   originals?: Record<string | number, ItemCorrectionRow>;
@@ -99,18 +100,21 @@ export default function ItemCorrectionTablePlain({
   isSaving?: boolean;
   /** Click handler for the ➕ on the Subcategory column header */
   onRequestAddSubcategory?: () => void;
-  /** Disable the plus icon while lookups are loading */
+  /** Disable the plus icons while lookups are loading */
   plusDisabled?: boolean;
-
   /** Lookup lists (optional in type, but defaulted above) */
   categories?: string[];
   subcategoriesByCategory?: Record<string, string[]>;
+  /** Opens the vendor dialog for the given row */
+  onEditVendors?: (row: ItemCorrectionRow) => void;
+  /** Opens the global Add Vendor dialog (header ➕) */
+  onRequestAddVendor?: () => void; // ⬅️ NEW
 }) {
   const [rows, setRows] = React.useState<ItemCorrectionRow[]>(() => data);
   const syncingFromParentRef = React.useRef(false);
   const dataSigRef = React.useRef<string>(buildSignature(data));
 
-  // ✅ always-use-safe vars when reading lookups
+  // always-use-safe vars when reading lookups
   const catList = Array.isArray(categories) ? categories : [];
   const subsByCat: Record<string, string[]> = subcategoriesByCategory || {};
 
@@ -239,7 +243,36 @@ export default function ItemCorrectionTablePlain({
                   </Stack>
                 </TableCell>
                 <TableCell sx={{ minWidth: 160 }}>Vendor Part No.</TableCell>
-                <TableCell sx={{ minWidth: 220 }}>Vendors</TableCell>
+                <TableCell sx={{ minWidth: 220 }}>
+                  <Stack direction="row" alignItems="center" spacing={1}>
+                    <span>Vendors</span>
+                    <Tooltip title="Add vendor">
+                      <span>
+                        <IconButton
+                          size="small"
+                          onClick={onRequestAddVendor}
+                          disabled={isSaving || plusDisabled}
+                          sx={{
+                            width: 24,
+                            height: 24,
+                            p: 0,
+                            borderRadius: "4px",
+                            backgroundImage: NAVBAR_GRADIENT,
+                            color: "#fff",
+                            "&:disabled": {
+                              opacity: 0.5,
+                              backgroundImage: "none",
+                              backgroundColor: (t) => t.palette.action.disabledBackground,
+                              color: (t) => t.palette.action.disabled,
+                            },
+                          }}
+                        >
+                          <AddIcon fontSize="inherit" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  </Stack>
+                </TableCell>
                 <TableCell sx={{ minWidth: 160 }}>Legacy Status</TableCell>
                 <TableCell sx={{ minWidth: 160 }}>Legacy Category</TableCell>
                 <TableCell sx={{ minWidth: 260 }}>Notes</TableCell>
@@ -391,26 +424,41 @@ export default function ItemCorrectionTablePlain({
                         ))}
                       </Select>
                     </TableCell>
+
                     <TableCell>
                       <Typography variant="body2" sx={{ fontFamily: "monospace", whiteSpace: "nowrap" }}>
                         {row.vendor_part_no ?? "—"}
                       </Typography>
                     </TableCell>
 
-                    {/* NEW: Vendors (read-only) */}
+                    {/* Vendors (read-only + Edit button) */}
                     <TableCell>
-                      {row.vendor_names ? (
-                        <Tooltip title={row.vendor_names}>
-                          <Typography variant="body2" noWrap>
-                            {row.vendor_names}
-                            {typeof row.vendor_count === "number" && row.vendor_count > 1
-                              ? `  (+${row.vendor_count - 1} more)`
-                              : ""}
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ maxWidth: 360 }}>
+                        {row.vendor_names ? (
+                          <Tooltip title={row.vendor_names}>
+                            <Typography variant="body2" noWrap>
+                              {row.vendor_names}
+                              {typeof row.vendor_count === "number" && row.vendor_count > 1
+                                ? `  (+${row.vendor_count - 1} more)`
+                                : ""}
+                            </Typography>
+                          </Tooltip>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            —
                           </Typography>
-                        </Tooltip>
-                      ) : (
-                        <Typography variant="body2" color="text.secondary">—</Typography>
-                      )}
+                        )}
+
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => onEditVendors?.(row)}
+                          disabled={isSaving}
+                          sx={{ lineHeight: 1, minWidth: 52 }}
+                        >
+                          Edit
+                        </Button>
+                      </Stack>
                     </TableCell>
 
                     <TableCell>{row.legacy_status ?? ""}</TableCell>

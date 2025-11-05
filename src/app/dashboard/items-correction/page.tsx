@@ -19,6 +19,8 @@ import { useCompany } from "@/contexts/CompanyContext";
 import { useQuery } from "@tanstack/react-query";
 import { useApi } from "@/utils/api";
 import { ItemCorrectionRow } from "./types";
+import EditVendorsDialog from "./EditVendorsDialog";
+import AddVendorDialog from "./AddVendorDialog";
 
 import ItemCorrectionToolbar, {
   TypeFilter,
@@ -54,7 +56,8 @@ function withinWindow(refIso: string | null | undefined, win: EditedWindow): boo
 
 export default function ItemCorrectionPage() {
   const { apiURL } = useBackend();
-  const { selectedCompanyId, setSelectedCompanyId } = useCompany();
+  // ⬇️ Pull selectedCompanyName from context
+  const { selectedCompanyId, selectedCompanyName, setSelectedCompanyId } = useCompany();
   const { fetchWithAuth } = useApi();
   const { saveBulk, isSaving } = useItemSave();
 
@@ -74,8 +77,31 @@ export default function ItemCorrectionPage() {
   const [lastSavedCount, setLastSavedCount] = React.useState(0);
   const [lastSavedCodes, setLastSavedCodes] = React.useState<string[]>([]);
 
+  // Vendor dialog state (per-item edit)
+  const [vendorDlgOpen, setVendorDlgOpen] = React.useState(false);
+  const [vendorDlgRow, setVendorDlgRow] = React.useState<ItemCorrectionRow | null>(null);
+
+  const openVendorDialog = React.useCallback((row: ItemCorrectionRow) => {
+    setVendorDlgRow(row);
+    setVendorDlgOpen(true);
+  }, []);
+  const closeVendorDialog = React.useCallback(() => {
+    setVendorDlgRow(null);
+    setVendorDlgOpen(false);
+  }, []);
+
+  // Global Add Vendor dialog (from Vendors header ➕)
+  const [addVendorOpen, setAddVendorOpen] = React.useState(false);
+  const openAddVendor = React.useCallback(() => setAddVendorOpen(true), []);
+  const closeAddVendor = React.useCallback(() => setAddVendorOpen(false), []);
+
   // --- fetch items
-  const { data, isLoading, error, refetch } = useQuery<{ items: ItemCorrectionRow[] }, Error>({
+  const {
+    data,
+    isLoading,
+    error,
+    refetch,
+  } = useQuery<{ items: ItemCorrectionRow[] }, Error>({
     queryKey: ["item-corrections", String(selectedCompanyId ?? "none")],
     enabled: !!selectedCompanyId && selectedCompanyId !== "all",
     queryFn: async () => {
@@ -135,6 +161,9 @@ export default function ItemCorrectionPage() {
       const map: Record<string | number, ItemCorrectionRow> = {};
       for (const r of normalized) map[r.item_id] = { ...r };
       setBaselineById(map);
+    } else {
+      setWorkingRows([]);
+      setBaselineById({});
     }
   }, [data?.items]);
 
@@ -268,8 +297,10 @@ export default function ItemCorrectionPage() {
 
   // Add Subcategory dialog
   const [addOpen, setAddOpen] = React.useState(false);
-  const openAddDialog = () => setAddOpen(true);
-  const closeAddDialog = () => setAddOpen(false);
+  const openAddDialog = React.useCallback(() => setAddOpen(true), []);
+  const closeAddDialog = React.useCallback(() => setAddOpen(false), []);
+
+  const companyIsChosen = !!selectedCompanyId && selectedCompanyId !== "all";
 
   return (
     <Box sx={{ p: 2, display: "flex", flexDirection: "column", gap: 2 }}>
@@ -285,7 +316,6 @@ export default function ItemCorrectionPage() {
         onSave={handleSave}
         isSaving={isSaving}
       />
-
       {isLoading ? (
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <CircularProgress size={20} />
@@ -293,6 +323,8 @@ export default function ItemCorrectionPage() {
         </Box>
       ) : error ? (
         <Alert severity="error">{(error as Error).message || "Failed to load items"}</Alert>
+      ) : !companyIsChosen ? (
+        <Typography sx={{ color: "text.secondary" }}>Please select a company.</Typography>
       ) : !filteredItems.length ? (
         <Typography sx={{ color: "text.secondary" }}>No items found for this company.</Typography>
       ) : (
@@ -303,9 +335,10 @@ export default function ItemCorrectionPage() {
           isSaving={isSaving}
           onRequestAddSubcategory={openAddDialog}
           plusDisabled={lookupsLoading}
-          // ✅ pass lookups down
           categories={categories}
           subcategoriesByCategory={subcategoriesByCategory}
+          onEditVendors={openVendorDialog}
+          onRequestAddVendor={openAddVendor}
         />
       )}
 
@@ -326,10 +359,10 @@ export default function ItemCorrectionPage() {
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={cancelCompanySwitch}>Cancel</Button>
           <Button onClick={confirmDiscardAndSwitch} color="warning">
-            Discard & Switch
+            Discard &amp; Switch
           </Button>
           <Button onClick={confirmSaveAndSwitch} variant="contained">
-            Save & Switch
+            Save &amp; Switch
           </Button>
         </DialogActions>
       </Dialog>
@@ -366,6 +399,31 @@ export default function ItemCorrectionPage() {
           await refetchLookups();
         }}
       />
+
+      {/* Per-item Vendor dialog */}
+      {vendorDlgRow && vendorDlgOpen && companyIsChosen ? (
+        <EditVendorsDialog
+          open={vendorDlgOpen}
+          onClose={closeVendorDialog}
+          companyId={Number(selectedCompanyId)}
+          itemId={Number(vendorDlgRow.item_id)}
+          itemCode={`${vendorDlgRow.item_code}`}
+          onSaved={() => refetch()}
+        />
+      ) : null}
+
+      {/* Global Add Vendor dialog */}
+      {companyIsChosen && (
+        <AddVendorDialog
+          open={addVendorOpen}
+          onClose={closeAddVendor}
+          companyId={Number(selectedCompanyId)}
+          companyName={selectedCompanyName ?? ""}
+          onCreated={() => {
+            /* If you cache vendor searches elsewhere, refresh there. */
+          }}
+        />
+      )}
     </Box>
   );
 }
