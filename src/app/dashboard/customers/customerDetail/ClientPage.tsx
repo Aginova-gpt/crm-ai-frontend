@@ -72,7 +72,7 @@ export default function ClientPage({ customerId }: Props) {
   const isEditMode = !!customerId;                           // ⬅️ drive mode from prop
   const { fetchWithAuth } = useApi();
   const { apiURL } = useBackend();
-  const { token } = useAuth();
+  const { token, email } = useAuth();
   const { selectedCompanyName, selectedCompanyId } = useCompany();
 
   const [assignedTo, setAssignedTo] = React.useState("");
@@ -170,6 +170,24 @@ export default function ClientPage({ customerId }: Props) {
       .sort((a, b) => a.username.localeCompare(b.username));
   }, [usersData]);
 
+  // Try to extract company name/id from JWT token
+  const companyFromToken = useMemo(() => {
+    try {
+      if (!token) return null;
+      const parts = token.split(".");
+      if (parts.length < 2) return null;
+      const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+      const json = typeof window !== "undefined" ? atob(base64) : Buffer.from(base64, "base64").toString("utf-8");
+      const payload = JSON.parse(json);
+      const name = payload.company || payload.company || null;
+      const id = payload.company_id || payload.companyId || null;
+      if (!name && !id) return null;
+      return { name: name as string | null, id: id != null ? String(id) : null };
+    } catch {
+      return null;
+    }
+  }, [token]);
+
   useEffect(() => {
     if (isEditMode && customerToEdit) {
       setCustomerName(customerToEdit.name || "");
@@ -195,10 +213,29 @@ export default function ClientPage({ customerId }: Props) {
 
   // Auto-populate company name when creating a new customer
   useEffect(() => {
-    if (!isEditMode && selectedCompanyName && selectedCompanyId && selectedCompanyId !== "all") {
-      setCompanyName(selectedCompanyName);
+    if (!isEditMode) {
+      if (companyFromToken?.name) {
+        setCompanyName(companyFromToken.name);
+        return;
+      }
+      if (selectedCompanyName && selectedCompanyId && selectedCompanyId !== "all") {
+        setCompanyName(selectedCompanyName);
+      }
     }
-  }, [isEditMode, selectedCompanyName, selectedCompanyId]);
+  }, [isEditMode, companyFromToken, selectedCompanyName, selectedCompanyId]);
+
+  // Auto-populate assignedTo with logged-in user's email (find matching user ID)
+  useEffect(() => {
+    if (!isEditMode && email && users.length > 0 && !assignedTo) {
+      // Find user whose username matches the logged-in email
+      const loggedInUser = users.find((user) => 
+        user.username.toLowerCase() === email.toLowerCase()
+      );
+      if (loggedInUser) {
+        setAssignedTo(loggedInUser.value);
+      }
+    }
+  }, [isEditMode, email, users, assignedTo]);
 
   const handleSave = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -303,6 +340,9 @@ export default function ClientPage({ customerId }: Props) {
                 label="Company Name" 
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
+                InputProps={{
+                  readOnly: true,
+                }}
                 slotProps={{
                   input: { sx: { height: 32, fontSize: 12, paddingY: 0 } },
                   inputLabel: {
