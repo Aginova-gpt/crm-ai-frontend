@@ -211,9 +211,10 @@ export default function ClientPage({ customerId }: Props) {
     }
   }, [isEditMode, customerToEdit]);
 
-  // Auto-populate company name when creating a new customer
+  // Auto-populate company name (works in both create and edit mode)
   useEffect(() => {
-    if (!isEditMode) {
+    // Only auto-populate if company name is empty
+    if (!companyName) {
       if (companyFromToken?.name) {
         setCompanyName(companyFromToken.name);
         return;
@@ -222,11 +223,12 @@ export default function ClientPage({ customerId }: Props) {
         setCompanyName(selectedCompanyName);
       }
     }
-  }, [isEditMode, companyFromToken, selectedCompanyName, selectedCompanyId]);
+  }, [companyName, companyFromToken, selectedCompanyName, selectedCompanyId]);
 
-  // Auto-populate assignedTo with logged-in user's email (find matching user ID)
+  // Auto-populate assignedTo with logged-in user's email (works in both create and edit mode)
   useEffect(() => {
-    if (!isEditMode && email && users.length > 0 && !assignedTo) {
+    // Only auto-populate if assignedTo is empty and we have users loaded
+    if (!assignedTo && email && users.length > 0) {
       // Find user whose username matches the logged-in email
       const loggedInUser = users.find((user) => 
         user.username.toLowerCase() === email.toLowerCase()
@@ -235,20 +237,23 @@ export default function ClientPage({ customerId }: Props) {
         setAssignedTo(loggedInUser.value);
       }
     }
-  }, [isEditMode, email, users, assignedTo]);
+  }, [assignedTo, email, users]);
 
   const handleSave = async (e?: React.FormEvent) => {
     e?.preventDefault();
 
-    // Format assignedTo as "User X" for API compatibility, or null if empty
-    const formattedAssignedTo = assignedTo ? (assignedTo.startsWith("User ") ? assignedTo : `User ${assignedTo}`) : null;
+    // Extract user_id from assignedTo (it's already stored as user_id string)
+    const userId = assignedTo ? parseInt(assignedTo) || null : null;
+
+    // Get company_id - priority: token company_id > selectedCompanyId > null
+    const companyId = companyFromToken?.id || (selectedCompanyId && selectedCompanyId !== "all" ? selectedCompanyId : null);
 
     const payload = {
       ...(isEditMode && { id: customerId }),
-      assignedTo: formattedAssignedTo,
+      assignedTo: userId, // Send user_id as number
       customerName,
       customerPhone,
-      companyName: companyName || "Hidden",
+      companyId: companyId, // Send company_id instead of company name
       parent,
       customerEmail,
       childrenList,
@@ -265,6 +270,7 @@ export default function ClientPage({ customerId }: Props) {
       notes,
       contacts,
     };
+    console.log("💾 Saving Customer - JSON Payload:", JSON.stringify(payload, null, 2));
 
     try {
       if (isEditMode) {
@@ -279,7 +285,7 @@ export default function ClientPage({ customerId }: Props) {
             name: customerName,
             city: billingCity,
             phone: customerPhone,
-            assignedTo: formattedAssignedTo,
+            assignedTo: userId, // Send user_id as number
             street: billingAddress,
             country: billingCountry,
             notes,
@@ -296,6 +302,7 @@ export default function ClientPage({ customerId }: Props) {
             shippingState,
             shippingCode,
             shippingCountry,
+            companyId: companyId, // Send company_id instead of company name
           }),
         });
         if (!response.ok) {
@@ -339,12 +346,11 @@ export default function ClientPage({ customerId }: Props) {
                 size="small" 
                 label="Company Name" 
                 value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
-                InputProps={{
-                  readOnly: true,
-                }}
                 slotProps={{
-                  input: { sx: { height: 32, fontSize: 12, paddingY: 0 } },
+                  input: { 
+                    sx: { height: 32, fontSize: 12, paddingY: 0 },
+                    readOnly: true,
+                  },
                   inputLabel: {
                     sx: { fontSize: 12 },
                   },
