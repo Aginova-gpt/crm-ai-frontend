@@ -67,6 +67,27 @@ function useUsers(companyId: number | string) {
   });
 }
 
+function useAccountTypes() {
+  const { token, isLoggedIn } = useAuth();
+  const { fetchWithAuth } = useApi();
+
+  return useQuery({
+    queryKey: ["account-types"],
+    queryFn: async () => {
+      const url = "http://34.58.37.44/api/account-types";
+      const res = await fetchWithAuth(url);
+      if (!res.ok) {
+        if (res.status === 401) throw new Error("Unauthorized – please log in again");
+        throw new Error(`Request failed: ${res.status}`);
+      }
+      return res.json();
+    },
+    enabled: isLoggedIn && !!token,
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    gcTime: 30 * 60 * 1000, // 30 minutes
+  });
+}
+
 export default function ClientPage({ customerId }: Props) {
   const router = useRouter();
   const isEditMode = !!customerId;                           // ⬅️ drive mode from prop
@@ -139,7 +160,7 @@ export default function ClientPage({ customerId }: Props) {
           children_list: customer.children_list || "",
           parent: customer.parent_account_id || "",
           company_name: customer.company_name || "",
-          assigned_to: customer.assigned_to || null,
+          assigned_to: customer.assigned_to ?? null,
         };
       }
     }
@@ -155,6 +176,7 @@ export default function ClientPage({ customerId }: Props) {
   }, [isEditMode, customerToEdit?.company_id, selectedCompanyId]);
 
   const { data: usersData, isLoading: usersLoading } = useUsers(companyIdForUsers);
+  const { data: accountTypesData } = useAccountTypes();
 
   // Extract and format users from API response
   const users = useMemo(() => {
@@ -169,6 +191,17 @@ export default function ClientPage({ customerId }: Props) {
       }))
       .sort((a, b) => a.username.localeCompare(b.username));
   }, [usersData]);
+
+  // Extract and format account types from API response
+  const accountTypes = useMemo(() => {
+    if (!accountTypesData || !Array.isArray(accountTypesData)) return [];
+    return accountTypesData
+      .map((type: any) => ({
+        id: type.account_type_id,
+        name: type.account_type_name,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [accountTypesData]);
 
   // Try to extract company name/id from JWT token
   const companyFromToken = useMemo(() => {
@@ -202,7 +235,6 @@ export default function ClientPage({ customerId }: Props) {
       setShippingState(customerToEdit.state || "");
       setShippingCode(customerToEdit.code || "");
       setShippingCountry(customerToEdit.country || "");
-      if (customerToEdit.assigned_to) setAssignedTo(String(customerToEdit.assigned_to));
       setCompanyName(customerToEdit.company_name || "");
       setParent(customerToEdit.parent || "");
       setChildrenList(customerToEdit.children_list || "");
@@ -225,19 +257,37 @@ export default function ClientPage({ customerId }: Props) {
     }
   }, [companyName, companyFromToken, selectedCompanyName, selectedCompanyId]);
 
-  // Auto-populate assignedTo with logged-in user's email (works in both create and edit mode)
+  // Set assignedTo from customer data in edit mode (only when users are loaded)
+  // This ensures the Select component can find the matching user option
   useEffect(() => {
-    // Only auto-populate if assignedTo is empty and we have users loaded
+    if (isEditMode && customerToEdit?.assigned_to != null && users.length > 0) {
+      const assignedToValue = String(customerToEdit.assigned_to);
+      // Verify that the user exists in the users list
+      const userExists = users.some((user) => user.value === assignedToValue);
+      if (userExists) {
+        setAssignedTo(assignedToValue);
+      }
+    }
+  }, [isEditMode, customerToEdit?.assigned_to, users]);
+
+  // Auto-populate assignedTo with logged-in user's email
+  // In create mode: always use logged-in user
+  // In edit mode: only use logged-in user if assigned_to is null
+  useEffect(() => {
     if (!assignedTo && email && users.length > 0) {
       // Find user whose username matches the logged-in email
       const loggedInUser = users.find((user) => 
         user.username.toLowerCase() === email.toLowerCase()
       );
       if (loggedInUser) {
-        setAssignedTo(loggedInUser.value);
+        // In edit mode, only set if customer data doesn't have assigned_to
+        // In create mode, always set
+        if (!isEditMode || (isEditMode && customerToEdit?.assigned_to == null)) {
+          setAssignedTo(loggedInUser.value);
+        }
       }
     }
-  }, [assignedTo, email, users]);
+  }, [isEditMode, assignedTo, email, users, customerToEdit?.assigned_to]);
 
   const handleSave = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -248,9 +298,15 @@ export default function ClientPage({ customerId }: Props) {
     // Get company_id - priority: token company_id > selectedCompanyId > null
     const companyId = companyFromToken?.id || (selectedCompanyId && selectedCompanyId !== "all" ? selectedCompanyId : null);
 
+    // Convert accountType name to accountType ID
+    const accountTypeId = accountType 
+      ? (accountTypes.find((type) => type.name === accountType)?.id || null)
+      : null;
+
     const payload = {
       ...(isEditMode && { id: customerId }),
       assignedTo: userId, // Send user_id as number
+      accountType: accountTypeId, // Send account_type_id instead of name
       customerName,
       customerPhone,
       companyId: companyId, // Send company_id instead of company name
@@ -286,6 +342,7 @@ export default function ClientPage({ customerId }: Props) {
             city: billingCity,
             phone: customerPhone,
             assignedTo: userId, // Send user_id as number
+            accountType: accountTypeId, // Send account_type_id instead of name
             street: billingAddress,
             country: billingCountry,
             notes,
