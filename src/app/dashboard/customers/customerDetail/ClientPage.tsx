@@ -76,6 +76,7 @@ export default function ClientPage({ customerId }: Props) {
   const { selectedCompanyName, selectedCompanyId } = useCompany();
 
   const [assignedTo, setAssignedTo] = React.useState("");
+  const [accountType, setAccountType] = React.useState("");
   const [customerName, setCustomerName] = React.useState("");
   const [companyName, setCompanyName] = React.useState("");
   const [customerPhone, setCustomerPhone] = React.useState("");
@@ -318,6 +319,13 @@ export default function ClientPage({ customerId }: Props) {
                   label="Assigned To"
                   onChange={(e) => setAssignedTo(e.target.value as string)}
                   disabled={usersLoading}
+                  MenuProps={{
+                    PaperProps: {
+                      style: {
+                        maxHeight: 200, // Approximately 5 items (40px per item)
+                      },
+                    },
+                  }}
                   sx={{
                     height: 32,
                     fontSize: 12,
@@ -359,6 +367,7 @@ export default function ClientPage({ customerId }: Props) {
       <Box component="form" id="customer-form" onSubmit={handleSave} sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 3 }}>
         <CustomerFormLeft
           customerName={customerName} setCustomerName={setCustomerName}
+          accountType={accountType} setAccountType={setAccountType}
           customerPhone={customerPhone} setCustomerPhone={setCustomerPhone}
           parent={parent} setParent={setParent}
           customerEmail={customerEmail} setCustomerEmail={setCustomerEmail}

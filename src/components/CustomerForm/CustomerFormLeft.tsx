@@ -23,13 +23,39 @@ import {
     MenuItem,
     FormControl,
     InputLabel,
+    CircularProgress,
 } from "@mui/material";
 import { MdDelete } from "react-icons/md";
+import { useQuery } from "@tanstack/react-query";
+import { useApi } from "@/utils/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { useMemo } from "react";
 
 interface Customer {
     id: string;
     name: string;
     company_id?: string;
+}
+
+function useAccountTypes() {
+    const { token, isLoggedIn } = useAuth();
+    const { fetchWithAuth } = useApi();
+
+    return useQuery({
+        queryKey: ["account-types"],
+        queryFn: async () => {
+            const url = "http://34.58.37.44/api/account-types";
+            const res = await fetchWithAuth(url);
+            if (!res.ok) {
+                if (res.status === 401) throw new Error("Unauthorized – please log in again");
+                throw new Error(`Request failed: ${res.status}`);
+            }
+            return res.json();
+        },
+        enabled: isLoggedIn && !!token,
+        staleTime: 10 * 60 * 1000, // 10 minutes
+        gcTime: 30 * 60 * 1000, // 30 minutes
+    });
 }
 
 interface CustomerFormLeftProps {
@@ -79,6 +105,19 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
       setShippingAddress, shippingCity, setShippingCity, shippingState, setShippingState, shippingCode, 
       setShippingCode, shippingCountry, setShippingCountry, notes, setNotes, contacts, setContacts, customers }: CustomerFormLeftProps) {
     
+    const { data: accountTypesData, isLoading: accountTypesLoading } = useAccountTypes();
+
+    // Extract and format account types from API response
+    const accountTypes = useMemo(() => {
+        if (!accountTypesData || !Array.isArray(accountTypesData)) return [];
+        return accountTypesData
+            .map((type: any) => ({
+                id: type.account_type_id,
+                name: type.account_type_name,
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }, [accountTypesData]);
+
     // Create a map for O(1) lookup instead of O(n) find operations
     const customersMap = React.useMemo(() => {
         const map = new Map<string, Customer>();
@@ -214,6 +253,22 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                             value={accountType}
                             label="Account Type"
                             onChange={(e) => setAccountType(e.target.value)}
+                            disabled={accountTypesLoading}
+                            MenuProps={{
+                                PaperProps: {
+                                    style: {
+                                        maxHeight: 200// Approximately 5 items (40px per item)
+                                    },
+                                },
+                            }}
+                            slotProps={{
+                                input: {
+                                    sx: { height: 32, fontSize: 12, paddingY: 0 },
+                                },
+                                inputLabel: {
+                                    sx: { fontSize: 12 },
+                                },
+                            }}
                             sx={{
                                 height: 32,
                                 fontSize: 12,
@@ -222,10 +277,20 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                                 },
                             }}
                         >
-                            <MenuItem value="Customer">Customer</MenuItem>
-                            <MenuItem value="Vendor">Vendor</MenuItem>
-                            <MenuItem value="Partner">Partner</MenuItem>
-                            <MenuItem value="Other">Other</MenuItem>
+                            {accountTypesLoading ? (
+                                <MenuItem disabled>
+                                    <CircularProgress size={16} sx={{ mr: 1 }} />
+                                    Loading account types...
+                                </MenuItem>
+                            ) : accountTypes.length > 0 ? (
+                                accountTypes.map((type) => (
+                                    <MenuItem key={type.id} value={type.name}>
+                                        {type.name}
+                                    </MenuItem>
+                                ))
+                            ) : (
+                                <MenuItem disabled>No account types available</MenuItem>
+                            )}
                         </Select>
                     </FormControl>
 
