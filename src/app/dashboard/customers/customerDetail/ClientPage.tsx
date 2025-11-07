@@ -23,7 +23,7 @@ type Customer = {
   company_id?: string;
 };
 
-type Contact = { name: string; phone: string; email: string };
+type Contact = { name: string; phone: string; email: string; notes?: string };
 
 function useCustomers() {
   const { token, isLoggedIn } = useAuth();
@@ -104,12 +104,15 @@ export default function ClientPage({ customerId }: Props) {
   const [parent, setParent] = React.useState("");
   const [customerEmail, setCustomerEmail] = React.useState("");
   const [childrenList, setChildrenList] = React.useState("");
+  const [website, setWebsite] = React.useState("");
   const [billingAddress, setBillingAddress] = React.useState("");
+  const [billingPOBox, setBillingPOBox] = React.useState("");
   const [billingCity, setBillingCity] = React.useState("");
   const [billingState, setBillingState] = React.useState("");
   const [billingCode, setBillingCode] = React.useState("");
   const [billingCountry, setBillingCountry] = React.useState("");
   const [shippingAddress, setShippingAddress] = React.useState("");
+  const [shippingPOBox, setShippingPOBox] = React.useState("");
   const [shippingCity, setShippingCity] = React.useState("");
   const [shippingState, setShippingState] = React.useState("");
   const [shippingCode, setShippingCode] = React.useState("");
@@ -147,20 +150,28 @@ export default function ClientPage({ customerId }: Props) {
           email: customer.email || "",
           city: customer.city || "",
           street: customer.street || "",
+          billing_po_box: customer.billing_po_box || "",
           state: customer.state || "",
           country: customer.country || "",
           code: customer.address_code || "",
           shipping_address: customer.shipping_address || "",
+          shipping_po_box: customer.shipping_po_box || "",
           shipping_city: customer.shipping_city || "",
           shipping_state: customer.shipping_state || "",
           shipping_code: customer.shipping_code || "",
           shipping_country: customer.shipping_country || "",
           notes: customer.notes || "",
-          contacts: customer.contacts || [],
+          contacts: (customer.contacts || []).map((contact: any) => ({
+            name: contact.name || "",
+            phone: contact.phone || "",
+            email: contact.email || "",
+            notes: contact.notes || contact.description || "",
+          })),
           children_list: customer.children_list || "",
           parent: customer.parent_account_id || "",
           company_name: customer.company_name || "",
           assigned_to: customer.assigned_to ?? null,
+          website: customer.website || "",
         };
       }
     }
@@ -229,8 +240,10 @@ export default function ClientPage({ customerId }: Props) {
       setBillingCity(customerToEdit.city || "");
       setBillingState(customerToEdit.state || "");
       setBillingAddress(customerToEdit.street || "");
+      setBillingPOBox(customerToEdit.billing_po_box || "");
       setBillingCountry(customerToEdit.country || "");
       setShippingAddress(customerToEdit.street || "");
+      setShippingPOBox(customerToEdit.shipping_po_box || "");
       setShippingCity(customerToEdit.city || "");
       setShippingState(customerToEdit.state || "");
       setShippingCode(customerToEdit.code || "");
@@ -238,6 +251,7 @@ export default function ClientPage({ customerId }: Props) {
       setCompanyName(customerToEdit.company_name || "");
       setParent(customerToEdit.parent || "");
       setChildrenList(customerToEdit.children_list || "");
+      setWebsite(customerToEdit.website || "");
       setNotes(customerToEdit.notes || "");
       if (customerToEdit.contacts) setContacts(customerToEdit.contacts);
     }
@@ -314,15 +328,18 @@ export default function ClientPage({ customerId }: Props) {
       customerEmail,
       childrenList,
       billingAddress,
+      billingPOBox,
       billingCity,
       billingState,
       billingCode,
       billingCountry,
       shippingAddress,
+      shippingPOBox,
       shippingCity,
       shippingState,
       shippingCode,
       shippingCountry,
+      website,
       notes,
       contacts,
     };
@@ -350,15 +367,18 @@ export default function ClientPage({ customerId }: Props) {
             parent,
             childrenList,
             billingAddress,
+            billingPOBox,
             billingCity,
             billingState,
             billingCode,
             billingCountry,
             shippingAddress,
+            shippingPOBox,
             shippingCity,
             shippingState,
             shippingCode,
             shippingCountry,
+            website,
             companyId: companyId, // Send company_id instead of company name
           }),
         });
@@ -475,12 +495,15 @@ export default function ClientPage({ customerId }: Props) {
           parent={parent} setParent={setParent}
           customerEmail={customerEmail} setCustomerEmail={setCustomerEmail}
           childrenList={childrenList} setChildrenList={setChildrenList}
+          website={website} setWebsite={setWebsite}
           billingAddress={billingAddress} setBillingAddress={setBillingAddress}
+          billingPOBox={billingPOBox} setBillingPOBox={setBillingPOBox}
           billingCity={billingCity} setBillingCity={setBillingCity}
           billingState={billingState} setBillingState={setBillingState}
           billingCode={billingCode} setBillingCode={setBillingCode}
           billingCountry={billingCountry} setBillingCountry={setBillingCountry}
           shippingAddress={shippingAddress} setShippingAddress={setShippingAddress}
+          shippingPOBox={shippingPOBox} setShippingPOBox={setShippingPOBox}
           shippingCity={shippingCity} setShippingCity={setShippingCity}
           shippingState={shippingState} setShippingState={setShippingState}
           shippingCode={shippingCode} setShippingCode={setShippingCode}

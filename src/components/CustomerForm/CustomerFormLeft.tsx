@@ -58,6 +58,13 @@ function useAccountTypes() {
     });
 }
 
+interface ContactEntry {
+    name: string;
+    phone: string;
+    email: string;
+    notes?: string;
+}
+
 interface CustomerFormLeftProps {
     customerName: string;
     setCustomerName: (value: string) => void;   
@@ -71,8 +78,12 @@ interface CustomerFormLeftProps {
     setCustomerEmail: (value: string) => void;
     childrenList: string;
     setChildrenList: (value: string) => void;
+    website: string;
+    setWebsite: (value: string) => void;
     billingAddress: string;
     setBillingAddress: (value: string) => void;
+    billingPOBox: string;
+    setBillingPOBox: (value: string) => void;
     billingCity: string;
     setBillingCity: (value: string) => void;
     billingState: string;
@@ -83,6 +94,8 @@ interface CustomerFormLeftProps {
     setBillingCountry: (value: string) => void;
     shippingAddress: string;
     setShippingAddress: (value: string) => void;
+    shippingPOBox: string;
+    setShippingPOBox: (value: string) => void;
     shippingCity: string;
     setShippingCity: (value: string) => void;
     shippingState: string;
@@ -93,16 +106,16 @@ interface CustomerFormLeftProps {
     setShippingCountry: (value: string) => void;
     notes: string;
     setNotes: (value: string) => void;
-    contacts: { name: string; phone: string; email: string }[];
-    setContacts: (value: { name: string; phone: string; email: string }[]) => void;
+    contacts: ContactEntry[];
+    setContacts: (value: ContactEntry[]) => void;
     customers: Customer[];
 }
 
 export default function CustomerFormLeft({ customerName, setCustomerName, customerPhone, setCustomerPhone,
      accountType, setAccountType, parent, setParent, customerEmail, setCustomerEmail, childrenList,
-      setChildrenList, billingAddress, setBillingAddress, billingCity, setBillingCity, billingState, 
+      setChildrenList, website, setWebsite, billingAddress, setBillingAddress, billingPOBox, setBillingPOBox, billingCity, setBillingCity, billingState, 
       setBillingState, billingCode, setBillingCode, billingCountry, setBillingCountry, shippingAddress, 
-      setShippingAddress, shippingCity, setShippingCity, shippingState, setShippingState, shippingCode, 
+      setShippingAddress, shippingPOBox, setShippingPOBox, shippingCity, setShippingCity, shippingState, setShippingState, shippingCode, 
       setShippingCode, shippingCountry, setShippingCountry, notes, setNotes, contacts, setContacts, customers }: CustomerFormLeftProps) {
     
     const { data: accountTypesData, isLoading: accountTypesLoading } = useAccountTypes();
@@ -174,6 +187,7 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
     const [newContactName, setNewContactName] = React.useState("");
     const [newContactPhone, setNewContactPhone] = React.useState("");
     const [newContactEmail, setNewContactEmail] = React.useState("");
+    const [newContactNotes, setNewContactNotes] = React.useState("");
 
     const handleAddContact = () => {
         setModalOpen(true);
@@ -184,6 +198,7 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
         setNewContactName("");
         setNewContactPhone("");
         setNewContactEmail("");
+        setNewContactNotes("");
     };
 
     const handleSaveContact = () => {
@@ -191,7 +206,8 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
             setContacts([...contacts, { 
                 name: newContactName.trim(), 
                 phone: newContactPhone.trim(), 
-                email: newContactEmail.trim() 
+                email: newContactEmail.trim(),
+                notes: newContactNotes.trim(),
             }]);
             handleCloseModal();
         }
@@ -402,6 +418,20 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                             },
                         }}
                     />
+                    <TextField
+                        fullWidth
+                        size="small"
+                        label="Website"
+                        value={website}
+                        onChange={(e) => setWebsite(e.target.value)}
+                        slotProps={{
+                            input: { sx: { height: 32, fontSize: 12, paddingY: 0,},
+                            },
+                            inputLabel: {
+                                sx: { fontSize: 12 }, // smaller label
+                            },
+                        }}
+                    />
                 </Box>
             </Box>
 
@@ -416,6 +446,16 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                         <TextField fullWidth size="small" label="Billing Address" sx={{ gridColumn: "span 2" }}
                         value={billingAddress}
                         onChange={(e) => setBillingAddress(e.target.value)}
+                        slotProps={{
+                        input: { sx: { height: 32, fontSize: 12, paddingY: 0,},
+                        },
+                        inputLabel: {
+                            sx: { fontSize: 12 }, // smaller label
+                        },
+                    }}/>
+                        <TextField fullWidth size="small" label="Billing PO Box" 
+                        value={billingPOBox}
+                        onChange={(e) => setBillingPOBox(e.target.value)}
                         slotProps={{
                         input: { sx: { height: 32, fontSize: 12, paddingY: 0,},
                         },
@@ -477,6 +517,15 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                             sx: { fontSize: 12 }, // smaller label
                         },
                     }}/>
+                        <TextField fullWidth size="small" label="Shipping PO Box" 
+                        value={shippingPOBox}
+                        onChange={(e) => setShippingPOBox(e.target.value)} slotProps={{
+                        input: { sx: { height: 32, fontSize: 12, paddingY: 0,},
+                        },
+                        inputLabel: {
+                            sx: { fontSize: 12 }, // smaller label
+                        },
+                    }}/>
                         <TextField fullWidth size="small" label="Shipping City" sx={{ gridColumn: "span 2" }} 
                         value={shippingCity}
                         onChange={(e) => setShippingCity(e.target.value)} slotProps={{
@@ -517,12 +566,12 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                 </Box>
             </Box>
 
-            {/* === Notes === */}
+            {/* === Description === */}
             <Box>
                 <Typography fontWeight={600} sx={{ mb: 1 }}>
-                    Notes
+                    Description
                 </Typography>
-                        <TextField fullWidth size="small" multiline rows={3} placeholder="Add notes..." 
+                        <TextField fullWidth size="small" multiline rows={3} placeholder="Add description..." 
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)} />
             </Box>
@@ -543,6 +592,7 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                             <TableCell>Name</TableCell>
                             <TableCell>Phone</TableCell>
                             <TableCell>Email</TableCell>
+                                <TableCell>Notes</TableCell>
                             <TableCell align="right">Actions</TableCell>
                         </TableRow>
                     </TableHead>
@@ -552,6 +602,7 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                                 <TableCell>{c.name}</TableCell>
                                 <TableCell>{c.phone}</TableCell>
                                 <TableCell>{c.email}</TableCell>
+                                <TableCell>{c.notes || ""}</TableCell>
                                 <TableCell align="right">
                                     <Tooltip title="Delete">
                                         <IconButton size="small" color="error" onClick={() => handleDeleteContact(i)}>
@@ -619,6 +670,24 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                             size="small"
                             value={newContactEmail}
                             onChange={(e) => setNewContactEmail(e.target.value)}
+                            onKeyPress={(e) => {
+                                if (e.key === "Enter") {
+                                    handleSaveContact();
+                                }
+                            }}
+                            slotProps={{
+                                input: { sx: { height: 32, fontSize: 12, paddingY: 0 } },
+                                inputLabel: {
+                                    sx: { fontSize: 12 },
+                                },
+                            }}
+                        />
+                        <TextField
+                            label="Notes"
+                            fullWidth
+                            size="small"
+                            value={newContactNotes}
+                            onChange={(e) => setNewContactNotes(e.target.value)}
                             onKeyPress={(e) => {
                                 if (e.key === "Enter") {
                                     handleSaveContact();
