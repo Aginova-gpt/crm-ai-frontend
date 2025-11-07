@@ -63,6 +63,7 @@ interface ContactEntry {
     phone: string;
     email: string;
     notes?: string;
+    salutationId?: number;
 }
 
 interface CustomerFormLeftProps {
@@ -208,6 +209,7 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                 phone: newContactPhone.trim(), 
                 email: newContactEmail.trim(),
                 notes: newContactNotes.trim(),
+                salutationId: 0,
             }]);
             handleCloseModal();
         }

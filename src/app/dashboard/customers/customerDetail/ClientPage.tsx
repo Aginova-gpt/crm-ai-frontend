@@ -23,7 +23,7 @@ type Customer = {
   company_id?: string;
 };
 
-type Contact = { name: string; phone: string; email: string; notes?: string };
+type Contact = { name: string; phone: string; email: string; notes?: string; salutationId?: number };
 
 function useCustomers() {
   const { token, isLoggedIn } = useAuth();
@@ -166,6 +166,12 @@ export default function ClientPage({ customerId }: Props) {
             phone: contact.phone || "",
             email: contact.email || "",
             notes: contact.notes || contact.description || "",
+            salutationId:
+              contact.salutation_id != null
+                ? Number(contact.salutation_id)
+                : contact.salutationId != null
+                ? Number(contact.salutationId)
+                : undefined,
           })),
           children_list: customer.children_list || "",
           parent: customer.parent_account_id || "",
@@ -317,31 +323,47 @@ export default function ClientPage({ customerId }: Props) {
       ? (accountTypes.find((type) => type.name === accountType)?.id || null)
       : null;
 
+    const companyIdNumber = companyId != null ? Number(companyId) : 0;
+    const accountTypeNumeric = accountTypeId != null ? Number(accountTypeId) : 0;
+    const parentAccountId = parent ? Number(parent) : null;
+
     const payload = {
-      ...(isEditMode && { id: customerId }),
-      assignedTo: userId, // Send user_id as number
-      accountType: accountTypeId, // Send account_type_id instead of name
-      customerName,
-      customerPhone,
-      companyId: companyId, // Send company_id instead of company name
-      parent,
-      customerEmail,
-      childrenList,
-      billingAddress,
-      billingPOBox,
-      billingCity,
-      billingState,
-      billingCode,
-      billingCountry,
-      shippingAddress,
-      shippingPOBox,
-      shippingCity,
-      shippingState,
-      shippingCode,
-      shippingCountry,
-      website,
-      notes,
-      contacts,
+      company_id: Number.isFinite(companyIdNumber) ? companyIdNumber : 0,
+      assigned_to: userId ?? 0,
+      account_name: customerName ?? "",
+      account_type_id: Number.isFinite(accountTypeNumeric) ? accountTypeNumeric : 0,
+      parent_account_id: parentAccountId,
+      description: notes ?? "",
+      phone: customerPhone ?? "",
+      email: customerEmail ?? "",
+      website: website ?? "",
+      accountAddress: {
+        billingAddress: {
+          street: billingAddress ?? "",
+          city: billingCity ?? "",
+          state: billingState ?? "",
+          country: billingCountry ?? "",
+          postalcode: billingCode ?? "",
+          pobox: billingPOBox ?? "",
+        },
+        shippingAddress: {
+          street: shippingAddress ?? "",
+          city: shippingCity ?? "",
+          state: shippingState ?? "",
+          country: shippingCountry ?? "",
+          postalcode: shippingCode ?? "",
+          pobox: shippingPOBox ?? "",
+          latitude: null,
+          longitude: null,
+        },
+      },
+      contacts: contacts.map((contact) => ({
+        salutation_id: contact.salutationId ?? 0,
+        contact_name: contact.name ?? "",
+        phone: contact.phone ?? "",
+        email: contact.email ?? "",
+        notes: contact.notes ?? "",
+      })),
     };
     console.log("💾 Saving Customer - JSON Payload:", JSON.stringify(payload, null, 2));
 
@@ -354,32 +376,8 @@ export default function ClientPage({ customerId }: Props) {
             Authorization: `Bearer ${token || ""}`,
           },
           body: JSON.stringify({
-            id: customerId,
-            name: customerName,
-            city: billingCity,
-            phone: customerPhone,
-            assignedTo: userId, // Send user_id as number
-            accountType: accountTypeId, // Send account_type_id instead of name
-            street: billingAddress,
-            country: billingCountry,
-            notes,
-            contacts,
-            parent,
-            childrenList,
-            billingAddress,
-            billingPOBox,
-            billingCity,
-            billingState,
-            billingCode,
-            billingCountry,
-            shippingAddress,
-            shippingPOBox,
-            shippingCity,
-            shippingState,
-            shippingCode,
-            shippingCountry,
-            website,
-            companyId: companyId, // Send company_id instead of company name
+            id: customerId != null ? Number(customerId) : undefined,
+            ...payload,
           }),
         });
         if (!response.ok) {
