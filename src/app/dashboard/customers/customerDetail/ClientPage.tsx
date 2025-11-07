@@ -280,7 +280,7 @@ export default function ClientPage({ customerId }: Props) {
         user.username.toLowerCase() === email.toLowerCase()
       );
       if (loggedInUser) {
-        // In edit mode, only set if customer data doesn't have assigned_to
+                // In edit mode, only set if customer data doesn't have assigned_to
         // In create mode, always set
         if (!isEditMode || (isEditMode && customerToEdit?.assigned_to == null)) {
           setAssignedTo(loggedInUser.value);
