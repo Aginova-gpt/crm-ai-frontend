@@ -62,8 +62,8 @@ type SortKey =
   | "amountDue";
 
 const GRID_COLS =
-  "120px 120px 140px 140px 200px 160px 120px 140px 160px 120px 140px 140px 220px";
-const HEADER_MIN_WIDTH = 1560;
+  "minmax(120px, 0.9fr) minmax(110px, 0.7fr) minmax(120px, 0.8fr) minmax(120px, 0.8fr) minmax(180px, 1fr) minmax(140px, 0.75fr) minmax(90px, 0.6fr) minmax(120px, 0.75fr) minmax(130px, 0.75fr) minmax(110px, 0.65fr) minmax(130px, 0.75fr) minmax(130px, 0.75fr) minmax(200px, 1fr)";
+const HEADER_MIN_WIDTH = 1320;
 
 const companyOptions = [
   { label: "All Companies", value: "all" },
@@ -395,7 +395,7 @@ const InvoicesPage = () => {
             bgcolor: "#EAF5FF",
             display: "grid",
             gridTemplateColumns: GRID_COLS,
-            columnGap: 2,
+            columnGap: 1,
             px: 2,
             py: 1,
             borderBottom: "1px solid",
@@ -440,14 +440,14 @@ const InvoicesPage = () => {
                 display: "grid",
                 gridTemplateColumns: GRID_COLS,
                 alignItems: "center",
-                columnGap: 2,
+                columnGap: 1,
                 px: 2,
                 py: 1.25,
                 minWidth: HEADER_MIN_WIDTH,
                 "&:hover": { bgcolor: "#FAFAFD" },
               }}
             >
-              <Typography sx={{ fontFamily: "monospace", color: "text.secondary" }}>
+              <Typography sx={{ fontWeight:400 , color: "text.primary" }}>
                 {invoice.invoiceNumber}
               </Typography>
               <Typography sx={{ color: "text.secondary" }}>{invoice.orderNumber}</Typography>

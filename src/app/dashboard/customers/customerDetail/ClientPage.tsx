@@ -369,7 +369,7 @@ export default function ClientPage({ customerId }: Props) {
 
     try {
       if (isEditMode) {
-        const response = await fetch("/api/customers", {
+        const response = await fetch("/customers", {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -387,13 +387,13 @@ export default function ClientPage({ customerId }: Props) {
         await response.json().catch(() => ({}));
         router.push("/dashboard/customers");
       } else {
-        const response = await fetch("https://pythonify.info/savecustomer.py", {
+        const response = await fetch("create-account", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
         if (!response.ok) {
-          const error = await response.json().catch(() => ({ error: "Failed to save customer" }));
+          const error = await response.json().catch(() => ({ error:  `Failed to update customer: ${response.status}`} ));
           throw new Error(error.error || `Failed to save customer: ${response.status}`);
         }
         await response.json().catch(() => ({}));
