@@ -118,6 +118,7 @@ export default function ClientPage({ customerId }: Props) {
   const [shippingCode, setShippingCode] = React.useState("");
   const [shippingCountry, setShippingCountry] = React.useState("");
   const [notes, setNotes] = React.useState("");
+  const saveAccountUrl = apiURL("create-account", "accounts.json");
 
   const [contacts, setContacts] = React.useState<Contact[]>([]);
   const setContactsPlain = React.useCallback((value: Contact[]) => setContacts(value), []);
@@ -387,9 +388,8 @@ export default function ClientPage({ customerId }: Props) {
         await response.json().catch(() => ({}));
         router.push("/dashboard/customers");
       } else {
-        const response = await fetch("create-account", {
+        const response = await fetchWithAuth(saveAccountUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
         if (!response.ok) {
