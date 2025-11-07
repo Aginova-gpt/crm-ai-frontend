@@ -365,7 +365,7 @@ export default function ClientPage({ customerId }: Props) {
         notes: contact.notes ?? "",
       })),
     };
-    console.log("💾 Saving Customer - JSON Payload:", JSON.stringify(payload, null, 2));
+    console.log("Saving Customer - JSON Payload:", JSON.stringify(payload, null, 2));
 
     try {
       if (isEditMode) {
