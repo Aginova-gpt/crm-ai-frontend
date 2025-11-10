@@ -23,7 +23,39 @@ type Customer = {
   company_id?: string;
 };
 
-type Contact = { name: string; phone: string; email: string; notes?: string; salutationId?: number };
+type Contact = {
+  id?: number | string | null;
+  name: string;
+  phone: string;
+  email: string;
+  notes?: string;
+  salutationId?: number | null;
+};
+
+function useCustomerDetail(customerId?: string) {
+  const { token, isLoggedIn } = useAuth();
+  const { fetchWithAuth } = useApi();
+
+  return useQuery({
+    queryKey: ["customer-detail", customerId],
+    queryFn: async () => {
+      if (!customerId) throw new Error("Missing customer id");
+      const url = `http://34.58.37.44/api/get-account/${customerId}`;
+      const res = await fetchWithAuth(url);
+      if (!res.ok) {
+        if (res.status === 401) throw new Error("Unauthorized – please log in again");
+        throw new Error(`Request failed: ${res.status}`);
+      }
+      return res.json();
+    },
+    enabled: isLoggedIn && !!token && !!customerId,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
+    refetchOnReconnect: "always",
+  });
+}
 
 function useCustomers() {
   const { token, isLoggedIn } = useAuth();
@@ -32,7 +64,7 @@ function useCustomers() {
   return useQuery({
     queryKey: ["customers"],
     queryFn: async () => {
-      const url = apiURL("accounts", "accounts.json");
+      const url = apiURL("get-account/${customerId}", "accounts.json");
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) {
         if (res.status === 401) throw new Error("Unauthorized – please log in again");
@@ -67,27 +99,6 @@ function useUsers(companyId: number | string) {
   });
 }
 
-function useAccountTypes() {
-  const { token, isLoggedIn } = useAuth();
-  const { fetchWithAuth } = useApi();
-
-  return useQuery({
-    queryKey: ["account-types"],
-    queryFn: async () => {
-      const url = "http://34.58.37.44/api/account-types";
-      const res = await fetchWithAuth(url);
-      if (!res.ok) {
-        if (res.status === 401) throw new Error("Unauthorized – please log in again");
-        throw new Error(`Request failed: ${res.status}`);
-      }
-      return res.json();
-    },
-    enabled: isLoggedIn && !!token,
-    staleTime: 10 * 60 * 1000, // 10 minutes
-    gcTime: 30 * 60 * 1000, // 30 minutes
-  });
-}
-
 export default function ClientPage({ customerId }: Props) {
   const router = useRouter();
   const isEditMode = !!customerId;                           // ⬅️ drive mode from prop
@@ -119,11 +130,15 @@ export default function ClientPage({ customerId }: Props) {
   const [shippingCountry, setShippingCountry] = React.useState("");
   const [notes, setNotes] = React.useState("");
   const saveAccountUrl = apiURL("create-account", "accounts.json");
+  const editAccountUrl = apiURL("edit-account", "edit-account.json");
 
   const [contacts, setContacts] = React.useState<Contact[]>([]);
   const setContactsPlain = React.useCallback((value: Contact[]) => setContacts(value), []);
 
   const { data: customersData, isLoading: customersLoading } = useCustomers();
+  const { data: customerDetail, isLoading: customerDetailLoading } = useCustomerDetail(
+    isEditMode ? customerId : undefined
+  );
 
   const customers: Customer[] = useMemo(() => {
     if (!customersData?.data) return [];
@@ -138,63 +153,15 @@ export default function ClientPage({ customerId }: Props) {
       .sort((a: Customer, b: Customer) => a.name.localeCompare(b.name));
   }, [customersData]);
 
-  const customerToEdit = useMemo(() => {
-    if (!isEditMode || !customersData?.data) return null;
-    for (const company of customersData.data) {
-      const customer = company.data.find((acc: any) => String(acc.id) === customerId);
-      if (customer) {
-        return {
-          id: String(customer.id),
-          name: customer.name || "",
-          company_id: company.company_id,
-          phone: customer.phone || "",
-          email: customer.email || "",
-          city: customer.city || "",
-          street: customer.street || "",
-          billing_po_box: customer.billing_po_box || "",
-          state: customer.state || "",
-          country: customer.country || "",
-          code: customer.address_code || "",
-          shipping_address: customer.shipping_address || "",
-          shipping_po_box: customer.shipping_po_box || "",
-          shipping_city: customer.shipping_city || "",
-          shipping_state: customer.shipping_state || "",
-          shipping_code: customer.shipping_code || "",
-          shipping_country: customer.shipping_country || "",
-          notes: customer.notes || "",
-          contacts: (customer.contacts || []).map((contact: any) => ({
-            name: contact.name || "",
-            phone: contact.phone || "",
-            email: contact.email || "",
-            notes: contact.notes || contact.description || "",
-            salutationId:
-              contact.salutation_id != null
-                ? Number(contact.salutation_id)
-                : contact.salutationId != null
-                ? Number(contact.salutationId)
-                : undefined,
-          })),
-          children_list: customer.children_list || "",
-          parent: customer.parent_account_id || "",
-          company_name: customer.company_name || "",
-          assigned_to: customer.assigned_to ?? null,
-          website: customer.website || "",
-        };
-      }
-    }
-    return null;
-  }, [isEditMode, customerId, customersData]);
-
   // Determine company ID for users API
   const companyIdForUsers = useMemo(() => {
-    if (isEditMode && customerToEdit?.company_id) {
-      return customerToEdit.company_id;
+    if (isEditMode && customerDetail?.company_id) {
+      return String(customerDetail.company_id);
     }
     return selectedCompanyId && selectedCompanyId !== "all" ? selectedCompanyId : "1";
-  }, [isEditMode, customerToEdit?.company_id, selectedCompanyId]);
+  }, [isEditMode, customerDetail?.company_id, selectedCompanyId]);
 
   const { data: usersData, isLoading: usersLoading } = useUsers(companyIdForUsers);
-  const { data: accountTypesData } = useAccountTypes();
 
   // Extract and format users from API response
   const users = useMemo(() => {
@@ -202,24 +169,45 @@ export default function ClientPage({ customerId }: Props) {
     // The API returns data as { "CompanyName": [users...] }
     const usersArray = Object.values(usersData.data).flat() as any[];
     return usersArray
-      .map((user: any) => ({
-        id: user.user_id,
-        username: user.username || `User ${user.user_id}`,
-        value: String(user.user_id),
-      }))
+      .map((user: any) => {
+        const username =
+          user.username ||
+          user.email ||
+          user.name ||
+          user.full_name ||
+          `User ${user.user_id}`;
+        return {
+          id: user.user_id,
+          username,
+          value: String(user.user_id),
+        };
+      })
       .sort((a, b) => a.username.localeCompare(b.username));
   }, [usersData]);
 
-  // Extract and format account types from API response
-  const accountTypes = useMemo(() => {
-    if (!accountTypesData || !Array.isArray(accountTypesData)) return [];
-    return accountTypesData
-      .map((type: any) => ({
-        id: type.account_type_id,
-        name: type.account_type_name,
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [accountTypesData]);
+  const fallbackAssignedUser = useMemo(() => {
+    if (!customerDetail || customerDetail.assigned_to == null) return null;
+    const value = String(customerDetail.assigned_to);
+    const exists = users.some((user) => user.value === value);
+    if (exists) return null;
+    const candidateNames = [
+      (customerDetail as any).assigned_to_name,
+      (customerDetail as any).assigned_to_username,
+      (customerDetail as any).assigned_user_name,
+      (customerDetail as any).assigned_user,
+      (customerDetail as any).assigned_to_email,
+    ].filter((name) => typeof name === "string" && name.trim().length > 0);
+    const username =
+      candidateNames.length > 0 ? candidateNames[0] : `User ${value}`;
+    return { id: `fallback-${value}`, username, value };
+  }, [customerDetail, users]);
+
+  const userOptions = useMemo(() => {
+    if (fallbackAssignedUser) {
+      return [fallbackAssignedUser, ...users];
+    }
+    return users;
+  }, [fallbackAssignedUser, users]);
 
   // Try to extract company name/id from JWT token
   const companyFromToken = useMemo(() => {
@@ -240,29 +228,89 @@ export default function ClientPage({ customerId }: Props) {
   }, [token]);
 
   useEffect(() => {
-    if (isEditMode && customerToEdit) {
-      setCustomerName(customerToEdit.name || "");
-      setCustomerPhone(customerToEdit.phone || "");
-      setCustomerEmail(customerToEdit.email || "");
-      setBillingCity(customerToEdit.city || "");
-      setBillingState(customerToEdit.state || "");
-      setBillingAddress(customerToEdit.street || "");
-      setBillingPOBox(customerToEdit.billing_po_box || "");
-      setBillingCountry(customerToEdit.country || "");
-      setShippingAddress(customerToEdit.street || "");
-      setShippingPOBox(customerToEdit.shipping_po_box || "");
-      setShippingCity(customerToEdit.city || "");
-      setShippingState(customerToEdit.state || "");
-      setShippingCode(customerToEdit.code || "");
-      setShippingCountry(customerToEdit.country || "");
-      setCompanyName(customerToEdit.company_name || "");
-      setParent(customerToEdit.parent || "");
-      setChildrenList(customerToEdit.children_list || "");
-      setWebsite(customerToEdit.website || "");
-      setNotes(customerToEdit.notes || "");
-      if (customerToEdit.contacts) setContacts(customerToEdit.contacts);
+    if (isEditMode && customerDetail) {
+      setCustomerName(customerDetail.account_name ?? "");
+      setCustomerPhone(customerDetail.account_phone ?? "");
+      setCustomerEmail(customerDetail.account_email ?? "");
+      setAccountType(
+        customerDetail.account_type_id != null ? String(customerDetail.account_type_id) : ""
+      );
+
+      const billingAddressData = customerDetail.billing_address ?? {};
+      setBillingAddress(billingAddressData.street ?? "");
+     // setBillingPOBox(billingAddressData.addresscode ?? "");
+      setBillingCity(billingAddressData.city ?? "");
+      setBillingState(billingAddressData.state ?? "");
+      setBillingCode(billingAddressData.postalcode ?? "");
+      setBillingCountry(billingAddressData.country ?? "");
+
+      const shippingAddressData = customerDetail.shipping_address ?? {};
+      setShippingAddress(shippingAddressData.street ?? "");
+     // setShippingPOBox(shippingAddressData.addresscode ?? "");
+      setShippingCity(shippingAddressData.city ?? "");
+      setShippingState(shippingAddressData.state ?? "");
+      setShippingCode(shippingAddressData.postalcode ?? "");
+      setShippingCountry(shippingAddressData.country ?? "");
+
+      setCompanyName(customerDetail.company_name ?? "");
+      setParent(
+        customerDetail.parent_account_id != null ? String(customerDetail.parent_account_id) : ""
+      );
+
+      if (Array.isArray(customerDetail.children) && customerDetail.children.length > 0) {
+        const childrenText = customerDetail.children
+          .map((child: any) => child.account_name || child.name || child.account_id)
+          .filter(Boolean)
+          .join(", ");
+        setChildrenList(childrenText);
+      } else {
+        setChildrenList("");
+      }
+
+      setWebsite(customerDetail.account_website ?? "");
+      setNotes(customerDetail.description ?? "");
+
+      if (Array.isArray(customerDetail.contacts)) {
+        setContacts(
+          customerDetail.contacts.map((contact: any) => ({
+            id:
+              contact.contact_id ??
+              contact.contactId ??
+              contact.id ??
+              contact.contactID ??
+              null,
+            name:
+              contact.name ??
+              contact.contact_name ??
+              contact.full_name ??
+              contact.username ??
+              "",
+            phone:
+              contact.phone ??
+              contact.phone_number ??
+              contact.contact_phone ??
+              contact.mobile ??
+              "",
+            email:
+              contact.email ??
+              contact.contact_email ??
+              contact.work_email ??
+              contact.personal_email ??
+              "",
+            notes: contact.notes ?? contact.description ?? "",
+            salutationId:
+              contact.salutation_id != null
+                ? Number(contact.salutation_id)
+                : contact.salutationId != null
+                ? Number(contact.salutationId)
+                : undefined,
+          }))
+        );
+      } else {
+        setContacts([]);
+      }
     }
-  }, [isEditMode, customerToEdit]);
+  }, [isEditMode, customerDetail]);
 
   // Auto-populate company name (works in both create and edit mode)
   useEffect(() => {
@@ -278,37 +326,35 @@ export default function ClientPage({ customerId }: Props) {
     }
   }, [companyName, companyFromToken, selectedCompanyName, selectedCompanyId]);
 
-  // Set assignedTo from customer data in edit mode (only when users are loaded)
-  // This ensures the Select component can find the matching user option
   useEffect(() => {
-    if (isEditMode && customerToEdit?.assigned_to != null && users.length > 0) {
-      const assignedToValue = String(customerToEdit.assigned_to);
-      // Verify that the user exists in the users list
-      const userExists = users.some((user) => user.value === assignedToValue);
-      if (userExists) {
-        setAssignedTo(assignedToValue);
-      }
+    if (!isEditMode) return;
+    if (!customerDetail) return;
+    if (customerDetail.assigned_to == null) {
+      setAssignedTo("");
+    } else {
+      setAssignedTo(String(customerDetail.assigned_to));
     }
-  }, [isEditMode, customerToEdit?.assigned_to, users]);
+  }, [isEditMode, customerDetail]);
 
   // Auto-populate assignedTo with logged-in user's email
   // In create mode: always use logged-in user
   // In edit mode: only use logged-in user if assigned_to is null
   useEffect(() => {
-    if (!assignedTo && email && users.length > 0) {
+    if (!assignedTo && email && userOptions.length > 0) {
       // Find user whose username matches the logged-in email
-      const loggedInUser = users.find((user) => 
-        user.username.toLowerCase() === email.toLowerCase()
-      );
+      const loggedInUser = userOptions.find((user) => {
+        if (!user.username || !email) return false;
+        return user.username.toLowerCase() === email.toLowerCase();
+      });
       if (loggedInUser) {
                 // In edit mode, only set if customer data doesn't have assigned_to
         // In create mode, always set
-        if (!isEditMode || (isEditMode && customerToEdit?.assigned_to == null)) {
+        if (!isEditMode || (isEditMode && customerDetail?.assigned_to == null)) {
           setAssignedTo(loggedInUser.value);
         }
       }
     }
-  }, [isEditMode, assignedTo, email, users, customerToEdit?.assigned_to]);
+  }, [isEditMode, assignedTo, email, userOptions, customerDetail?.assigned_to]);
 
   const handleSave = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -319,13 +365,8 @@ export default function ClientPage({ customerId }: Props) {
     // Get company_id - priority: token company_id > selectedCompanyId > null
     const companyId = companyFromToken?.id || (selectedCompanyId && selectedCompanyId !== "all" ? selectedCompanyId : null);
 
-    // Convert accountType name to accountType ID
-    const accountTypeId = accountType 
-      ? (accountTypes.find((type) => type.name === accountType)?.id || null)
-      : null;
-
     const companyIdNumber = companyId != null ? Number(companyId) : 0;
-    const accountTypeNumeric = accountTypeId != null ? Number(accountTypeId) : 0;
+    const accountTypeNumeric = accountType ? Number(accountType) : 0;
     const parentAccountId = parent ? Number(parent) : null;
 
     const payload = {
@@ -358,27 +399,76 @@ export default function ClientPage({ customerId }: Props) {
           longitude: null,
         },
       },
-      contacts: contacts.map((contact) => ({
-        salutation_id: contact.salutationId ?? 0,
-        contact_name: contact.name ?? "",
-        phone: contact.phone ?? "",
-        email: contact.email ?? "",
-        notes: contact.notes ?? "",
-      })),
+      contacts: contacts.map((contact) => {
+        const normalizedId = (() => {
+          if (contact.id == null) return null;
+          if (typeof contact.id === "number") {
+            return Number.isFinite(contact.id) ? contact.id : null;
+          }
+          if (typeof contact.id === "string") {
+            const trimmed = contact.id.trim();
+            if (!trimmed) return null;
+            const numeric = Number(trimmed);
+            if (!Number.isNaN(numeric)) return numeric;
+            return trimmed;
+          }
+          return null;
+        })();
+        return {
+          contact_id: normalizedId,
+          id: normalizedId,
+          salutation_id: contact.salutationId ?? 0,
+          contact_name: contact.name ?? "",
+          phone: contact.phone ?? "",
+          email: contact.email ?? "",
+          notes: contact.notes ?? "",
+        };
+      }),
     };
-    console.log("Saving Customer - JSON Payload:", JSON.stringify(payload, null, 2));
+   // console.log("Saving Customer - JSON Payload:", JSON.stringify(payload, null, 2));
 
     try {
+      const accountId = (() => {
+        const candidates = [
+          customerDetail?.account_id,
+          (customerDetail as any)?.accountId,
+          customerDetail?.id,
+          (customerDetail as any)?.accountID,
+          customerId,
+        ];
+        for (const candidate of candidates) {
+          if (candidate == null) continue;
+          if (typeof candidate === "number") {
+            if (Number.isFinite(candidate)) return candidate;
+            continue;
+          }
+          if (typeof candidate === "string") {
+            const trimmed = candidate.trim();
+            if (!trimmed) continue;
+            const numeric = Number(trimmed);
+            if (!Number.isNaN(numeric)) return numeric;
+            return trimmed;
+          }
+        }
+        return null;
+      })();
+
+      if (isEditMode && accountId == null) {
+        console.error("Missing account_id while attempting to update account", {
+          customerId,
+          customerDetail,
+        });
+        alert("We could not determine the account to update. Please reload and try again.");
+        return;
+      }
+
       if (isEditMode) {
-        const response = await fetch("/customers", {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token || ""}`,
-          },
+        const response = await fetchWithAuth(editAccountUrl, {
+          method: "POST",
           body: JSON.stringify({
-            id: customerId != null ? Number(customerId) : undefined,
             ...payload,
+            account_id: accountId,
+            id: accountId,
           }),
         });
         if (!response.ok) {
@@ -386,6 +476,7 @@ export default function ClientPage({ customerId }: Props) {
           throw new Error(error.error || `Failed to update customer: ${response.status}`);
         }
         await response.json().catch(() => ({}));
+        alert("Customer updated successfully.");
         router.push("/dashboard/customers");
       } else {
         const response = await fetchWithAuth(saveAccountUrl, {
@@ -397,6 +488,7 @@ export default function ClientPage({ customerId }: Props) {
           throw new Error(error.error || `Failed to save customer: ${response.status}`);
         }
         await response.json().catch(() => ({}));
+        alert("Customer saved successfully.");
         router.push("/dashboard/customers");
       }
     } catch (error: any) {
@@ -460,8 +552,8 @@ export default function ClientPage({ customerId }: Props) {
                       <CircularProgress size={16} sx={{ mr: 1 }} />
                       Loading users...
                     </MenuItem>
-                  ) : users.length > 0 ? (
-                    users.map((user) => (
+                  ) : userOptions.length > 0 ? (
+                    userOptions.map((user) => (
                       <MenuItem key={user.id} value={user.value}>
                         {user.username}
                       </MenuItem>
@@ -477,8 +569,19 @@ export default function ClientPage({ customerId }: Props) {
 
         <Box sx={{ display: "flex", gap: 1 }}>
           <Button variant="outlined" onClick={() => router.push("/dashboard/customers")}>Cancel</Button>
-          <Button type="submit" variant="contained" form="customer-form" disabled={customersLoading && isEditMode}>
-            {customersLoading && isEditMode ? <CircularProgress size={20} /> : isEditMode ? "Update" : "Save"}
+          <Button
+            type="submit"
+            variant="contained"
+            form="customer-form"
+            disabled={isEditMode && (customersLoading || customerDetailLoading)}
+          >
+            {isEditMode && (customersLoading || customerDetailLoading) ? (
+              <CircularProgress size={20} />
+            ) : isEditMode ? (
+              "Update"
+            ) : (
+              "Save"
+            )}
           </Button>
         </Box>
       </Box>

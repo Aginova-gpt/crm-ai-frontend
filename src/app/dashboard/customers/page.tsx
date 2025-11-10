@@ -94,8 +94,11 @@ function useCustomers() {
       return res.json();
     },
     enabled: isLoggedIn && !!token,
-    staleTime: Infinity,
-    gcTime: Infinity,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
+    refetchOnReconnect: "always",
   });
 }
 
