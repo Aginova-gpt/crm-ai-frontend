@@ -7,6 +7,7 @@ import {
 } from "@mui/material";
 import { useRouter } from "next/navigation";              // ⬅️ keep router
 import CustomerFormLeft from "@/components/CustomerForm/CustomerFormLeft";
+import CustomerOrdersList from "@/components/CustomerForm/CustomerOrdersList";
 import { useApi } from "@/utils/api";
 import { useBackend } from "@/contexts/BackendContext";
 import { useQuery } from "@tanstack/react-query";
@@ -539,6 +540,14 @@ export default function ClientPage({ customerId }: Props) {
     }
   };
 
+  const customerOrdersRaw = useMemo(() => {
+    if (!customerDetail) return [];
+    if (Array.isArray((customerDetail as any).orders)) return (customerDetail as any).orders;
+    if (Array.isArray((customerDetail as any).order_history)) return (customerDetail as any).order_history;
+    if (Array.isArray((customerDetail as any).orderHistory)) return (customerDetail as any).orderHistory;
+    return [];
+  }, [customerDetail]);
+
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2, bgcolor: "#FAFAFD", p: 2, borderRadius: 1 }}>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", bgcolor: "#FFF", p: 2, borderRadius: 1 }}>
@@ -658,9 +667,13 @@ export default function ClientPage({ customerId }: Props) {
         />
 
         <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          <Box sx={{ bgcolor: "#FFF", p: 2, borderRadius: 1 }}>
-            <Typography fontWeight={600} sx={{ mb: 1 }}>Orders</Typography>
-          </Box>
+          {isEditMode && (
+            <CustomerOrdersList
+              loading={customerDetailLoading}
+              rawOrders={customerOrdersRaw}
+              headerTitle="Orders"
+            />
+          )}
           <Box sx={{ bgcolor: "#FFF", p: 2, borderRadius: 1 }}>
             <Typography fontWeight={600} sx={{ mb: 1 }}>Quotes</Typography>
           </Box>
