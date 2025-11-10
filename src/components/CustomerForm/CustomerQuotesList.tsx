@@ -19,151 +19,122 @@ import {
     Button,
 } from "@mui/material";
 import { MdModeEditOutline, MdDelete } from "react-icons/md";
+import {
+    coerceToArray,
+    normalizeProductsList,
+    normalizeTotalAmount,
+} from "./CustomerOrdersList";
 
 type UnknownRecord = Record<string, any>;
 
-export type CustomerOrder = {
+export type CustomerQuote = {
     id: string;
-    orderNo: string;
+    quoteNo: string;
     subject: string;
-    quoteName: string;
+    quoteStage: string;
     totalAmount: string;
     productsList: string;
     raw: UnknownRecord;
 };
 
-export function coerceToArray(value: unknown): UnknownRecord[] {
-    if (Array.isArray(value)) {
-        return value.filter((item) => item && typeof item === "object") as UnknownRecord[];
-    }
-    return [];
-}
+function normalizeQuotes(rawQuotes: UnknownRecord[] | undefined | null): CustomerQuote[] {
+    if (!rawQuotes || rawQuotes.length === 0) return [];
 
-export function normalizeTotalAmount(value: unknown): string {
-    if (value == null) return "-";
-    if (typeof value === "number") return value.toLocaleString();
-    const trimmed = String(value).trim();
-    if (!trimmed) return "-";
-    return trimmed;
-}
+    return rawQuotes.map((quote, index) => {
+        const fallbackId = `quote-${index}`;
+        const quoteNoSource =
+            quote.quote_no ??
+            quote.quoteNo ??
+            quote.quote_number ??
+            quote.quoteNumber ??
+            quote.quote_num ??
+            quote.quoteNum ??
+            quote.quotation_number ??
+            quote.quotationNumber ??
+            quote.quote_code ??
+            quote.quoteCode ??
+            quote.quote_reference ??
+            quote.quoteReference ??
+            quote.reference_number ??
+            quote.referenceNumber ??
+            quote.number ??
+            quote.quote_id ??
+            quote.quoteId ??
+            quote.id ??
+            null;
 
-export function normalizeProductsList(value: unknown): string {
-    if (Array.isArray(value)) {
-        return value
-            .map((item) => {
-                if (item == null) return "";
-                if (typeof item === "string") return item;
-                if (typeof item === "object") {
-                    const name =
-                        (item as UnknownRecord).name ??
-                        (item as UnknownRecord).product_name ??
-                        (item as UnknownRecord).label ??
-                        "";
-                    const quantity =
-                        (item as UnknownRecord).quantity ??
-                        (item as UnknownRecord).qty ??
-                        (item as UnknownRecord).count ??
-                        null;
-                    if (name && quantity != null) {
-                        return `${name} (${quantity})`;
-                    }
-                    return String(name || quantity || "").trim();
-                }
-                return String(item).trim();
-            })
-            .filter(Boolean)
-            .join(", ");
-    }
-    if (typeof value === "string") return value;
-    if (value && typeof value === "object") {
-        const entries = Object.entries(value as UnknownRecord)
-            .map(([key, val]) => {
-                if (val == null || val === "") return "";
-                return `${key} (${val})`;
-            })
-            .filter(Boolean);
-        if (entries.length) return entries.join(", ");
-    }
-    return "-";
-}
-
-function normalizeOrders(rawOrders: UnknownRecord[] | undefined | null): CustomerOrder[] {
-    if (!rawOrders || rawOrders.length === 0) return [];
-
-    return rawOrders.map((order, index) => {
-        const fallbackId = `order-${index}`;
-        const orderNo =
-            order.order_no ??
-            order.orderNo ??
-            order.order_number ??
-            order.orderNumber ??
-            order.order_id ??
-            order.orderId ??
-            order.invoice_no ??
-            order.id ??
-            fallbackId;
+        const quoteNo =
+            quoteNoSource != null && String(quoteNoSource).trim()
+                ? quoteNoSource
+                : fallbackId;
 
         const subject =
-            order.subject ??
-            order.order_subject ??
-            order.name ??
-            order.title ??
-            order.description ??
+            quote.subject ??
+            quote.quote_subject ??
+            quote.name ??
+            quote.title ??
+            quote.description ??
             "-";
 
-        const quoteName =
-            order.quote_name ??
-            order.quoteName ??
-            order.quote ??
-            order.related_quote ??
+        const quoteStage =
+            quote.quote_stage ??
+            quote.quoteStage ??
+            quote.stage ??
+            quote.stage_name ??
+            quote.stageName ??
+            quote.status ??
+            quote.quote_status ??
+            quote.pipeline_stage ??
+            quote.pipelineStage ??
+            quote.phase ??
             "-";
 
         const totalAmount =
-            order.total_amount ??
-            order.amount ??
-            order.total ??
-            order.totalAmount ??
-            order.grand_total ??
-            order.value ??
+            quote.total_amount ??
+            quote.amount ??
+            quote.total ??
+            quote.totalAmount ??
+            quote.grand_total ??
+            quote.value ??
             null;
 
         const productsList =
-            order.products_list ??
-            order.products ??
-            order.product_list ??
-            order.items ??
-            order.order_items ??
-            order.line_items ??
+            quote.products_list ??
+            quote.products ??
+            quote.product_list ??
+            quote.items ??
+            quote.quote_items ??
+            quote.line_items ??
             null;
 
         return {
-            id: String(order.id ?? order.order_id ?? order.orderId ?? fallbackId),
-            orderNo: String(orderNo ?? `#${index + 1}`),
+            id: String(quote.id ?? quote.quote_id ?? quote.quoteId ?? fallbackId),
+            quoteNo: String(quoteNo ?? `#${index + 1}`),
             subject: String(subject ?? "-") || "-",
-            quoteName: String(quoteName ?? "-") || "-",
+            quoteStage: String(quoteStage ?? "-") || "-",
             totalAmount: normalizeTotalAmount(totalAmount),
             productsList: normalizeProductsList(productsList),
-            raw: order,
+            raw: quote,
         };
     });
 }
 
-interface CustomerOrdersListProps {
+interface CustomerQuotesListProps {
     loading?: boolean;
-    rawOrders?: unknown;
+    rawQuotes?: unknown;
     headerTitle?: string;
     rowsPerPageOptions?: number[];
 }
 
-export default function CustomerOrdersList({
+export default function CustomerQuotesList({
     loading = false,
-    rawOrders,
-    headerTitle = "Orders",
+    rawQuotes,
+    headerTitle = "Quotes",
     rowsPerPageOptions = [5, 10, 25],
-}: CustomerOrdersListProps) {
-    const orders = React.useMemo(
-        () => normalizeOrders(coerceToArray(rawOrders as UnknownRecord[])),
-        [rawOrders]
+}: CustomerQuotesListProps) {
+    const quotes = React.useMemo(
+        () => normalizeQuotes(coerceToArray(rawQuotes as UnknownRecord[])),
+        [rawQuotes]
     );
 
     const [page, setPage] = React.useState(0);
@@ -171,21 +142,21 @@ export default function CustomerOrdersList({
 
     React.useEffect(() => {
         setPage(0);
-    }, [rowsPerPage, orders.length]);
+    }, [rowsPerPage, quotes.length]);
 
-    const paginatedOrders = React.useMemo(() => {
+    const paginatedQuotes = React.useMemo(() => {
         const start = page * rowsPerPage;
-        return orders.slice(start, start + rowsPerPage);
-    }, [orders, page, rowsPerPage]);
+        return quotes.slice(start, start + rowsPerPage);
+    }, [quotes, page, rowsPerPage]);
 
-    const hasOrders = orders.length > 0;
+    const hasQuotes = quotes.length > 0;
 
     return (
         <Box sx={{ bgcolor: "#FFF", borderRadius: 1, border: "1px solid #EDF1F5" }}>
             <Box
                 sx={{
                     display: "flex",
-                    justifyContent: hasOrders ? "space-between" : "flex-start",
+                    justifyContent: hasQuotes ? "space-between" : "flex-start",
                     alignItems: "center",
                     gap: 2,
                     px: 2,
@@ -193,9 +164,9 @@ export default function CustomerOrdersList({
                 }}
             >
                 <Typography sx={{ fontWeight: 600, fontSize: 18 }}>
-                    {orders.length ? `${orders.length} ${headerTitle}` : headerTitle}
+                    {quotes.length ? `${quotes.length} ${headerTitle}` : headerTitle}
                 </Typography>
-                {hasOrders && (
+                {hasQuotes && (
                     <Box sx={{ display: "flex", gap: 1, flexShrink: 0 }}>
                         <Button
                             size="small"
@@ -231,10 +202,10 @@ export default function CustomerOrdersList({
                         <Skeleton key={index} height={40} sx={{ mb: index === rowsPerPage - 1 ? 0 : 1 }} />
                     ))}
                 </Box>
-            ) : orders.length === 0 ? (
+            ) : quotes.length === 0 ? (
                 <Box sx={{ p: 2 }}>
                     <Typography color="text.secondary" fontSize={14}>
-                        No orders found for this customer.
+                        No quotes found for this customer.
                     </Typography>
                 </Box>
             ) : (
@@ -246,27 +217,27 @@ export default function CustomerOrdersList({
                                     <TableCell padding="checkbox">
                                         <Checkbox size="small" />
                                     </TableCell>
-                                    <TableCell>Order No</TableCell>
+                                    <TableCell>Quote No</TableCell>
                                     <TableCell>Subject</TableCell>
-                                    <TableCell>Quote Name</TableCell>
+                                    <TableCell>Quote Stage</TableCell>
                                     <TableCell>Total Amount</TableCell>
                                     <TableCell>Products list</TableCell>
                                     <TableCell align="center">Actions</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
-                                {paginatedOrders.map((order) => (
-                                    <TableRow key={order.id} hover sx={{ "& td": { fontSize: 12 } }}>
+                                {paginatedQuotes.map((quote) => (
+                                    <TableRow key={quote.id} hover sx={{ "& td": { fontSize: 12 } }}>
                                         <TableCell padding="checkbox">
                                             <Checkbox size="small" />
                                         </TableCell>
-                                        <TableCell>{order.orderNo}</TableCell>
-                                        <TableCell>{order.subject}</TableCell>
-                                        <TableCell>{order.quoteName}</TableCell>
-                                        <TableCell>{order.totalAmount}</TableCell>
+                                        <TableCell>{quote.quoteNo}</TableCell>
+                                        <TableCell>{quote.subject}</TableCell>
+                                        <TableCell>{quote.quoteStage}</TableCell>
+                                        <TableCell>{quote.totalAmount}</TableCell>
                                         <TableCell sx={{ maxWidth: 220 }}>
-                                            <Typography noWrap title={order.productsList}>
-                                                {order.productsList}
+                                            <Typography noWrap title={quote.productsList}>
+                                                {quote.productsList}
                                             </Typography>
                                         </TableCell>
                                         <TableCell align="center">
@@ -288,7 +259,7 @@ export default function CustomerOrdersList({
                     </TableContainer>
                     <TablePagination
                         component="div"
-                        count={orders.length}
+                        count={quotes.length}
                         page={page}
                         rowsPerPage={rowsPerPage}
                         rowsPerPageOptions={rowsPerPageOptions}
@@ -299,7 +270,7 @@ export default function CustomerOrdersList({
                         }}
                         labelRowsPerPage="Rows per page"
                         labelDisplayedRows={({ from, to, count }) =>
-                            `${from}-${to} of ${count !== -1 ? count : orders.length}`
+                            `${from}-${to} of ${count !== -1 ? count : quotes.length}`
                         }
                         sx={{
                             "& .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows": {

@@ -8,6 +8,7 @@ import {
 import { useRouter } from "next/navigation";              // ⬅️ keep router
 import CustomerFormLeft from "@/components/CustomerForm/CustomerFormLeft";
 import CustomerOrdersList from "@/components/CustomerForm/CustomerOrdersList";
+import CustomerQuotesList from "@/components/CustomerForm/CustomerQuotesList";
 import { useApi } from "@/utils/api";
 import { useBackend } from "@/contexts/BackendContext";
 import { useQuery } from "@tanstack/react-query";
@@ -548,6 +549,15 @@ export default function ClientPage({ customerId }: Props) {
     return [];
   }, [customerDetail]);
 
+  const customerQuotesRaw = useMemo(() => {
+    if (!customerDetail) return [];
+    if (Array.isArray((customerDetail as any).quotes)) return (customerDetail as any).quotes;
+    if (Array.isArray((customerDetail as any).quotes_history)) return (customerDetail as any).quotes_history;
+    if (Array.isArray((customerDetail as any).quote_history)) return (customerDetail as any).quote_history;
+    if (Array.isArray((customerDetail as any).quoteHistory)) return (customerDetail as any).quoteHistory;
+    return [];
+  }, [customerDetail]);
+
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 2, bgcolor: "#FAFAFD", p: 2, borderRadius: 1 }}>
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", bgcolor: "#FFF", p: 2, borderRadius: 1 }}>
@@ -674,9 +684,13 @@ export default function ClientPage({ customerId }: Props) {
               headerTitle="Orders"
             />
           )}
-          <Box sx={{ bgcolor: "#FFF", p: 2, borderRadius: 1 }}>
-            <Typography fontWeight={600} sx={{ mb: 1 }}>Quotes</Typography>
-          </Box>
+          {isEditMode && (
+            <CustomerQuotesList
+              loading={customerDetailLoading}
+              rawQuotes={customerQuotesRaw}
+              headerTitle="Quotes"
+            />
+          )}
           <Box sx={{ bgcolor: "#FFF", p: 2, borderRadius: 1 }}>
             <Typography fontWeight={600} sx={{ mb: 1 }}>Invoices</Typography>
           </Box>
