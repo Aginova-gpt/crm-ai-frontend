@@ -16,79 +16,90 @@ import {
   TableSortLabel,
   CircularProgress,
   Alert,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
-import { MdSearch, MdAddBox, MdEdit, MdDelete } from "react-icons/md";
+import { MdSearch, MdEdit, MdDelete } from "react-icons/md";
 import StatusCard from "@/components/StatusCard/StatusCard";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBackend } from "@/contexts/BackendContext";
-import { addAsset } from "@/styles/icons";
+import { useCompany } from "@/contexts/CompanyContext";
 import Image from "next/image";
+import { addAsset } from "@/styles/icons";
 
 // ===== Types =====
+// Columns removed: systemNo, sensors, group, ecns, platform,
+// hostingPrice, listPrice, oemPrice, resellerPrice
+// Renamed: internalName -> productName, type -> subcategory
+
 type Product = {
   id: string;
   productNumber: string;
-  systemNo: string;
-  internalName: string;
-  sensors?: string;
-  group?: string;
+  productName: string; // formerly internalName
   category?: string;
-  type?: string;
-  ecns?: string;
+  subcategory?: string; // formerly type
   status?: string;
-  platform?: string;
-  hostingPrice?: string;
-  listPrice?: string;
-  oemPrice?: string;
-  resellerPrice?: string;
   description?: string;
   comments?: string;
+  company_id?: string; // used for client-side company filtering if backend doesn't filter
+  company_name?: string; // optional for grouped responses
 };
 
-type SortKey =
-  | "productNumber"
-  | "systemNo"
-  | "internalName"
-  | "category"
-  | "status"
-  | "platform";
+type SortKey = "productNumber" | "productName" | "category" | "subcategory" | "status";
+
 type SortDir = "asc" | "desc";
 
-// ===== Table Headers =====
+type TabKey = "active" | "eol";
+
+
+
+// ===== Table Columns & Layout =====
 const headerCols = [
   { key: "#", label: "#" },
   { key: "productNumber", label: "Product Number", sortable: true },
-  { key: "systemNo", label: "System No.", sortable: true },
-  { key: "internalName", label: "Internal Name", sortable: true },
-  { key: "sensors", label: "Sensors" },
-  { key: "group", label: "Group" },
-  { key: "category", label: "Category" },
-  { key: "type", label: "Type" },
-  { key: "ecns", label: "ECNs" },
-  { key: "status", label: "Status" },
-  { key: "platform", label: "Platform" },
-  { key: "hostingPrice", label: "Hosting Qty:Price" },
-  { key: "listPrice", label: "List Qty:Price" },
-  { key: "oemPrice", label: "OEM Qty:Price" },
-  { key: "resellerPrice", label: "Reseller Qty:Price" },
+  { key: "productName", label: "Product Name", sortable: true },
+  { key: "category", label: "Category", sortable: true },
+  { key: "subcategory", label: "Subcategory", sortable: true },
+  { key: "status", label: "Status", sortable: true },
   { key: "description", label: "Description" },
   { key: "comments", label: "Comments" },
   { key: "actions", label: "Quick Actions" },
 ];
 
-// ===== Inline Hook =====
-function useProducts() {
+const COL_WIDTHS: Record<string, string> = {
+  "#": "60px",
+  productNumber: "180px",
+  productName: "minmax(220px, 2fr)",
+  category: "minmax(140px, 1fr)",
+  subcategory: "minmax(160px, 1fr)",
+  status: "120px",
+  description: "minmax(240px, 2fr)",
+  comments: "minmax(200px, 1.5fr)",
+  actions: "100px",
+};
+
+const GRID_COLS = headerCols.map(c => COL_WIDTHS[c.key] || "minmax(120px, 1fr)").join(" ");
+
+// ===== Data Hook =====
+function useProducts(selectedCompanyId: string | null, endpoint: string) {
   const { token, isLoggedIn } = useAuth();
   const { apiURL } = useBackend();
 
   return useQuery({
-    queryKey: ["products"],
+    queryKey: ["products", selectedCompanyId, endpoint],
     queryFn: async () => {
-      const res = await fetch(apiURL("products", "products.json"), {
+      const qs = selectedCompanyId && selectedCompanyId !== "all"
+        ? `?company_id=${encodeURIComponent(selectedCompanyId)}`
+        : "";
+      const base = apiURL("products", endpoint); // "" -> /api/products, "endoflife" -> /api/products/endoflife
+      const url = qs ? `${base}${qs}` : base;
+      const res = await fetch(url, {
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`, // ✅ always include token
+          Authorization: `Bearer ${token}`,
         },
       });
       if (!res.ok) {
@@ -97,56 +108,137 @@ function useProducts() {
       }
       return res.json();
     },
-    enabled: isLoggedIn && !!token, // ✅ only fetch if logged in
+    enabled: isLoggedIn && !!token,
+    staleTime: 5 * 60 * 1000,
   });
 }
 
 export default function ProductsPage() {
-  const [tab, setTab] = useState(0);
-  const { data, isLoading, error } = useProducts();
+  const [tab, setTab] = useState<TabKey>("active");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<SortKey>("productNumber");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(20);
+  // 🔎 Category filter via StatusCard clicks
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+
+  // 🌍 Company context (defaults handled in provider)
+  const { companies, selectedCompanyId, setSelectedCompanyId, isLoading: companyLoading } = useCompany();
+
+  React.useEffect(() => {
+    setCategoryFilter(null);
+  }, [selectedCompanyId, tab]);
+
+  // 🧠 Fetch products (backend can filter with company_id query param)
+  const endpoint = tab === "eol" ? "endoflife" : "";
+  const { data, isLoading, error } = useProducts(selectedCompanyId, endpoint);
 
   // ===== Transform backend response =====
   const allProducts: Product[] = useMemo(() => {
-    if (!data?.products) return [];
-    return data.products.map((p: any) => ({
-      id: String(p.product_id),
-      productNumber: p.product_number,
-      systemNo: p.system_no,
-      internalName: p.internal_name,
-      sensors: p.sensors ?? "",
-      group: p.group ?? "",
-      category: p.category ?? "",
-      type: p.type ?? "",
-      ecns: p.ecns ?? "",
-      status: p.status ?? "",
-      platform: p.platform ?? "",
-      hostingPrice: p.hosting_price ?? "",
-      listPrice: p.list_price ?? "",
-      oemPrice: p.oem_price ?? "",
-      resellerPrice: p.reseller_price ?? "",
-      description: p.description ?? "",
-      comments: p.comments ?? "",
-    }));
+    if (!data) return [];
+
+    // Shape A (flat): { products: [...] }
+    if (Array.isArray(data.products)) {
+      return data.products.map((p: any) => ({
+        id: String(p.product_id ?? p.id),
+        productNumber: p.product_number ?? "",
+        productName: p.internal_name ?? p.product_name ?? "",
+        category: p.category ?? "",
+        subcategory: p.type ?? p.subcategory ?? "",
+        status: p.status ?? "",
+        description: p.description ?? "",
+        comments: p.comments ?? "",
+        company_id: p.company_id ? String(p.company_id) : undefined,
+        company_name: p.company_name,
+      }));
+    }
+
+    // Shape B (grouped array): { data: [{ company_id, company_name, products: [...] }, ...] }
+    if (Array.isArray(data.data)) {
+      const rows: Product[] = [];
+      for (const g of data.data) {
+        const cname = g.company_name;
+        const cid = g.company_id ? String(g.company_id) : undefined;
+        for (const p of g.products || []) {
+          rows.push({
+            id: String(p.product_id ?? p.id),
+            productNumber: p.product_number ?? "",
+            productName: p.internal_name ?? p.product_name ?? "",
+            category: p.category ?? "",
+            subcategory: p.type ?? p.subcategory ?? "",
+            status: p.status ?? "",
+            description: p.description ?? "",
+            comments: p.comments ?? "",
+            company_id: cid,
+            company_name: cname,
+          });
+        }
+      }
+      return rows;
+    }
+
+    // Shape C (object keyed by company): { "Aginova": [...], "Aegis": [...] }
+    if (typeof data === "object" && data !== null) {
+      const rows: Product[] = [];
+      for (const [cname, list] of Object.entries<any>(data)) {
+        if (!Array.isArray(list)) continue;
+        for (const p of list) {
+          rows.push({
+            id: String(p.product_id ?? p.id),
+            productNumber: p.product_number ?? "",
+            productName: p.internal_name ?? p.product_name ?? "",
+            category: p.category ?? "",
+            subcategory: p.type ?? p.subcategory ?? "",
+            status: p.status ?? "",
+            description: p.description ?? "",
+            comments: p.comments ?? "",
+            company_name: cname,
+          });
+        }
+      }
+      return rows;
+    }
+
+    return [];
   }, [data]);
 
-  // ===== Search =====
-  const [searchQuery, setSearchQuery] = useState("");
+  // ===== Category counts for StatusCards =====
+  const categoryCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of allProducts) {
+      const cat = (p.category || "").trim();
+      if (cat && cat.toUpperCase() !== "UNCATEGORIZED") {
+        map.set(cat, (map.get(cat) || 0) + 1);
+      }
+    }
+    return Array.from(map.entries());
+  }, [allProducts]);
+
+  // ===== Search & Category Filter =====
   const filtered = useMemo(() => {
-    if (!searchQuery) return allProducts;
-    return allProducts.filter((p) =>
-      `${p.productNumber} ${p.internalName} ${p.category} ${p.status} ${p.platform}`
-        .toLowerCase()
-        .includes(searchQuery.toLowerCase())
-    );
-  }, [allProducts, searchQuery]);
+    // 1) Start from tab data
+    let base = allProducts;
+
+    // 2) Apply category filter if any
+    if (categoryFilter) {
+      base = base.filter(p => (p.category || "").trim() === categoryFilter);
+    }
+
+    // 3) Apply text search
+    if (!searchQuery.trim()) return base;
+    const q = searchQuery.toLowerCase();
+    return base.filter((p) => {
+      const code = p.productNumber?.toLowerCase() || "";
+      const name = p.productName?.toLowerCase() || "";
+      return code.includes(q) || name.includes(q);
+    });
+  }, [allProducts, categoryFilter, searchQuery]);
 
   // ===== Sorting =====
-  const [sortBy, setSortBy] = useState<SortKey>("productNumber");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const toggleSort = (key: SortKey) => {
-    if (key === sortBy) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
+    if (key === sortBy) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
       setSortBy(key);
       setSortDir("asc");
     }
@@ -161,8 +253,6 @@ export default function ProductsPage() {
   }, [filtered, sortBy, sortDir]);
 
   // ===== Pagination =====
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(20);
   const pagedProducts = useMemo(
     () => sorted.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage),
     [sorted, page, rowsPerPage]
@@ -182,17 +272,35 @@ export default function ProductsPage() {
       {/* === TOP ROW === */}
       <Box sx={{ display: "flex", gap: 2, p: 1, bgcolor: "#fff", borderRadius: 1 }}>
         <Box sx={{ flex: 1 }}>
-          <Tabs value={tab} onChange={(_, v) => setTab(v)}>
+          <Tabs value={tab === "active" ? 0 : 1} onChange={(_, v) => setTab(v === 0 ? "active" : "eol")}>
             <Tab label="Products" />
             <Tab label="End of life" />
           </Tabs>
 
-          <Box sx={{ display: "flex", alignItems: "center", gap: 2, mt: 1 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2, mt: 1, flexWrap: "wrap" }}>
             <Typography sx={{ fontWeight: 700, fontSize: "14px" }}>
-              {isLoading ? "Loading…" : `${total} Products`}
+              {isLoading ? "Loading…" : `${total} ${tab === "eol" ? "End-of-life" : "Products"}`}
             </Typography>
-            <TextField sx={{ width: 280 }}
-              placeholder="Search for product name, sensor ID"
+
+            {/* 🔽 Company Filter Dropdown */}
+            <FormControl size="small" sx={{ minWidth: 220 }} disabled={companyLoading}>
+              <InputLabel>Company</InputLabel>
+              <Select
+                label="Company"
+                value={selectedCompanyId ?? "all"}
+                onChange={(e) => setSelectedCompanyId(String(e.target.value))}
+              >
+                {companies.map((c) => (
+                  <MenuItem key={c.id} value={c.id}>
+                    {c.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <TextField
+              sx={{ width: 280 }}
+              placeholder={`Search ${tab === "eol" ? "end-of-life" : "products"}`}
               size="small"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -217,14 +325,46 @@ export default function ProductsPage() {
           </Box>
         </Box>
 
-        {/* Status cards */}
-        <Box sx={{ display: "flex", gap: 2 }}>
-          <StatusCard title="Sensor" value={50} total={100} />
-          <StatusCard title="Probe" value={200} total={400} />
-          <StatusCard title="Hardware Component" value={100} total={300} />
-          <StatusCard title="Software" value={50} total={100} />
-          <StatusCard title="Service" value={200} total={500} />
+        {/* Status cards: derived from categories (click to filter) */}
+        <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+          {categoryCounts.length > 0 ? (
+            categoryCounts.map(([category, count]) => {
+              const selected = categoryFilter === category;
+              return (
+                <Box
+                  key={category}
+                  onClick={() => setCategoryFilter(selected ? null : category)}
+                  sx={{
+                    cursor: "pointer",
+                    border: selected ? "2px solid #1976d2" : "2px solid transparent",
+                    borderRadius: 1,
+                  }}
+                >
+                  <StatusCard
+                    title={category}
+                    value={count}
+                    total={allProducts.length}  // ✅ do not change total product count
+                    selected={selected}
+                  />
+                </Box>
+              );
+            })
+          ) : (
+            // Fallback: if every product is UNCATEGORIZED, still show a stable chip
+            <Box
+              onClick={() => setCategoryFilter(null)}
+              sx={{ cursor: "pointer", border: "2px solid transparent", borderRadius: 1 }}
+            >
+              <StatusCard
+                title="Products"
+                value={allProducts.length}
+                total={allProducts.length}
+                selected={categoryFilter === null}
+              />
+            </Box>
+          )}
         </Box>
+
       </Box>
 
       {error && <Alert severity="error">{(error as Error).message}</Alert>}
@@ -239,10 +379,10 @@ export default function ProductsPage() {
             zIndex: 1,
             bgcolor: "#EAF5FF",
             display: "grid",
-            gridTemplateColumns: `repeat(${headerCols.length}, minmax(70px, 1fr))`,
-            columnGap: 1,
-            px: 1.5,
-            py: 0.75,
+            gridTemplateColumns: GRID_COLS,
+            columnGap: 2,
+            px: 2,
+            py: 1,
             borderBottom: "1px solid",
             borderColor: "divider",
           }}
@@ -251,7 +391,7 @@ export default function ProductsPage() {
             <Box key={label} sx={{ display: "flex", alignItems: "center" }}>
               {sortable ? (
                 <TableSortLabel
-                  active={sortBy === key}
+                  active={sortBy === (key as SortKey)}
                   direction={sortDir}
                   onClick={() => toggleSort(key as SortKey)}
                   sx={{ "& .MuiTableSortLabel-label": { fontSize: "14px", fontWeight: 600 } }}
@@ -271,12 +411,14 @@ export default function ProductsPage() {
         {isLoading && (
           <Box sx={{ p: 2, display: "flex", alignItems: "center", gap: 1.5 }}>
             <CircularProgress size={18} />
-            <Typography color="text.secondary" sx={{ fontSize: "12px" }}>Loading products…</Typography>
+            <Typography color="text.secondary">
+              Loading {tab === "eol" ? "end-of-life" : "products"}…
+            </Typography>
           </Box>
         )}
 
         {!isLoading && pagedProducts.length === 0 && (
-          <Box sx={{ p: 3, textAlign: "center", color: "text.secondary" }}>No products found.</Box>
+          <Box sx={{ p: 3, textAlign: "center", color: "text.secondary" }}>No items found.</Box>
         )}
 
         {pagedProducts.map((p, idx) => (
@@ -284,32 +426,25 @@ export default function ProductsPage() {
             key={p.id}
             sx={{
               display: "grid",
-              gridTemplateColumns: `repeat(${headerCols.length}, minmax(70px, 1fr))`,
+              gridTemplateColumns: GRID_COLS,
               alignItems: "center",
-              columnGap: 1,
-              px: 1.5,
-              py: 0.75,
+              columnGap: 2,
+              px: 2,
+              py: 1.25,
               "&:hover": { bgcolor: "#FAFAFD" },
               fontSize: "12px",
             }}
           >
-            <Typography sx={{ fontSize: "12px", fontFamily: "monospace" }}>{page * rowsPerPage + idx + 1}</Typography>
-            <Typography sx={{ fontSize: "12px" }}>{p.productNumber}</Typography>
-            <Typography sx={{ fontSize: "12px" }}>{p.systemNo}</Typography>
-            <Typography sx={{ fontSize: "12px" }}>{p.internalName}</Typography>
-            <Typography sx={{ fontSize: "12px" }}>{p.sensors}</Typography>
-            <Typography sx={{ fontSize: "12px" }}>{p.group}</Typography>
-            <Typography sx={{ fontSize: "12px" }}>{p.category}</Typography>
-            <Typography sx={{ fontSize: "12px" }}>{p.type}</Typography>
-            <Typography sx={{ fontSize: "12px" }}>{p.ecns}</Typography>
-            <Typography sx={{ fontSize: "12px" }}>{p.status}</Typography>
-            <Typography sx={{ fontSize: "12px" }}>{p.platform}</Typography>
-            <Typography sx={{ fontSize: "12px" }}>{p.hostingPrice}</Typography>
-            <Typography sx={{ fontSize: "12px" }}>{p.listPrice}</Typography>
-            <Typography sx={{ fontSize: "12px" }}>{p.oemPrice}</Typography>
-            <Typography sx={{ fontSize: "12px" }}>{p.resellerPrice}</Typography>
-            <Typography sx={{ fontSize: "12px" }}>{p.description}</Typography>
-            <Typography sx={{ fontSize: "12px" }}>{p.comments}</Typography>
+            <Typography sx={{ fontFamily: "monospace", color: "text.secondary" }}>
+              {page * rowsPerPage + idx + 1}
+            </Typography>
+            <Typography sx={{ color: "text.secondary" }}>{p.productNumber}</Typography>
+            <Typography sx={{ color: "text.secondary" }}>{p.productName}</Typography>
+            <Typography sx={{ color: "text.secondary" }}>{p.category}</Typography>
+            <Typography sx={{ color: "text.secondary" }}>{p.subcategory}</Typography>
+            <Typography sx={{ color: "text.secondary" }}>{p.status}</Typography>
+            <Typography sx={{ color: "text.secondary" }}>{p.description}</Typography>
+            <Typography sx={{ color: "text.secondary" }}>{p.comments}</Typography>
 
             <Box sx={{ display: "flex", gap: 1 }}>
               <Tooltip title="Edit">

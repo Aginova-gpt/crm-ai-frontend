@@ -1,3 +1,4 @@
+// CompanyContext.tsx
 "use client";
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
@@ -11,15 +12,27 @@ type CompanyContextType = {
   companies: Company[];
   selectedCompanyId: string | null;
   setSelectedCompanyId: (id: string | null) => void;
-  selectedCompanyName: string | null; // ⬅️ derived, read-only
+  selectedCompanyName: string | null;
   isLoading: boolean;
   error: string | null;
 };
 
 const CompanyContext = createContext<CompanyContextType | undefined>(undefined);
 
+// --- helper: decode JWT payload ---
+function decodeJwtPayload(token: string | null): any | null {
+  if (!token) return null;
+  try {
+    const payload = token.split(".")[1];
+    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
 export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, token } = useAuth(); // ⬅️ need the token
   const { apiURL } = useBackend();
   const { fetchWithAuth } = useApi();
 
@@ -28,44 +41,51 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load persisted selection once
+  // 1) First-run: restore selection OR default from JWT
   useEffect(() => {
-    const saved = localStorage.getItem("selectedCompanyId");
-    if (saved) setSelectedCompanyId(saved);
-  }, []);
+    // If already set, do nothing
+    if (selectedCompanyId) return;
 
-  // Fetch companies when logged in
+    const saved = localStorage.getItem("selectedCompanyId");
+    if (saved) {
+      setSelectedCompanyId(saved);
+      return;
+    }
+
+    // Default from JWT claim company_id
+    const claims = decodeJwtPayload(token ?? localStorage.getItem("token"));
+    const cid = claims?.company_id;
+    const initial = cid ? String(cid) : "all";
+    setSelectedCompanyId(initial);
+    localStorage.setItem("selectedCompanyId", initial);
+  }, [token, selectedCompanyId]);
+
+  // 2) Fetch companies list when logged in
   useEffect(() => {
     const fetchCompanies = async () => {
       if (!isLoggedIn) return;
-
       setIsLoading(true);
       setError(null);
-
       try {
         const url = apiURL("companies", "companies");
         const response = await fetchWithAuth(url, { requiresAuth: true });
         if (!response.ok) throw new Error(`Request failed: ${response.status}`);
-
         const data = await response.json();
 
         if (!Array.isArray(data?.companies)) {
           throw new Error("Invalid response structure from backend");
         }
 
-        // Ensure IDs are strings and prepend "All"
         const list: Company[] = [
           { id: "all", name: "All" },
-          ...data.companies.map((c: any) => ({
-            id: String(c.id),
-            name: c.name,
-          })),
+          ...data.companies.map((c: any) => ({ id: String(c.id), name: c.name })),
         ];
-
         setCompanies(list);
 
-        // If there's no selection yet (first load & nothing in localStorage), default to "all"
-        if (!selectedCompanyId) {
+        // If the current selection doesn't exist in list, fall back to "all"
+        const current = (selectedCompanyId ?? localStorage.getItem("selectedCompanyId")) || "all";
+        const exists = list.some((c) => c.id === current);
+        if (!exists) {
           setSelectedCompanyId("all");
           localStorage.setItem("selectedCompanyId", "all");
         }
@@ -78,17 +98,16 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
 
     fetchCompanies();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoggedIn]);
+  }, [isLoggedIn]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Persist selection when it changes
+  // 3) Persist selection on change
   useEffect(() => {
     if (selectedCompanyId) {
       localStorage.setItem("selectedCompanyId", selectedCompanyId);
     }
   }, [selectedCompanyId]);
 
-  // Derive the selected company's name from the list + id
+  // 4) Derive name
   const selectedCompanyName = useMemo(() => {
     if (!selectedCompanyId) return null;
     const found = companies.find((c) => c.id === selectedCompanyId);
@@ -103,7 +122,7 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
         companies,
         selectedCompanyId,
         setSelectedCompanyId,
-        selectedCompanyName, // exposed
+        selectedCompanyName,
         isLoading,
         error,
       }}
