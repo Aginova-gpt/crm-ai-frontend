@@ -19,6 +19,7 @@ import {
     DialogTitle,
     DialogContent,
     DialogActions,
+    MenuItem,
 } from "@mui/material";
 import { MdDelete } from "react-icons/md";
 
@@ -31,8 +32,10 @@ interface Customer {
 interface CustomerFormLeftProps {
     customerName: string;
     setCustomerName: (value: string) => void;   
-    companyName: string;
-    setCompanyName: (value: string) => void;        
+    accountType: string;
+    setAccountType: (value: string) => void;
+    accountTypes: { id: string; name: string }[];
+    accountTypesLoading: boolean;
     customerPhone: string;
     setCustomerPhone: (value: string) => void;
     parent: string;
@@ -41,8 +44,12 @@ interface CustomerFormLeftProps {
     setCustomerEmail: (value: string) => void;
     childrenList: string;
     setChildrenList: (value: string) => void;
+    website: string;
+    setWebsite: (value: string) => void;
     billingAddress: string;
     setBillingAddress: (value: string) => void;
+    billingPOBox: string;
+    setBillingPOBox: (value: string) => void;
     billingCity: string;
     setBillingCity: (value: string) => void;
     billingState: string;
@@ -53,6 +60,8 @@ interface CustomerFormLeftProps {
     setBillingCountry: (value: string) => void;
     shippingAddress: string;
     setShippingAddress: (value: string) => void;
+    shippingPOBox: string;
+    setShippingPOBox: (value: string) => void;
     shippingCity: string;
     setShippingCity: (value: string) => void;
     shippingState: string;
@@ -61,19 +70,19 @@ interface CustomerFormLeftProps {
     setShippingCode: (value: string) => void;
     shippingCountry: string;
     setShippingCountry: (value: string) => void;
-    notes: string;
-    setNotes: (value: string) => void;
-    contacts: { name: string; phone: string; email: string }[];
-    setContacts: (value: { name: string; phone: string; email: string }[]) => void;
+    description: string;
+    setDescription: (value: string) => void;
+    contacts: { name: string; phone: string; email: string; notes?: string }[];
+    setContacts: (value: { name: string; phone: string; email: string; notes?: string }[]) => void;
     customers: Customer[];
 }
 
 export default function CustomerFormLeft({ customerName, setCustomerName, customerPhone, setCustomerPhone,
-     companyName, setCompanyName, parent, setParent, customerEmail, setCustomerEmail, childrenList,
-      setChildrenList, billingAddress, setBillingAddress, billingCity, setBillingCity, billingState, 
+     accountType, setAccountType, accountTypes, accountTypesLoading, parent, setParent, customerEmail, setCustomerEmail, childrenList,
+      setChildrenList, website, setWebsite, billingAddress, setBillingAddress, billingPOBox, setBillingPOBox, billingCity, setBillingCity, billingState, 
       setBillingState, billingCode, setBillingCode, billingCountry, setBillingCountry, shippingAddress, 
-      setShippingAddress, shippingCity, setShippingCity, shippingState, setShippingState, shippingCode, 
-      setShippingCode, shippingCountry, setShippingCountry, notes, setNotes, contacts, setContacts, customers }: CustomerFormLeftProps) {
+      setShippingAddress, shippingPOBox, setShippingPOBox, shippingCity, setShippingCity, shippingState, setShippingState, shippingCode, 
+      setShippingCode, shippingCountry, setShippingCountry, description, setDescription, contacts, setContacts, customers }: CustomerFormLeftProps) {
     
     // Create a map for O(1) lookup instead of O(n) find operations
     const customersMap = React.useMemo(() => {
@@ -131,6 +140,7 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
     const [newContactName, setNewContactName] = React.useState("");
     const [newContactPhone, setNewContactPhone] = React.useState("");
     const [newContactEmail, setNewContactEmail] = React.useState("");
+    const [newContactNotes, setNewContactNotes] = React.useState("");
 
     const handleAddContact = () => {
         setModalOpen(true);
@@ -141,6 +151,7 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
         setNewContactName("");
         setNewContactPhone("");
         setNewContactEmail("");
+        setNewContactNotes("");
     };
 
     const handleSaveContact = () => {
@@ -148,7 +159,8 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
             setContacts([...contacts, { 
                 name: newContactName.trim(), 
                 phone: newContactPhone.trim(), 
-                email: newContactEmail.trim() 
+                email: newContactEmail.trim(),
+                notes: newContactNotes.trim() 
             }]);
             handleCloseModal();
         }
@@ -203,13 +215,37 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                             sx: { fontSize: 12 }, 
                         },
                     }} /> 
-                    <TextField fullWidth size="small" label="Company Name" value="Aginova" slotProps={{
-                        input: { sx: { height: 32, fontSize: 12, paddingY: 0,},
-                        },
-                        inputLabel: {
-                            sx: { fontSize: 12 },
-                        },
-                    }}/>
+                    <TextField
+                        fullWidth
+                        size="small"
+                        select
+                        label="Account Type"
+                        value={accountType}
+                        onChange={(e) => setAccountType(e.target.value)}
+                        disabled={accountTypesLoading || accountTypes.length === 0}
+                        slotProps={{
+                            input: { sx: { height: 32, fontSize: 12, paddingY: 0 } },
+                            inputLabel: {
+                                sx: { fontSize: 12 },
+                            },
+                        }}
+                    >
+                        {accountTypesLoading ? (
+                            <MenuItem value="" disabled>
+                                Loading account types...
+                            </MenuItem>
+                        ) : accountTypes.length > 0 ? (
+                            accountTypes.map((type) => (
+                                <MenuItem key={type.id} value={type.id}>
+                                    {type.name}
+                                </MenuItem>
+                            ))
+                        ) : (
+                            <MenuItem value="" disabled>
+                                No account types available
+                            </MenuItem>
+                        )}
+                    </TextField>
 
                     {/* Row 2 */}
                     <TextField fullWidth size="small" label="Customer Phone" value={customerPhone} 
@@ -319,6 +355,20 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                             },
                         }}
                     />
+                    <TextField
+                        fullWidth
+                        size="small"
+                        label="Website"
+                        value={website}
+                        onChange={(e) => setWebsite(e.target.value)}
+                        sx={{ gridColumn: "span 2" }}
+                        slotProps={{
+                            input: { sx: { height: 32, fontSize: 12, paddingY: 0 } },
+                            inputLabel: {
+                                sx: { fontSize: 12 },
+                            },
+                        }}
+                    />
                 </Box>
             </Box>
 
@@ -338,6 +388,15 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                         },
                         inputLabel: {
                             sx: { fontSize: 12 }, // smaller label
+                        },
+                    }}/>
+                        <TextField fullWidth size="small" label="Billing PO Box" sx={{ gridColumn: "span 2" }}
+                        value={billingPOBox}
+                        onChange={(e) => setBillingPOBox(e.target.value)} slotProps={{
+                        input: { sx: { height: 32, fontSize: 12, paddingY: 0,},
+                        },
+                        inputLabel: {
+                        sx: { fontSize: 12 }, // smaller label
                         },
                     }}/>
                         <TextField fullWidth size="small" label="Billing City" sx={{ gridColumn: "span 2" }} 
@@ -394,6 +453,15 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                             sx: { fontSize: 12 }, // smaller label
                         },
                     }}/>
+                        <TextField fullWidth size="small" label="Shipping PO Box" sx={{ gridColumn: "span 2" }} 
+                        value={shippingPOBox}
+                        onChange={(e) => setShippingPOBox(e.target.value)} slotProps={{
+                        input: { sx: { height: 32, fontSize: 12, paddingY: 0,},
+                        },
+                        inputLabel: {
+                        sx: { fontSize: 12 }, // smaller label
+                        },
+                    }}/>
                         <TextField fullWidth size="small" label="Shipping City" sx={{ gridColumn: "span 2" }} 
                         value={shippingCity}
                         onChange={(e) => setShippingCity(e.target.value)} slotProps={{
@@ -434,14 +502,14 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                 </Box>
             </Box>
 
-            {/* === Notes === */}
+            {/* === Description === */}
             <Box>
                 <Typography fontWeight={600} sx={{ mb: 1 }}>
-                    Notes
+                    Description
                 </Typography>
-                        <TextField fullWidth size="small" multiline rows={3} placeholder="Add notes..." 
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)} />
+                        <TextField fullWidth size="small" multiline rows={3} placeholder="Add description..." 
+                value={description}
+                onChange={(e) => setDescription(e.target.value)} />
             </Box>
 
             <Divider />
@@ -460,6 +528,7 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                             <TableCell>Name</TableCell>
                             <TableCell>Phone</TableCell>
                             <TableCell>Email</TableCell>
+                        <TableCell>Notes</TableCell>
                             <TableCell align="right">Actions</TableCell>
                         </TableRow>
                     </TableHead>
@@ -469,6 +538,7 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                                 <TableCell>{c.name}</TableCell>
                                 <TableCell>{c.phone}</TableCell>
                                 <TableCell>{c.email}</TableCell>
+                                <TableCell>{c.notes}</TableCell>
                                 <TableCell align="right">
                                     <Tooltip title="Delete">
                                         <IconButton size="small" color="error" onClick={() => handleDeleteContact(i)}>
@@ -543,6 +613,21 @@ export default function CustomerFormLeft({ customerName, setCustomerName, custom
                             }}
                             slotProps={{
                                 input: { sx: { height: 32, fontSize: 12, paddingY: 0 } },
+                                inputLabel: {
+                                    sx: { fontSize: 12 },
+                                },
+                            }}
+                        />
+                        <TextField
+                            label="Notes"
+                            fullWidth
+                            size="small"
+                            multiline
+                            minRows={2}
+                            value={newContactNotes}
+                            onChange={(e) => setNewContactNotes(e.target.value)}
+                            slotProps={{
+                                input: { sx: { fontSize: 12, paddingY: 0 } },
                                 inputLabel: {
                                     sx: { fontSize: 12 },
                                 },

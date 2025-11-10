@@ -99,6 +99,27 @@ function useUsers(companyId: number | string) {
   });
 }
 
+function useAccountTypes() {
+  const { token, isLoggedIn } = useAuth();
+  const { fetchWithAuth } = useApi();
+
+  return useQuery({
+    queryKey: ["account-types"],
+    queryFn: async () => {
+      const url = "http://34.58.37.44/api/account-types";
+      const res = await fetchWithAuth(url);
+      if (!res.ok) {
+        if (res.status === 401) throw new Error("Unauthorized – please log in again");
+        throw new Error(`Request failed: ${res.status}`);
+      }
+      return res.json();
+    },
+    enabled: isLoggedIn && !!token,
+    staleTime: 24 * 60 * 60 * 1000, // 24 hours
+    gcTime: 24 * 60 * 60 * 1000,
+  });
+}
+
 export default function ClientPage({ customerId }: Props) {
   const router = useRouter();
   const isEditMode = !!customerId;                           // ⬅️ drive mode from prop
@@ -128,7 +149,7 @@ export default function ClientPage({ customerId }: Props) {
   const [shippingState, setShippingState] = React.useState("");
   const [shippingCode, setShippingCode] = React.useState("");
   const [shippingCountry, setShippingCountry] = React.useState("");
-  const [notes, setNotes] = React.useState("");
+  const [description, setDescription] = React.useState("");
   const saveAccountUrl = apiURL("create-account", "accounts.json");
   const editAccountUrl = apiURL("edit-account", "edit-account.json");
 
@@ -139,6 +160,7 @@ export default function ClientPage({ customerId }: Props) {
   const { data: customerDetail, isLoading: customerDetailLoading } = useCustomerDetail(
     isEditMode ? customerId : undefined
   );
+  const { data: accountTypesData, isLoading: accountTypesLoading } = useAccountTypes();
 
   const customers: Customer[] = useMemo(() => {
     if (!customersData?.data) return [];
@@ -209,6 +231,19 @@ export default function ClientPage({ customerId }: Props) {
     return users;
   }, [fallbackAssignedUser, users]);
 
+  const accountTypes = useMemo(() => {
+    if (!Array.isArray(accountTypesData)) return [];
+    return (accountTypesData as any[])
+      .map((type) => {
+        const id = type.account_type_id ?? type.id ?? type.value ?? null;
+        const name = type.account_type_name ?? type.name ?? type.label ?? "";
+        if (id == null || String(id).trim() === "" || name.trim() === "") return null;
+        return { id: String(id), name: String(name) };
+      })
+      .filter((type): type is { id: string; name: string } => type !== null)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [accountTypesData]);
+
   // Try to extract company name/id from JWT token
   const companyFromToken = useMemo(() => {
     try {
@@ -268,7 +303,7 @@ export default function ClientPage({ customerId }: Props) {
       }
 
       setWebsite(customerDetail.account_website ?? "");
-      setNotes(customerDetail.description ?? "");
+      setDescription(customerDetail.description ?? "");
 
       if (Array.isArray(customerDetail.contacts)) {
         setContacts(
@@ -356,6 +391,13 @@ export default function ClientPage({ customerId }: Props) {
     }
   }, [isEditMode, assignedTo, email, userOptions, customerDetail?.assigned_to]);
 
+  useEffect(() => {
+    if (isEditMode) return;
+    if (accountType) return;
+    if (accountTypes.length === 0) return;
+    setAccountType(accountTypes[0].id);
+  }, [isEditMode, accountType, accountTypes]);
+
   const handleSave = async (e?: React.FormEvent) => {
     e?.preventDefault();
 
@@ -375,7 +417,7 @@ export default function ClientPage({ customerId }: Props) {
       account_name: customerName ?? "",
       account_type_id: Number.isFinite(accountTypeNumeric) ? accountTypeNumeric : 0,
       parent_account_id: parentAccountId,
-      description: notes ?? "",
+      description: description ?? "",
       phone: customerPhone ?? "",
       email: customerEmail ?? "",
       website: website ?? "",
@@ -592,6 +634,7 @@ export default function ClientPage({ customerId }: Props) {
         <CustomerFormLeft
           customerName={customerName} setCustomerName={setCustomerName}
           accountType={accountType} setAccountType={setAccountType}
+          accountTypes={accountTypes} accountTypesLoading={accountTypesLoading}
           customerPhone={customerPhone} setCustomerPhone={setCustomerPhone}
           parent={parent} setParent={setParent}
           customerEmail={customerEmail} setCustomerEmail={setCustomerEmail}
@@ -609,7 +652,7 @@ export default function ClientPage({ customerId }: Props) {
           shippingState={shippingState} setShippingState={setShippingState}
           shippingCode={shippingCode} setShippingCode={setShippingCode}
           shippingCountry={shippingCountry} setShippingCountry={setShippingCountry}
-          notes={notes} setNotes={setNotes}
+          description={description} setDescription={setDescription}
           contacts={contacts} setContacts={setContactsPlain}
           customers={customers}
         />
