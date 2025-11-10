@@ -94,7 +94,7 @@ function useProducts(selectedCompanyId: string | null, endpoint: string) {
       const qs = selectedCompanyId && selectedCompanyId !== "all"
         ? `?company_id=${encodeURIComponent(selectedCompanyId)}`
         : "";
-      const base = apiURL("products", endpoint); // "" -> /api/products, "endoflife" -> /api/products/endoflife
+      const base = apiURL(endpoint, "products"); // "" -> /api/products, "endoflife" -> /api/products/endoflife
       const url = qs ? `${base}${qs}` : base;
       const res = await fetch(url, {
         headers: {
@@ -131,7 +131,7 @@ export default function ProductsPage() {
   }, [selectedCompanyId, tab]);
 
   // 🧠 Fetch products (backend can filter with company_id query param)
-  const endpoint = tab === "eol" ? "endoflife" : "";
+  const endpoint = tab === "eol" ? "products/endoflife" : "products";
   const { data, isLoading, error } = useProducts(selectedCompanyId, endpoint);
 
   // ===== Transform backend response =====
