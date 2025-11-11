@@ -99,7 +99,7 @@ function normalizeQuotes(rawQuotes: UnknownRecord[] | undefined | null): Custome
             null;
 
         const productsList =
-            quote.products_list ??
+            quote.product_code_list ??
             quote.products ??
             quote.product_list ??
             quote.items ??
@@ -227,16 +227,20 @@ export default function CustomerQuotesList({
                             </TableHead>
                             <TableBody>
                                 {paginatedQuotes.map((quote) => (
-                                    <TableRow key={quote.id} hover sx={{ "& td": { fontSize: 12 } }}>
+                                    <TableRow
+                                        key={quote.id}
+                                        hover
+                                        sx={{ "& td": { fontSize: 12 }, "& .subjectCell": { fontSize: 10 } }}
+                                    >
                                         <TableCell padding="checkbox">
                                             <Checkbox size="small" />
                                         </TableCell>
                                         <TableCell>{quote.quoteNo}</TableCell>
-                                        <TableCell>{quote.subject}</TableCell>
+                                        <TableCell className="subjectCell">{quote.subject}</TableCell>
                                         <TableCell>{quote.quoteStage}</TableCell>
                                         <TableCell>{quote.totalAmount}</TableCell>
                                         <TableCell sx={{ maxWidth: 220 }}>
-                                            <Typography noWrap title={quote.productsList}>
+                                            <Typography noWrap title={quote.productsList} sx={{ fontSize: 10 }}>
                                                 {quote.productsList}
                                             </Typography>
                                         </TableCell>

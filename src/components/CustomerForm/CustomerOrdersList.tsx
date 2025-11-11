@@ -128,7 +128,7 @@ function normalizeOrders(rawOrders: UnknownRecord[] | undefined | null): Custome
             null;
 
         const productsList =
-            order.products_list ??
+            order.product_code_list ??
             order.products ??
             order.product_list ??
             order.items ??
@@ -256,16 +256,20 @@ export default function CustomerOrdersList({
                             </TableHead>
                             <TableBody>
                                 {paginatedOrders.map((order) => (
-                                    <TableRow key={order.id} hover sx={{ "& td": { fontSize: 12 } }}>
+                                    <TableRow
+                                        key={order.id}
+                                        hover
+                                        sx={{ "& td": { fontSize: 12 }, "& .subjectCell": { fontSize: 10 } }}
+                                    >
                                         <TableCell padding="checkbox">
                                             <Checkbox size="small" />
                                         </TableCell>
                                         <TableCell>{order.orderNo}</TableCell>
-                                        <TableCell>{order.subject}</TableCell>
+                                        <TableCell className="subjectCell">{order.subject}</TableCell>
                                         <TableCell>{order.quoteName}</TableCell>
                                         <TableCell>{order.totalAmount}</TableCell>
                                         <TableCell sx={{ maxWidth: 220 }}>
-                                            <Typography noWrap title={order.productsList}>
+                                            <Typography noWrap title={order.productsList} sx={{ fontSize: 10 }}>
                                                 {order.productsList}
                                             </Typography>
                                         </TableCell>
