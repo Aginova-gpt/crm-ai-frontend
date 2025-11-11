@@ -79,6 +79,9 @@ type GlobalItemOption = {
   code: string;
 };
 
+const PRODUCT_CODE_MAX_LENGTH = 255;
+const PRODUCT_CODE_ALLOWED_REGEX = /^[A-Z0-9-]*$/;
+
 type StatusOption = {
   value: string;
   label: string;
@@ -112,6 +115,8 @@ export default function AddProductPage() {
   const [categoryLoading, setCategoryLoading] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [productCode, setProductCode] = useState("");
+  const [productCodeExists, setProductCodeExists] = useState(false);
+  const [productCodeError, setProductCodeError] = useState<string | null>(null);
   const [productCategory, setProductCategory] = useState("");
   const [subCategory, setSubCategory] = useState("");
   const [productStatus, setProductStatus] = useState("");
@@ -130,6 +135,45 @@ export default function AddProductPage() {
   }, [categoryOptions, productCategory]);
 
   const productCodeOptions = useMemo(() => globalItemOptions.map((item) => item.code), [globalItemOptions]);
+  const normalizedGlobalItemCodes = useMemo(
+    () => new Set(globalItemOptions.map((item) => item.code.toLowerCase())),
+    [globalItemOptions]
+  );
+
+  React.useEffect(() => {
+    const normalized = productCode.trim().toLowerCase();
+    if (!normalized) {
+      setProductCodeExists(false);
+      setProductCodeError(null);
+      return;
+    }
+
+    setProductCodeExists(normalizedGlobalItemCodes.has(normalized));
+    setProductCodeError((prev) => (prev && !PRODUCT_CODE_ALLOWED_REGEX.test(productCode) ? prev : null));
+  }, [productCode, normalizedGlobalItemCodes]);
+
+  const handleProductCodeInputChange = (_: unknown, newInputValue: string) => {
+    const upperCased = newInputValue.toUpperCase();
+    const sanitized = upperCased.replace(/[^A-Z0-9-]/g, "");
+    const truncated = sanitized.slice(0, PRODUCT_CODE_MAX_LENGTH);
+
+    let message: string | null = null;
+
+    if (upperCased.length > PRODUCT_CODE_MAX_LENGTH) {
+      message = `Maximum length is ${PRODUCT_CODE_MAX_LENGTH} characters.`;
+    } else if (!PRODUCT_CODE_ALLOWED_REGEX.test(upperCased)) {
+      message = "Only uppercase letters, numbers, and hyphens are allowed.";
+    }
+
+    setProductCodeError(message);
+    setProductCode(truncated);
+  };
+
+  const handleProductCodeSelect = (_: unknown, newValue: string | null) => {
+    const value = (newValue ?? "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, PRODUCT_CODE_MAX_LENGTH);
+    setProductCodeError(null);
+    setProductCode(value);
+  };
 
   React.useEffect(() => {
     const controller = new AbortController();
@@ -360,9 +404,9 @@ export default function AddProductPage() {
                   freeSolo
                   options={productCodeOptions}
                   value={productCode}
-                  onChange={(_, newValue) => setProductCode(newValue ?? "")}
+                  onChange={handleProductCodeSelect}
                   inputValue={productCode}
-                  onInputChange={(_, newInputValue) => setProductCode(newInputValue)}
+                  onInputChange={handleProductCodeInputChange}
                   loading={categoryLoading}
                   loadingText="Loading product codes..."
                   noOptionsText={
@@ -381,6 +425,22 @@ export default function AddProductPage() {
                       required
                       InputLabelProps={{ shrink: true }}
                       placeholder={categoryLoading ? "Loading product codes..." : "Search product code"}
+                      error={Boolean(productCodeError || productCodeExists)}
+                      helperText={
+                        productCodeError ??
+                        (productCodeExists ? "Note: This product code already exists. Please Enter Unique one." : undefined)
+                      }
+                      FormHelperTextProps={
+                        productCodeError
+                          ? {
+                              sx: { color: "error.main" },
+                            }
+                          : productCodeExists
+                          ? {
+                              sx: { color: "warning.main" },
+                            }
+                          : undefined
+                      }
                     />
                   )}
                 />
@@ -430,7 +490,7 @@ export default function AddProductPage() {
                     </MenuItem>
                   ))}
                 </TextField>
-                <TextField label="Product Description" fullWidth size="small" multiline minRows={6.5} />
+                <TextField label="Product Description" fullWidth size="small" multiline minRows={6} />
               </Stack>
               <Stack spacing={2}>
                 <TextField
