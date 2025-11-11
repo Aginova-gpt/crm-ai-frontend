@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import {
+  Autocomplete,
   Box,
   Typography,
   TextField,
@@ -58,6 +59,10 @@ type ProductLookupResponse = {
       item_status_id: number;
       item_status_name?: string;
     }>;
+    global_items?: Array<{
+      id: number;
+      code?: string;
+    }>;
     dimension_units?: Array<{
       dimension_unit_id?: number | string;
       dimension_unit_label?: string;
@@ -68,6 +73,11 @@ type ProductLookupResponse = {
 };
 
 const PRODUCT_LOOKUP_URL = "http://34.58.37.44/api/get-product-lookups";
+
+type GlobalItemOption = {
+  id: number;
+  code: string;
+};
 
 type StatusOption = {
   value: string;
@@ -98,8 +108,10 @@ export default function AddProductPage() {
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
   const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([]);
   const [statusOptions, setStatusOptions] = useState<StatusOption[]>([]);
+  const [globalItemOptions, setGlobalItemOptions] = useState<GlobalItemOption[]>([]);
   const [categoryLoading, setCategoryLoading] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
+  const [productCode, setProductCode] = useState("");
   const [productCategory, setProductCategory] = useState("");
   const [subCategory, setSubCategory] = useState("");
   const [productStatus, setProductStatus] = useState("");
@@ -116,6 +128,8 @@ export default function AddProductPage() {
   const availableSubCategories = useMemo(() => {
     return categoryOptions.find((option) => option.value === productCategory)?.subCategories || [];
   }, [categoryOptions, productCategory]);
+
+  const productCodeOptions = useMemo(() => globalItemOptions.map((item) => item.code), [globalItemOptions]);
 
   React.useEffect(() => {
     const controller = new AbortController();
@@ -146,6 +160,12 @@ export default function AddProductPage() {
           })) ?? [];
 
         setCategoryOptions(mappedCategories);
+        const mappedGlobalItems =
+          data.selections?.global_items?.map((item) => ({
+            id: item.id,
+            code: item.code ?? `Item ${item.id}`,
+          })) ?? [];
+        setGlobalItemOptions(mappedGlobalItems);
         const mappedStatuses =
           data.selections?.item_statuses?.map((status) => ({
             value: String(status.item_status_id),
@@ -336,7 +356,34 @@ export default function AddProductPage() {
               }}
             >
               <Stack spacing={2}>
-                <TextField label="Product Number" fullWidth size="small" required />
+                <Autocomplete
+                  freeSolo
+                  options={productCodeOptions}
+                  value={productCode}
+                  onChange={(_, newValue) => setProductCode(newValue ?? "")}
+                  inputValue={productCode}
+                  onInputChange={(_, newInputValue) => setProductCode(newInputValue)}
+                  loading={categoryLoading}
+                  loadingText="Loading product codes..."
+                  noOptionsText={
+                    categoryLoading
+                      ? "Loading product codes..."
+                      : categoryError
+                        ? categoryError
+                        : "No product codes found"
+                  }
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Product Code"
+                      fullWidth
+                      size="small"
+                      required
+                      InputLabelProps={{ shrink: true }}
+                      placeholder={categoryLoading ? "Loading product codes..." : "Search product code"}
+                    />
+                  )}
+                />
                 <TextField label="Product Name" fullWidth size="small" required />
                 <TextField
                   select
@@ -383,7 +430,7 @@ export default function AddProductPage() {
                     </MenuItem>
                   ))}
                 </TextField>
-                <TextField label="Product Description" fullWidth size="small" multiline minRows={4.5} />
+                <TextField label="Product Description" fullWidth size="small" multiline minRows={6.5} />
               </Stack>
               <Stack spacing={2}>
                 <TextField
