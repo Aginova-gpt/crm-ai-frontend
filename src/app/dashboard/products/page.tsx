@@ -28,6 +28,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useBackend } from "@/contexts/BackendContext";
 import { useCompany } from "@/contexts/CompanyContext";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { addAsset } from "@/styles/icons";
 
 // ===== Types =====
@@ -114,6 +115,7 @@ function useProducts(selectedCompanyId: string | null, endpoint: string) {
 }
 
 export default function ProductsPage() {
+  const router = useRouter();
   const [tab, setTab] = useState<TabKey>("active");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortKey>("productNumber");
@@ -261,7 +263,7 @@ export default function ProductsPage() {
   const total = sorted.length;
 
   // ===== Actions =====
-  const handleAddProduct = () => console.log("Add product");
+  const handleAddProduct = () => router.push("/dashboard/products/new");
   const handleEditProduct = (id: string) => console.log("Edit product:", id);
   const handleDeleteProduct = (id: string) => {
     if (window.confirm("Delete this product?")) console.log("Delete product:", id);
