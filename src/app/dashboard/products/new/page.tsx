@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import {
+  Alert,
   Autocomplete,
   Box,
   Typography,
@@ -23,6 +24,9 @@ import {
 } from "@mui/material";
 import { MdAdd, MdEdit, MdDelete } from "react-icons/md";
 import { useRouter } from "next/navigation";
+import { useApi } from "../../../../utils/api";
+import { useAuth } from "../../../../contexts/AuthContext";
+import { useCompany } from "../../../../contexts/CompanyContext";
 
 type PriceItem = {
   id: string;
@@ -73,6 +77,7 @@ type ProductLookupResponse = {
 };
 
 const PRODUCT_LOOKUP_URL = "http://34.58.37.44/api/get-product-lookups";
+const PRODUCT_SAVE_URL = "http://34.58.37.44/api/products";
 
 type GlobalItemOption = {
   id: number;
@@ -81,6 +86,17 @@ type GlobalItemOption = {
 
 const PRODUCT_CODE_MAX_LENGTH = 255;
 const PRODUCT_CODE_ALLOWED_REGEX = /^[A-Z0-9-]*$/;
+const PRODUCT_NAME_MAX_LENGTH = 255;
+const NUMERIC_INPUT_PROPS = { inputMode: "decimal", step: "0.01" } as const;
+const NUMERIC_INPUT_SX = {
+  "& input[type=number]": {
+    MozAppearance: "textfield",
+  },
+  "& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button": {
+    WebkitAppearance: "none",
+    margin: 0,
+  },
+} as const;
 
 type StatusOption = {
   value: string;
@@ -106,6 +122,9 @@ const initialPrices: PriceItem[] = [
 
 export default function AddProductPage() {
   const router = useRouter();
+  const { fetchWithAuth } = useApi();
+  const { token } = useAuth();
+  const { selectedCompanyId } = useCompany();
   const [priceList, setPriceList] = useState<PriceItem[]>(initialPrices);
   const [priceDialogOpen, setPriceDialogOpen] = useState(false);
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
@@ -115,12 +134,15 @@ export default function AddProductPage() {
   const [categoryLoading, setCategoryLoading] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [productCode, setProductCode] = useState("");
-  const [productCodeExists, setProductCodeExists] = useState(false);
-  const [productCodeError, setProductCodeError] = useState<string | null>(null);
   const [productCategory, setProductCategory] = useState("");
   const [subCategory, setSubCategory] = useState("");
   const [productStatus, setProductStatus] = useState("");
   const [dimensionUnit, setDimensionUnit] = useState("");
+  const [productCodeExists, setProductCodeExists] = useState(false);
+  const [productCodeError, setProductCodeError] = useState<string | null>(null);
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
   const todayIso = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [priceForm, setPriceForm] = useState<PriceFormState>({
     name: "",
@@ -135,10 +157,19 @@ export default function AddProductPage() {
   }, [categoryOptions, productCategory]);
 
   const productCodeOptions = useMemo(() => globalItemOptions.map((item) => item.code), [globalItemOptions]);
-  const normalizedGlobalItemCodes = useMemo(
-    () => new Set(globalItemOptions.map((item) => item.code.toLowerCase())),
-    [globalItemOptions]
-  );
+  const globalItemLookupByCode = useMemo(() => {
+    const map = new Map<string, GlobalItemOption>();
+    for (const item of globalItemOptions) {
+      map.set(item.code.toLowerCase(), item);
+    }
+    return map;
+  }, [globalItemOptions]);
+
+  const matchedGlobalItem = useMemo(() => {
+    const normalized = productCode.trim().toLowerCase();
+    if (!normalized) return null;
+    return globalItemLookupByCode.get(normalized) ?? null;
+  }, [productCode, globalItemLookupByCode]);
 
   React.useEffect(() => {
     const normalized = productCode.trim().toLowerCase();
@@ -148,9 +179,9 @@ export default function AddProductPage() {
       return;
     }
 
-    setProductCodeExists(normalizedGlobalItemCodes.has(normalized));
+    setProductCodeExists(Boolean(matchedGlobalItem));
     setProductCodeError((prev) => (prev && !PRODUCT_CODE_ALLOWED_REGEX.test(productCode) ? prev : null));
-  }, [productCode, normalizedGlobalItemCodes]);
+  }, [productCode, matchedGlobalItem]);
 
   const handleProductCodeInputChange = (_: unknown, newInputValue: string) => {
     const upperCased = newInputValue.toUpperCase();
@@ -173,6 +204,56 @@ export default function AddProductPage() {
     const value = (newValue ?? "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, PRODUCT_CODE_MAX_LENGTH);
     setProductCodeError(null);
     setProductCode(value);
+  };
+
+  const allowOnlyNumericKeys: React.KeyboardEventHandler<HTMLInputElement> = (event) => {
+    const allowedControlKeys = [
+      "Backspace",
+      "Delete",
+      "ArrowLeft",
+      "ArrowRight",
+      "Tab",
+      "Home",
+      "End",
+      "Enter",
+    ];
+
+    if (
+      allowedControlKeys.includes(event.key) ||
+      (event.key === "a" && event.ctrlKey) ||
+      (event.key === "c" && event.ctrlKey) ||
+      (event.key === "v" && event.ctrlKey) ||
+      (event.key === "x" && event.ctrlKey)
+    ) {
+      return;
+    }
+
+    if (event.key === "-" ) {
+      return;
+    }
+
+    const decimalKeys = ["." , "Decimal", "NumpadDecimal"];
+    if (decimalKeys.includes(event.key)) {
+      const input = event.currentTarget as HTMLInputElement | null;
+      if (!input) {
+        return;
+      }
+      const value = input.value ?? "";
+      const selectionStart = input.selectionStart ?? 0;
+      const selectionEnd = input.selectionEnd ?? 0;
+      const selectedText = value.slice(selectionStart, selectionEnd);
+      if (value.includes(".") && selectedText !== ".") {
+        event.preventDefault();
+        return;
+      }
+      return;
+    }
+
+    if (/[0-9]/.test(event.key)) {
+      return;
+    }
+
+    event.preventDefault();
   };
 
   React.useEffect(() => {
@@ -251,6 +332,63 @@ export default function AddProductPage() {
     }
   }, [dimensionUnit]);
 
+  const decodedToken = useMemo(() => {
+    if (!token) return null;
+    try {
+      const parts = token.split(".");
+      if (parts.length < 2) return null;
+      const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+      const json =
+        typeof window !== "undefined"
+          ? atob(base64)
+          : Buffer.from(base64, "base64").toString("utf-8");
+      return JSON.parse(json);
+    } catch {
+      return null;
+    }
+  }, [token]);
+
+  const resolveCompanyId = useMemo(() => {
+    const fromToken =
+      decodedToken?.company_id ??
+      decodedToken?.companyId ??
+      decodedToken?.companyID ??
+      null;
+    if (fromToken != null && String(fromToken).trim() !== "") {
+      return fromToken;
+    }
+    if (selectedCompanyId && selectedCompanyId !== "all") {
+      return selectedCompanyId;
+    }
+    return null;
+  }, [decodedToken, selectedCompanyId]);
+
+  const resolvedAssignedUserId = useMemo(() => {
+    if (!decodedToken) return null;
+    return (
+      decodedToken.user_id ??
+      decodedToken.userId ??
+      decodedToken.userID ??
+      decodedToken.sub ??
+      decodedToken.id ??
+      null
+    );
+  }, [decodedToken]);
+
+  const normalizeNumericId = (value: unknown): number | null => {
+    if (value == null) return null;
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : null;
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+      const numeric = Number(trimmed);
+      if (!Number.isNaN(numeric)) return numeric;
+    }
+    return null;
+  };
+
   const resetPriceForm = () => {
     setPriceForm({
       name: "",
@@ -326,9 +464,111 @@ export default function AddProductPage() {
     return `${month}.${day}.${year}`;
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    console.log("Submitting product form");
+    if (submitLoading) {
+      return;
+    }
+
+    setSubmitError(null);
+    setSubmitSuccess(false);
+
+    const formData = new FormData(event.currentTarget);
+    const getTextValue = (name: string) => {
+      const value = formData.get(name);
+      return typeof value === "string" ? value.trim() : "";
+    };
+    const getNumberValue = (name: string) => {
+      const value = getTextValue(name);
+      if (!value) return null;
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric : null;
+    };
+
+    const parseIdValue = (value: string) => {
+      if (!value) return null;
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric : null;
+    };
+
+    const payload = {
+      product_code: productCode.trim(),
+      product_name: getTextValue("productName"),
+      item_name: getTextValue("productName"),
+      item_status_id: parseIdValue(productStatus),
+      status_value: productStatus || null,
+      status_label: statusOptions.find((item) => item.value === productStatus)?.label ?? null,
+      item_category_id: parseIdValue(productCategory),
+      category_value: productCategory || null,
+      category_label: categoryOptions.find((item) => item.value === productCategory)?.label ?? null,
+      item_subcategory_id: parseIdValue(subCategory),
+      subcategory_value: subCategory || null,
+      subcategory_label: availableSubCategories.find((item) => item.value === subCategory)?.label ?? null,
+      description: getTextValue("productDescription") || null,
+      calibration: getTextValue("calibration") || null,
+      weight_unit: getTextValue("weightUnit") || null,
+      dimension_unit: dimensionUnit || getTextValue("dimensionUnit") || null,
+      weight: getNumberValue("weight"),
+      height: getNumberValue("height"),
+      width: getNumberValue("width"),
+      length: getNumberValue("length"),
+      global_item: normalizeNumericId(matchedGlobalItem?.id) ?? null,
+      item_type_id: 1,
+      company_id: normalizeNumericId(resolveCompanyId) ?? 0,
+      created_by: normalizeNumericId(resolvedAssignedUserId) ?? 0,
+      modified_by: normalizeNumericId(resolvedAssignedUserId) ?? 0,
+      prices: priceList.map(({ name, price, date }) => ({
+        name,
+        price,
+        date,
+      })),
+    };
+
+    if (!payload.product_code || !payload.product_name) {
+      setSubmitError("Product code and name are required.");
+      return;
+    }
+
+    if (!productStatus || !productCategory || !subCategory) {
+      setSubmitError("Status, category, and sub category are required.");
+      return;
+    }
+
+    try {
+      setSubmitLoading(true);
+      const response = await fetchWithAuth(PRODUCT_SAVE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        requiresAuth: true,
+        body: JSON.stringify(payload),
+    
+      });
+      console.log(payload);
+      const responseText = await response.text();
+      let data: any = null;
+      if (responseText) {
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          data = responseText;
+        }
+      }
+
+      if (!response.ok || (data && typeof data === "object" && data.ok === false)) {
+        const errorMessage =
+          (typeof data === "object" && data !== null && (data.error || data.message)) ||
+          (typeof data === "string" ? data : `Request failed (${response.status})`);
+        throw new Error(errorMessage);
+      }
+
+      setSubmitSuccess(true);
+      router.push("/dashboard/products");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save product.";
+      setSubmitError(message);
+    } finally {
+      setSubmitLoading(false);
+    }
   };
 
   return (
@@ -356,8 +596,14 @@ export default function AddProductPage() {
           <Button variant="outlined" onClick={() => router.push("/dashboard/products")}>
             Cancel
           </Button>
-          <Button variant="contained" color="primary" type="submit" form="product-form">
-            Add Product
+          <Button
+            variant="contained"
+            color="primary"
+            type="submit"
+            form="product-form"
+            disabled={submitLoading}
+          >
+            {submitLoading ? "Saving..." : "Add Product"}
           </Button>
         </Stack>
       </Box>
@@ -375,6 +621,20 @@ export default function AddProductPage() {
           mx: "auto",
         }}
       >
+        {(submitError || submitSuccess) && (
+          <Alert
+            severity={submitError ? "error" : "success"}
+            onClose={() => {
+              if (submitError) {
+                setSubmitError(null);
+              } else {
+                setSubmitSuccess(false);
+              }
+            }}
+          >
+            {submitError ?? "Product saved successfully."}
+          </Alert>
+        )}
         <Box sx={{ bgcolor: "#FFF", borderRadius: 2, p: 3, display: "flex", flexDirection: "column", gap: 3 }}>
           <Box>
             <Typography
@@ -419,6 +679,10 @@ export default function AddProductPage() {
                   renderInput={(params) => (
                     <TextField
                       {...params}
+                      inputProps={{
+                        ...params.inputProps,
+                        name: "productCode",
+                      }}
                       label="Product Code"
                       fullWidth
                       size="small"
@@ -444,12 +708,20 @@ export default function AddProductPage() {
                     />
                   )}
                 />
-                <TextField label="Product Name" fullWidth size="small" required />
+                <TextField
+                  label="Product Name"
+                  fullWidth
+                  size="small"
+                  required
+                  name="productName"
+                  inputProps={{ maxLength: PRODUCT_NAME_MAX_LENGTH }}
+                />
                 <TextField
                   select
                   label="Status"
                   fullWidth
                   size="small"
+                  name="status"
                   value={productStatus}
                   onChange={(event) => setProductStatus(event.target.value)}
                   required
@@ -490,7 +762,14 @@ export default function AddProductPage() {
                     </MenuItem>
                   ))}
                 </TextField>
-                <TextField label="Product Description" fullWidth size="small" multiline minRows={6} />
+                <TextField
+                  label="Product Description"
+                  fullWidth
+                  size="small"
+                  multiline
+                  minRows={6}
+                  name="productDescription"
+                />
               </Stack>
               <Stack spacing={2}>
                 <TextField
@@ -498,6 +777,7 @@ export default function AddProductPage() {
                   label="Product Category"
                   fullWidth
                   size="small"
+                  name="category"
                   value={productCategory}
                   onChange={(event) => setProductCategory(event.target.value)}
                   InputLabelProps={{ shrink: true }}
@@ -538,6 +818,7 @@ export default function AddProductPage() {
                   label="Sub Category"
                   fullWidth
                   size="small"
+                  name="subCategory"
                   value={subCategory}
                   onChange={(event) => setSubCategory(event.target.value)}
                   disabled={!productCategory}
@@ -574,7 +855,14 @@ export default function AddProductPage() {
                     </MenuItem>
                   ))}
                 </TextField>
-                <TextField select label="Calibration" size="small" defaultValue="yes" sx={{ width: { xs: "100%", md: "50%" } }}>
+                <TextField
+                  select
+                  label="Calibration"
+                  size="small"
+                  defaultValue="yes"
+                  sx={{ width: { xs: "100%", md: "50%" } }}
+                  name="calibration"
+                >
                   <MenuItem value="yes">Yes</MenuItem>
                   <MenuItem value="no">No</MenuItem>
                 </TextField>
@@ -588,6 +876,7 @@ export default function AddProductPage() {
                       label="Weight Unit"
                       size="small"
                       fullWidth
+                      name="weightUnit"
                       defaultValue="kg"
                     >
                       <MenuItem value="kg">Kilogram (kg)</MenuItem>
@@ -599,6 +888,7 @@ export default function AddProductPage() {
                       label="Dimension Unit"
                       size="small"
                       fullWidth
+                      name="dimensionUnit"
                       value={dimensionUnit}
                       onChange={(event) => setDimensionUnit(event.target.value)}
                       InputLabelProps={{ shrink: true }}
@@ -625,12 +915,48 @@ export default function AddProductPage() {
                     </TextField>
                   </Stack>
                   <Stack spacing={2} direction={{ xs: "column", md: "row" }}>
-                    <TextField label="Weight" size="small" fullWidth />
-                    <TextField label="Height" size="small" fullWidth />
+                    <TextField
+                      label="Weight"
+                      size="small"
+                      fullWidth
+                      type="number"
+                      name="weight"
+                      onKeyDown={allowOnlyNumericKeys}
+                      inputProps={NUMERIC_INPUT_PROPS}
+                      sx={NUMERIC_INPUT_SX}
+                    />
+                    <TextField
+                      label="Height"
+                      size="small"
+                      fullWidth
+                      type="number"
+                      name="height"
+                      onKeyDown={allowOnlyNumericKeys}
+                      inputProps={NUMERIC_INPUT_PROPS}
+                      sx={NUMERIC_INPUT_SX}
+                    />
                   </Stack>
                   <Stack spacing={2} direction={{ xs: "column", md: "row" }}>
-                    <TextField label="Width" size="small" fullWidth />
-                    <TextField label="Length" size="small" fullWidth />
+                    <TextField
+                      label="Width"
+                      size="small"
+                      fullWidth
+                      type="number"
+                      name="width"
+                      onKeyDown={allowOnlyNumericKeys}
+                      inputProps={NUMERIC_INPUT_PROPS}
+                      sx={NUMERIC_INPUT_SX}
+                    />
+                    <TextField
+                      label="Length"
+                      size="small"
+                      fullWidth
+                      type="number"
+                      name="length"
+                      onKeyDown={allowOnlyNumericKeys}
+                      inputProps={NUMERIC_INPUT_PROPS}
+                      sx={NUMERIC_INPUT_SX}
+                    />
                   </Stack>
                 </Box>
               </Stack>
