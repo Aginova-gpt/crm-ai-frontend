@@ -77,7 +77,7 @@ type ProductLookupResponse = {
 };
 
 const PRODUCT_LOOKUP_URL = "http://34.58.37.44/api/get-product-lookups";
-const PRODUCT_SAVE_URL = "http://34.58.37.44/api/products";
+const PRODUCT_SAVE_URL = "http://34.58.37.44/api/add-product";
 
 type GlobalItemOption = {
   id: number;
@@ -108,6 +108,12 @@ type DimensionUnitOption = {
   label: string;
 };
 
+type PropertyPayload = {
+  item_property_name_id: number;
+  property_value: string;
+  unit_code: string | undefined;
+  unit_type: string;
+};
 const DIMENSION_UNIT_OPTIONS: DimensionUnitOption[] = [
   { value: "cm", label: "Centimeter (cm)" },
   { value: "mm", label: "Millimeter (mm)" },
@@ -490,33 +496,75 @@ export default function AddProductPage() {
       const numeric = Number(value);
       return Number.isFinite(numeric) ? numeric : null;
     };
+    const weightValue = getNumberValue("weight");
+    const heightValue = getNumberValue("height");
+    const widthValue = getNumberValue("width");
+    const lengthValue = getNumberValue("length");
+    const weightUnitValue = getTextValue("weightUnit");
+
+    const properties: Array<PropertyPayload | null> = [
+      weightValue != null
+        ? ({
+            item_property_name_id: 1001,
+            property_value: weightValue.toString(),
+            unit_code: weightUnitValue ? weightUnitValue.toUpperCase() : "KG",
+            unit_type: "weight",
+          } satisfies PropertyPayload)
+        : null,
+      lengthValue != null
+        ? ({
+            item_property_name_id: 1002,
+            property_value: lengthValue.toString(),
+            unit_code: dimensionUnit ? dimensionUnit.toUpperCase() : undefined,
+            unit_type: "length",
+          } satisfies PropertyPayload)
+        : null,
+      widthValue != null
+        ? ({
+            item_property_name_id: 1003,
+            property_value: widthValue.toString(),
+            unit_code: dimensionUnit ? dimensionUnit.toUpperCase() : undefined,
+            unit_type: "width",
+          } satisfies PropertyPayload)
+        : null,
+      heightValue != null
+        ? ({
+            item_property_name_id: 1004,
+            property_value: heightValue.toString(),
+            unit_code: dimensionUnit ? dimensionUnit.toUpperCase() : undefined,
+            unit_type: "height",
+          } satisfies PropertyPayload)
+        : null,
+    ].filter((property): property is PropertyPayload => property !== null);
 
     const payload = {
       product_code: productCode.trim(),
       product_name: getTextValue("productName"),
       item_name: getTextValue("productName"),
       item_status_id: parseIdValue(productStatus),
-      status_value: productStatus || null,
-      status_label: statusOptions.find((item) => item.value === productStatus)?.label ?? null,
+      //status_value: productStatus || null,
+      //status_label: statusOptions.find((item) => item.value === productStatus)?.label ?? null,
       item_category_id: parseIdValue(productCategory),
-      category_value: productCategory || null,
-      category_label: categoryOptions.find((item) => item.value === productCategory)?.label ?? null,
+      //category_value: productCategory || null,
+      //category_label: categoryOptions.find((item) => item.value === productCategory)?.label ?? null,
       item_subcategory_id: parseIdValue(subCategory),
-      subcategory_value: subCategory || null,
-      subcategory_label: availableSubCategories.find((item) => item.value === subCategory)?.label ?? null,
+      //subcategory_value: subCategory || null,
+      //subcategory_label: availableSubCategories.find((item) => item.value === subCategory)?.label ?? null,
       description: getTextValue("productDescription") || null,
       calibration: getTextValue("calibration") || null,
-      weight_unit: getTextValue("weightUnit") || null,
-      dimension_unit: dimensionUnit || getTextValue("dimensionUnit") || null,
-      weight: getNumberValue("weight"),
-      height: getNumberValue("height"),
-      width: getNumberValue("width"),
-      length: getNumberValue("length"),
-      global_item: normalizeNumericId(matchedGlobalItem?.id) ?? null,
+      //weight_unit: getTextValue("weightUnit") || null,
+      //dimension_unit: dimensionUnit || getTextValue("dimensionUnit") || null,
+     // weight: weightValue,
+      //height: heightValue,
+      //width: widthValue,
+      //length: lengthValue,
+      //global_item: normalizeNumericId(matchedGlobalItem?.id) ?? null,
+global_item:  productCode,
       item_type_id: 1,
       company_id: normalizeNumericId(resolveCompanyId) ?? 0,
       created_by: normalizeNumericId(resolvedAssignedUserId) ?? 0,
       modified_by: normalizeNumericId(resolvedAssignedUserId) ?? 0,
+      properties,
       prices: priceList.map(({ name, price, date }) => ({
         name,
         price,
