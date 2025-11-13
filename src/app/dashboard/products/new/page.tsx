@@ -30,13 +30,15 @@ import { useCompany } from "../../../../contexts/CompanyContext";
 
 type PriceItem = {
   id: string;
-  name: string;
+  priceTypeId: string;
+  priceTypeLabel: string;
   price: number;
   date: string; // ISO string
 };
 
 type PriceFormState = {
-  name: string;
+  priceTypeId: string;
+  priceTypeLabel: string;
   price: string;
   date: string;
 };
@@ -45,6 +47,11 @@ type CategoryOption = {
   value: string;
   label: string;
   subCategories: { value: string; label: string }[];
+};
+
+type PriceTypeOption = {
+  value: string;
+  label: string;
 };
 
 type ProductLookupResponse = {
@@ -73,6 +80,12 @@ type ProductLookupResponse = {
       dimension_unit_name?: string;
       dimension_unit_abbreviation?: string;
     }>;
+    price_types?: Array<{
+      price_type_id: number;
+      price_type_label?: string;
+      price_type_name?: string;
+    }>;
+    pricing_types_by_company?: unknown;
   };
 };
 
@@ -121,10 +134,60 @@ const DIMENSION_UNIT_OPTIONS: DimensionUnitOption[] = [
   { value: "ft", label: "Foot (ft)" },
 ];
 
-const initialPrices: PriceItem[] = [
-  { id: "price-1", name: "Sonitor", price: 200, date: "2025-10-10" },
-  { id: "price-2", name: "Aegis", price: 210, date: "2025-10-10" },
-];
+const initialPrices: PriceItem[] = [];
+
+const mergePriceTypeOptions = (base: PriceTypeOption[], extras: PriceTypeOption[]): PriceTypeOption[] => {
+  const merged: PriceTypeOption[] = [];
+  const seen = new Map<string, number>();
+
+  const addOption = (option: PriceTypeOption | null | undefined) => {
+    if (!option) return;
+    const rawValue = option.value;
+    if (rawValue == null) return;
+    const value = typeof rawValue === "string" ? rawValue.trim() : String(rawValue);
+    if (!value) return;
+    const rawLabel = option.label;
+    const label =
+      typeof rawLabel === "string"
+        ? rawLabel.trim()
+        : rawLabel != null
+          ? String(rawLabel).trim()
+          : "";
+
+    if (seen.has(value)) {
+      const existingIndex = seen.get(value)!;
+      if (!merged[existingIndex].label && label) {
+        merged[existingIndex] = { value, label };
+      }
+      return;
+    }
+
+    merged.push({
+      value,
+      label: label || `Price Type ${value}`,
+    });
+    seen.set(value, merged.length - 1);
+  };
+
+  base.forEach(addOption);
+  extras.forEach(addOption);
+
+  return merged;
+};
+
+const normalizeNumericId = (value: unknown): number | null => {
+  if (value == null) return null;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const numeric = Number(trimmed);
+    if (!Number.isNaN(numeric)) return numeric;
+  }
+  return null;
+};
 
 export default function AddProductPage() {
   const router = useRouter();
@@ -137,6 +200,7 @@ export default function AddProductPage() {
   const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([]);
   const [statusOptions, setStatusOptions] = useState<StatusOption[]>([]);
   const [globalItemOptions, setGlobalItemOptions] = useState<GlobalItemOption[]>([]);
+  const [priceTypeOptions, setPriceTypeOptions] = useState<PriceTypeOption[]>([]);
   const [categoryLoading, setCategoryLoading] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [productCode, setProductCode] = useState("");
@@ -151,7 +215,8 @@ export default function AddProductPage() {
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const todayIso = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [priceForm, setPriceForm] = useState<PriceFormState>({
-    name: "",
+    priceTypeId: "",
+    priceTypeLabel: "",
     price: "",
     date: todayIso,
   });
@@ -263,66 +328,6 @@ export default function AddProductPage() {
   };
 
   React.useEffect(() => {
-    const controller = new AbortController();
-
-    const fetchCategories = async () => {
-      setCategoryLoading(true);
-      setCategoryError(null);
-
-      try {
-        const response = await fetch(PRODUCT_LOOKUP_URL, { signal: controller.signal });
-        if (!response.ok) {
-          throw new Error(`Request failed with status ${response.status}`);
-        }
-
-        const data: ProductLookupResponse = await response.json();
-        const mappedCategories =
-          data.selections?.categories?.map((category) => ({
-            value: String(category.item_category_id),
-            label:
-              category.item_category_label ??
-              category.item_category_name ??
-              `Category ${category.item_category_id}`,
-            subCategories:
-              category.subcategories?.map((sub) => ({
-                value: String(sub.item_subcategory_id),
-                label: sub.item_subcategory_label ?? sub.item_subcategory_name ?? `Subcategory ${sub.item_subcategory_id}`,
-              })) ?? [],
-          })) ?? [];
-
-        setCategoryOptions(mappedCategories);
-        const mappedGlobalItems =
-          data.selections?.global_items?.map((item) => ({
-            id: item.id,
-            code: item.code ?? `Item ${item.id}`,
-          })) ?? [];
-        setGlobalItemOptions(mappedGlobalItems);
-        const mappedStatuses =
-          data.selections?.item_statuses?.map((status) => ({
-            value: String(status.item_status_id),
-            label: status.item_status_name ?? `Status ${status.item_status_id}`,
-          })) ?? [];
-        setStatusOptions(mappedStatuses);
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          console.error("Failed to load product categories", error);
-          setCategoryError("Unable to load lookups. Please try again.");
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setCategoryLoading(false);
-        }
-      }
-    };
-
-    fetchCategories();
-
-    return () => {
-      controller.abort();
-    };
-  }, []);
-
-  React.useEffect(() => {
     setSubCategory("");
   }, [productCategory]);
 
@@ -369,6 +374,312 @@ export default function AddProductPage() {
     return null;
   }, [decodedToken, selectedCompanyId]);
 
+  React.useEffect(() => {
+    const controller = new AbortController();
+
+    const fetchCategories = async () => {
+      setCategoryLoading(true);
+      setCategoryError(null);
+
+      try {
+        const toIdString = (value: unknown): string | null => {
+          if (value == null) return null;
+          if (typeof value === "string") {
+            const trimmed = value.trim();
+            return trimmed.length > 0 ? trimmed : null;
+          }
+          if (typeof value === "number" && Number.isFinite(value)) {
+            return String(value);
+          }
+          return null;
+        };
+
+        const resolvedCompanyIdString =
+          toIdString(normalizeNumericId(resolveCompanyId)) ?? toIdString(resolveCompanyId);
+
+        const lookupUrl = (() => {
+          try {
+            const url = new URL(PRODUCT_LOOKUP_URL);
+            if (resolvedCompanyIdString) {
+              url.searchParams.set("company_id", resolvedCompanyIdString);
+            }
+            return url.toString();
+          } catch {
+            return PRODUCT_LOOKUP_URL;
+          }
+        })();
+
+        const response = await fetch(lookupUrl, { signal: controller.signal });
+        if (!response.ok) {
+          throw new Error(`Request failed with status ${response.status}`);
+        }
+
+        const data: ProductLookupResponse = await response.json();
+        const mappedCategories =
+          data.selections?.categories?.map((category) => ({
+            value: String(category.item_category_id),
+            label:
+              category.item_category_label ??
+              category.item_category_name ??
+              `Category ${category.item_category_id}`,
+            subCategories:
+              category.subcategories?.map((sub) => ({
+                value: String(sub.item_subcategory_id),
+                label: sub.item_subcategory_label ?? sub.item_subcategory_name ?? `Subcategory ${sub.item_subcategory_id}`,
+              })) ?? [],
+          })) ?? [];
+
+        setCategoryOptions(mappedCategories);
+        const mappedGlobalItems =
+          data.selections?.global_items?.map((item) => ({
+            id: item.id,
+            code: item.code ?? `Item ${item.id}`,
+          })) ?? [];
+        setGlobalItemOptions(mappedGlobalItems);
+        const mappedPriceTypes =
+          data.selections?.price_types?.map((priceType) => ({
+            value: String(priceType.price_type_id),
+            label:
+              priceType.price_type_label ??
+              priceType.price_type_name ??
+              `Price Type ${priceType.price_type_id}`,
+          })) ?? [];
+
+        const collectPricingEntries = (
+          input: unknown,
+          inheritedCompanyId: string | null = null
+        ): Array<Record<string, unknown>> => {
+          const results: Array<Record<string, unknown>> = [];
+
+          const process = (value: unknown, parentCompanyId: string | null) => {
+            if (value == null) {
+              return;
+            }
+
+            if (Array.isArray(value)) {
+              value.forEach((item) => process(item, parentCompanyId));
+              return;
+            }
+
+            if (typeof value !== "object") {
+              return;
+            }
+
+            const record = value as Record<string, unknown>;
+
+            if ("pricing_types" in record && record.pricing_types != null) {
+              const nextCompanyId =
+                toIdString(
+                  record.company_id ??
+                    record.companyId ??
+                    record.companyID ??
+                    record.company ??
+                    parentCompanyId
+                ) ?? parentCompanyId;
+              process(record.pricing_types, nextCompanyId);
+              return;
+            }
+
+            if ("price_types" in record && record.price_types != null) {
+              const nextCompanyId =
+                toIdString(
+                  record.company_id ??
+                    record.companyId ??
+                    record.companyID ??
+                    record.company ??
+                    parentCompanyId
+                ) ?? parentCompanyId;
+              process(record.price_types, nextCompanyId);
+              return;
+            }
+
+            const maybePriceTypeId =
+              record.price_type_id ??
+              record.priceTypeId ??
+              record.price_type ??
+              record.id ??
+              null;
+
+            if (maybePriceTypeId == null) {
+              const entries = Object.entries(record);
+              if (entries.length === 0) {
+                return;
+              }
+              entries.forEach(([key, item]) => {
+                const isNumericKey = /^[0-9]+$/.test(key);
+                const nextCompanyId = isNumericKey
+                  ? key
+                  : toIdString(
+                      record.company_id ??
+                        record.companyId ??
+                        record.companyID ??
+                        record.company ??
+                        parentCompanyId
+                    ) ?? parentCompanyId;
+                process(item, nextCompanyId);
+              });
+              return;
+            }
+
+            results.push({
+              ...record,
+              company_id:
+                toIdString(
+                  record.company_id ??
+                    record.companyId ??
+                    record.companyID ??
+                    record.company ??
+                    parentCompanyId
+                ) ?? parentCompanyId,
+            });
+          };
+
+          process(input, inheritedCompanyId);
+
+          return results;
+        };
+
+        const pricingEntries = collectPricingEntries(
+          data.selections?.pricing_types_by_company,
+          resolvedCompanyIdString
+        );
+
+        const filteredPricingEntries =
+          resolvedCompanyIdString != null
+            ? pricingEntries.filter((entry) => {
+                const companyIdValue =
+                  entry.company_id ??
+                  entry.companyId ??
+                  entry.companyID ??
+                  entry.company ??
+                  null;
+                const candidate = toIdString(companyIdValue);
+                return candidate === resolvedCompanyIdString;
+              })
+            : pricingEntries;
+
+        const mappedCompanyPriceList = filteredPricingEntries
+          .map((entry, index) => {
+            const priceTypeIdSource =
+              entry.price_type_id ??
+              entry.priceTypeId ??
+              entry.price_type ??
+              entry.id ??
+              null;
+            const priceTypeId = toIdString(priceTypeIdSource);
+            if (!priceTypeId) {
+              return null;
+            }
+
+            const rawLabel =
+              entry.price_type_label ??
+              entry.price_type_name ??
+              entry.label ??
+              entry.name ??
+              null;
+            const priceTypeLabel =
+              typeof rawLabel === "string"
+                ? rawLabel.trim()
+                : rawLabel != null
+                  ? String(rawLabel).trim()
+                  : "";
+            if (!priceTypeLabel) {
+              return null;
+            }
+
+            const rawPrice =
+              entry.price ??
+              entry.amount ??
+              entry.value ??
+              entry.rate ??
+              entry.default_price ??
+              entry.price_amount ??
+              null;
+            let numericPrice: number | null = null;
+            if (typeof rawPrice === "number") {
+              numericPrice = Number.isFinite(rawPrice) ? rawPrice : null;
+            } else if (typeof rawPrice === "string") {
+              const parsed = Number(rawPrice);
+              numericPrice = Number.isFinite(parsed) ? parsed : null;
+            }
+
+            const rawDate =
+              entry.date ??
+              entry.effective_date ??
+              entry.start_date ??
+              entry.startDate ??
+              entry.price_date ??
+              entry.effectiveDate ??
+              null;
+            const date =
+              typeof rawDate === "string" && rawDate.trim()
+                ? rawDate.trim().slice(0, 10)
+                : todayIso;
+
+            return {
+              id: `company-price-${priceTypeId}-${index}`,
+              priceTypeId,
+              priceTypeLabel,
+              price: numericPrice ?? 0,
+              date,
+            } satisfies PriceItem;
+          })
+          .filter((item): item is PriceItem => item !== null);
+
+        if (mappedCompanyPriceList.length > 0) {
+          setPriceList(mappedCompanyPriceList);
+        } else {
+          setPriceList([]);
+        }
+
+        const mappedStatuses =
+          data.selections?.item_statuses?.map((status) => ({
+            value: String(status.item_status_id),
+            label: status.item_status_name ?? `Status ${status.item_status_id}`,
+          })) ?? [];
+
+        const priceTypesFromCompany = mappedCompanyPriceList.map((item) => ({
+          value: item.priceTypeId,
+          label: item.priceTypeLabel,
+        }));
+
+        setPriceTypeOptions(mergePriceTypeOptions(mappedPriceTypes, priceTypesFromCompany));
+        setStatusOptions(mappedStatuses);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error("Failed to load product categories", error);
+          setCategoryError("Unable to load lookups. Please try again.");
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setCategoryLoading(false);
+        }
+      }
+    };
+
+    fetchCategories();
+
+    return () => {
+      controller.abort();
+    };
+  }, [resolveCompanyId, todayIso]);
+
+  React.useEffect(() => {
+    setSubCategory("");
+  }, [productCategory]);
+
+  React.useEffect(() => {
+    if (!statusOptions.some((item) => item.value === productStatus)) {
+      setProductStatus("");
+    }
+  }, [statusOptions, productStatus]);
+
+  React.useEffect(() => {
+    if (!DIMENSION_UNIT_OPTIONS.some((item) => item.value === dimensionUnit)) {
+      setDimensionUnit("");
+    }
+  }, [dimensionUnit]);
+
   const resolvedAssignedUserId = useMemo(() => {
     if (!decodedToken) return null;
     return (
@@ -381,23 +692,10 @@ export default function AddProductPage() {
     );
   }, [decodedToken]);
 
-  const normalizeNumericId = (value: unknown): number | null => {
-    if (value == null) return null;
-    if (typeof value === "number") {
-      return Number.isFinite(value) ? value : null;
-    }
-    if (typeof value === "string") {
-      const trimmed = value.trim();
-      if (!trimmed) return null;
-      const numeric = Number(trimmed);
-      if (!Number.isNaN(numeric)) return numeric;
-    }
-    return null;
-  };
-
   const resetPriceForm = () => {
     setPriceForm({
-      name: "",
+      priceTypeId: "",
+      priceTypeLabel: "",
       price: "",
       date: todayIso,
     });
@@ -411,7 +709,8 @@ export default function AddProductPage() {
 
   const openEditPriceDialog = (item: PriceItem) => {
     setPriceForm({
-      name: item.name,
+      priceTypeId: item.priceTypeId,
+      priceTypeLabel: item.priceTypeLabel,
       price: item.price.toString(),
       date: item.date,
     });
@@ -425,10 +724,13 @@ export default function AddProductPage() {
   };
 
   const upsertPrice = () => {
-    const trimmedName = priceForm.name.trim();
     const numericPrice = Number(priceForm.price);
+    const priceTypeId = priceForm.priceTypeId.trim();
+    const selectedPriceType = priceTypeOptions.find((option) => option.value === priceTypeId);
+    const computedLabel = selectedPriceType?.label ?? priceForm.priceTypeLabel;
+    const trimmedLabel = computedLabel ? computedLabel.trim() : "";
     const isValid =
-      trimmedName.length > 0 && !Number.isNaN(numericPrice) && priceForm.date;
+      priceTypeId.length > 0 && trimmedLabel.length > 0 && !Number.isNaN(numericPrice) && priceForm.date;
 
     if (!isValid) {
       return;
@@ -438,7 +740,13 @@ export default function AddProductPage() {
       setPriceList((prev) =>
         prev.map((item) =>
           item.id === editingPriceId
-            ? { ...item, name: trimmedName, price: numericPrice, date: priceForm.date }
+            ? {
+                ...item,
+                priceTypeId,
+                priceTypeLabel: trimmedLabel,
+                price: numericPrice,
+                date: priceForm.date,
+              }
             : item
         )
       );
@@ -447,7 +755,8 @@ export default function AddProductPage() {
         ...prev,
         {
           id: `price-${Date.now()}`,
-          name: trimmedName,
+          priceTypeId,
+          priceTypeLabel: trimmedLabel,
           price: numericPrice,
           date: priceForm.date,
         },
@@ -565,11 +874,21 @@ global_item:  productCode,
       created_by: normalizeNumericId(resolvedAssignedUserId) ?? 0,
       modified_by: normalizeNumericId(resolvedAssignedUserId) ?? 0,
       properties,
-      prices: priceList.map(({ name, price, date }) => ({
-        name,
-        price,
-        date,
-      })),
+      prices: priceList.map(({ priceTypeLabel, price, date, priceTypeId }) => {
+        const base = {
+          name: priceTypeLabel,
+          price,
+          date,
+        };
+        const numericPriceTypeId = Number(priceTypeId);
+        if (Number.isFinite(numericPriceTypeId)) {
+          return {
+            ...base,
+            price_type_id: numericPriceTypeId,
+          };
+        }
+        return base;
+      }),
     };
 
     if (!payload.product_code || !payload.product_name) {
@@ -1031,7 +1350,7 @@ global_item:  productCode,
             <TableHead>
               <TableRow>
                 <TableCell sx={{ width: 60 }}>#</TableCell>
-                <TableCell>Name</TableCell>
+                <TableCell>Price Type</TableCell>
                 <TableCell>Price</TableCell>
                 <TableCell>Date</TableCell>
                 <TableCell align="right">Action</TableCell>
@@ -1048,7 +1367,7 @@ global_item:  productCode,
               {priceList.map((item, index) => (
                 <TableRow key={item.id}>
                   <TableCell>{index + 1}</TableCell>
-                  <TableCell>{item.name}</TableCell>
+                  <TableCell>{item.priceTypeLabel}</TableCell>
                   <TableCell>{`$${item.price.toFixed(0)}`}</TableCell>
                   <TableCell>{displayDate(item.date)}</TableCell>
                   <TableCell align="right">
@@ -1074,11 +1393,56 @@ global_item:  productCode,
         <DialogTitle>{editingPriceId ? "Edit Price" : "Add Price"}</DialogTitle>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 2 }}>
           <TextField
-            label="Name"
-            value={priceForm.name}
+            select
+            label="Price Type"
+            value={priceForm.priceTypeId}
             size="small"
-            onChange={(event) => setPriceForm((prev) => ({ ...prev, name: event.target.value }))}
-          />
+            onChange={(event) => {
+              const value = event.target.value;
+              const option = priceTypeOptions.find((item) => item.value === value);
+              setPriceForm((prev) => ({
+                ...prev,
+                priceTypeId: value,
+                priceTypeLabel: option?.label?.trim() ?? prev.priceTypeLabel,
+              }));
+            }}
+            InputLabelProps={{ shrink: true }}
+            SelectProps={{
+              displayEmpty: true,
+              renderValue: (selected: unknown): React.ReactNode => {
+                const value = selected as string;
+                if (!value) {
+                  return "Select Price Type";
+                }
+                const option = priceTypeOptions.find((item) => item.value === value);
+                return option?.label ?? (priceForm.priceTypeLabel || value);
+              },
+            }}
+          >
+            <MenuItem value="" disabled>
+              Select Price Type
+            </MenuItem>
+            {categoryLoading && (
+              <MenuItem value="" disabled>
+                Loading price types...
+              </MenuItem>
+            )}
+            {categoryError && !categoryLoading && priceTypeOptions.length === 0 && (
+              <MenuItem value="" disabled>
+                {categoryError}
+              </MenuItem>
+            )}
+            {!categoryLoading && !categoryError && priceTypeOptions.length === 0 && (
+              <MenuItem value="" disabled>
+                No price types available
+              </MenuItem>
+            )}
+            {priceTypeOptions.map((option) => (
+              <MenuItem key={option.value} value={option.value}>
+                {option.label}
+              </MenuItem>
+            ))}
+          </TextField>
           <TextField
             label="Price"
             value={priceForm.price}
