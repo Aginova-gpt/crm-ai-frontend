@@ -54,6 +54,26 @@ type PriceTypeOption = {
   label: string;
 };
 
+type StatusOption = {
+  value: string;
+  label: string;
+};
+
+type GlobalItemOption = {
+  id: number;
+  code: string;
+};
+
+type DimensionUnitOption = {
+  value: string;
+  label: string;
+};
+
+type WeightUnitOption = {
+  value: string;
+  label: string;
+};
+
 type ProductLookupResponse = {
   selections?: {
     categories?: Array<{
@@ -76,26 +96,38 @@ type ProductLookupResponse = {
     }>;
     dimension_units?: Array<{
       dimension_unit_id?: number | string;
-      dimension_unit_label?: string;
-      dimension_unit_name?: string;
-      dimension_unit_abbreviation?: string;
+      unit_abbreviation?: string;
+      unit_name?: string;
     }>;
-    price_types?: Array<{
-      price_type_id: number;
-      price_type_label?: string;
-      price_type_name?: string;
+    weight_units?: Array<{
+      weight_unit_id?: number | string;
+      unit_abbreviation?: string;
+      unit_name?: string;
     }>;
-    pricing_types_by_company?: unknown;
+    property_names_by_company?: unknown;
+    pricing_types_by_company?: Record<
+      string,
+      {
+        company_name?: string;
+        pricing_types?: Array<{
+          pricing_type_id?: number;
+          pricing_type_name?: string;
+          description?: string | null;
+        }>;
+      }
+    >;
   };
+};
+
+type PropertyPayload = {
+  item_property_name_id: number;
+  property_value: string;
+  unit_code: string | undefined;
+  unit_type: string;
 };
 
 const PRODUCT_LOOKUP_URL = "http://34.58.37.44/api/get-product-lookups";
 const PRODUCT_SAVE_URL = "http://34.58.37.44/api/add-product";
-
-type GlobalItemOption = {
-  id: number;
-  code: string;
-};
 
 const PRODUCT_CODE_MAX_LENGTH = 255;
 const PRODUCT_CODE_ALLOWED_REGEX = /^[A-Z0-9-]*$/;
@@ -111,69 +143,7 @@ const NUMERIC_INPUT_SX = {
   },
 } as const;
 
-type StatusOption = {
-  value: string;
-  label: string;
-};
-
-type DimensionUnitOption = {
-  value: string;
-  label: string;
-};
-
-type PropertyPayload = {
-  item_property_name_id: number;
-  property_value: string;
-  unit_code: string | undefined;
-  unit_type: string;
-};
-const DIMENSION_UNIT_OPTIONS: DimensionUnitOption[] = [
-  { value: "cm", label: "Centimeter (cm)" },
-  { value: "mm", label: "Millimeter (mm)" },
-  { value: "in", label: "Inch (in)" },
-  { value: "ft", label: "Foot (ft)" },
-];
-
 const initialPrices: PriceItem[] = [];
-
-const mergePriceTypeOptions = (base: PriceTypeOption[], extras: PriceTypeOption[]): PriceTypeOption[] => {
-  const merged: PriceTypeOption[] = [];
-  const seen = new Map<string, number>();
-
-  const addOption = (option: PriceTypeOption | null | undefined) => {
-    if (!option) return;
-    const rawValue = option.value;
-    if (rawValue == null) return;
-    const value = typeof rawValue === "string" ? rawValue.trim() : String(rawValue);
-    if (!value) return;
-    const rawLabel = option.label;
-    const label =
-      typeof rawLabel === "string"
-        ? rawLabel.trim()
-        : rawLabel != null
-          ? String(rawLabel).trim()
-          : "";
-
-    if (seen.has(value)) {
-      const existingIndex = seen.get(value)!;
-      if (!merged[existingIndex].label && label) {
-        merged[existingIndex] = { value, label };
-      }
-      return;
-    }
-
-    merged.push({
-      value,
-      label: label || `Price Type ${value}`,
-    });
-    seen.set(value, merged.length - 1);
-  };
-
-  base.forEach(addOption);
-  extras.forEach(addOption);
-
-  return merged;
-};
 
 const normalizeNumericId = (value: unknown): number | null => {
   if (value == null) return null;
@@ -194,25 +164,37 @@ export default function AddProductPage() {
   const { fetchWithAuth } = useApi();
   const { token } = useAuth();
   const { selectedCompanyId } = useCompany();
+
   const [priceList, setPriceList] = useState<PriceItem[]>(initialPrices);
   const [priceDialogOpen, setPriceDialogOpen] = useState(false);
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
+
   const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([]);
   const [statusOptions, setStatusOptions] = useState<StatusOption[]>([]);
   const [globalItemOptions, setGlobalItemOptions] = useState<GlobalItemOption[]>([]);
   const [priceTypeOptions, setPriceTypeOptions] = useState<PriceTypeOption[]>([]);
+
+  const [weightUnitOptions, setWeightUnitOptions] = useState<WeightUnitOption[]>([]);
+  const [weightUnit, setWeightUnit] = useState<string>("");
+
+  const [dimensionUnitOptions, setDimensionUnitOptions] = useState<DimensionUnitOption[]>([]);
+  const [dimensionUnit, setDimensionUnit] = useState<string>("");
+
   const [categoryLoading, setCategoryLoading] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
+
   const [productCode, setProductCode] = useState("");
   const [productCategory, setProductCategory] = useState("");
   const [subCategory, setSubCategory] = useState("");
   const [productStatus, setProductStatus] = useState("");
-  const [dimensionUnit, setDimensionUnit] = useState("");
+
   const [productCodeExists, setProductCodeExists] = useState(false);
   const [productCodeError, setProductCodeError] = useState<string | null>(null);
+
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+
   const todayIso = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [priceForm, setPriceForm] = useState<PriceFormState>({
     priceTypeId: "",
@@ -224,10 +206,16 @@ export default function AddProductPage() {
   const totalPrices = useMemo(() => priceList.length, [priceList]);
 
   const availableSubCategories = useMemo(() => {
-    return categoryOptions.find((option) => option.value === productCategory)?.subCategories || [];
+    return (
+      categoryOptions.find((option) => option.value === productCategory)?.subCategories || []
+    );
   }, [categoryOptions, productCategory]);
 
-  const productCodeOptions = useMemo(() => globalItemOptions.map((item) => item.code), [globalItemOptions]);
+  const productCodeOptions = useMemo(
+    () => globalItemOptions.map((item) => item.code),
+    [globalItemOptions]
+  );
+
   const globalItemLookupByCode = useMemo(() => {
     const map = new Map<string, GlobalItemOption>();
     for (const item of globalItemOptions) {
@@ -251,7 +239,9 @@ export default function AddProductPage() {
     }
 
     setProductCodeExists(Boolean(matchedGlobalItem));
-    setProductCodeError((prev) => (prev && !PRODUCT_CODE_ALLOWED_REGEX.test(productCode) ? prev : null));
+    setProductCodeError((prev) =>
+      prev && !PRODUCT_CODE_ALLOWED_REGEX.test(productCode) ? prev : null
+    );
   }, [productCode, matchedGlobalItem]);
 
   const handleProductCodeInputChange = (_: unknown, newInputValue: string) => {
@@ -272,7 +262,10 @@ export default function AddProductPage() {
   };
 
   const handleProductCodeSelect = (_: unknown, newValue: string | null) => {
-    const value = (newValue ?? "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, PRODUCT_CODE_MAX_LENGTH);
+    const value = (newValue ?? "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9-]/g, "")
+      .slice(0, PRODUCT_CODE_MAX_LENGTH);
     setProductCodeError(null);
     setProductCode(value);
   };
@@ -299,7 +292,7 @@ export default function AddProductPage() {
       return;
     }
 
-    if (event.key === "-" ) {
+    if (event.key === "-") {
       return;
     }
 
@@ -337,11 +330,30 @@ export default function AddProductPage() {
     }
   }, [statusOptions, productStatus]);
 
+  // Ensure weightUnit matches API options
   React.useEffect(() => {
-    if (!DIMENSION_UNIT_OPTIONS.some((item) => item.value === dimensionUnit)) {
-      setDimensionUnit("");
+    if (!weightUnitOptions.length) {
+      setWeightUnit("");
+      return;
     }
-  }, [dimensionUnit]);
+    if (!weightUnitOptions.some((opt) => opt.value === weightUnit)) {
+      const defaultOpt =
+        weightUnitOptions.find((opt) => opt.value === "KG") ?? weightUnitOptions[0];
+      setWeightUnit(defaultOpt.value);
+    }
+  }, [weightUnitOptions, weightUnit]);
+
+  // Ensure dimensionUnit matches API options
+  React.useEffect(() => {
+    if (!dimensionUnitOptions.length) {
+      setDimensionUnit("");
+      return;
+    }
+    if (!dimensionUnitOptions.some((opt) => opt.value === dimensionUnit)) {
+      const defaultOpt = dimensionUnitOptions[0];
+      setDimensionUnit(defaultOpt.value);
+    }
+  }, [dimensionUnitOptions, dimensionUnit]);
 
   const decodedToken = useMemo(() => {
     if (!token) return null;
@@ -359,12 +371,14 @@ export default function AddProductPage() {
     }
   }, [token]);
 
+  // 🔐 company id coming from JWT (preferred), or from selectedCompanyId
   const resolveCompanyId = useMemo(() => {
     const fromToken =
       decodedToken?.company_id ??
       decodedToken?.companyId ??
       decodedToken?.companyID ??
       null;
+
     if (fromToken != null && String(fromToken).trim() !== "") {
       return fromToken;
     }
@@ -377,7 +391,7 @@ export default function AddProductPage() {
   React.useEffect(() => {
     const controller = new AbortController();
 
-    const fetchCategories = async () => {
+    const fetchLookups = async () => {
       setCategoryLoading(true);
       setCategoryError(null);
 
@@ -395,7 +409,8 @@ export default function AddProductPage() {
         };
 
         const resolvedCompanyIdString =
-          toIdString(normalizeNumericId(resolveCompanyId)) ?? toIdString(resolveCompanyId);
+          toIdString(normalizeNumericId(resolveCompanyId)) ??
+          toIdString(resolveCompanyId);
 
         const lookupUrl = (() => {
           try {
@@ -415,6 +430,8 @@ export default function AddProductPage() {
         }
 
         const data: ProductLookupResponse = await response.json();
+
+        // === Categories ===
         const mappedCategories =
           data.selections?.categories?.map((category) => ({
             value: String(category.item_category_id),
@@ -425,229 +442,113 @@ export default function AddProductPage() {
             subCategories:
               category.subcategories?.map((sub) => ({
                 value: String(sub.item_subcategory_id),
-                label: sub.item_subcategory_label ?? sub.item_subcategory_name ?? `Subcategory ${sub.item_subcategory_id}`,
+                label:
+                  sub.item_subcategory_label ??
+                  sub.item_subcategory_name ??
+                  `Subcategory ${sub.item_subcategory_id}`,
               })) ?? [],
           })) ?? [];
-
         setCategoryOptions(mappedCategories);
+
+        // === Global Items (product codes) ===
         const mappedGlobalItems =
           data.selections?.global_items?.map((item) => ({
             id: item.id,
             code: item.code ?? `Item ${item.id}`,
           })) ?? [];
         setGlobalItemOptions(mappedGlobalItems);
-        const mappedPriceTypes =
-          data.selections?.price_types?.map((priceType) => ({
-            value: String(priceType.price_type_id),
-            label:
-              priceType.price_type_label ??
-              priceType.price_type_name ??
-              `Price Type ${priceType.price_type_id}`,
-          })) ?? [];
 
-        const collectPricingEntries = (
-          input: unknown,
-          inheritedCompanyId: string | null = null
-        ): Array<Record<string, unknown>> => {
-          const results: Array<Record<string, unknown>> = [];
+        // === Weight units (dynamic from API) ===
+        const mappedWeightUnits: WeightUnitOption[] =
+          data.selections?.weight_units
+            ?.map((u) => {
+              const abbr = u.unit_abbreviation?.trim();
+              const name = u.unit_name?.trim();
+              if (!abbr) return null;
+              return {
+                value: abbr.toUpperCase(),
+                label: name ? `${name} (${abbr})` : abbr,
+              };
+            })
+            .filter((x): x is WeightUnitOption => x !== null) ?? [];
+        setWeightUnitOptions(mappedWeightUnits);
 
-          const process = (value: unknown, parentCompanyId: string | null) => {
-            if (value == null) {
-              return;
-            }
+        // === Dimension units (dynamic from API) ===
+        const mappedDimensionUnits: DimensionUnitOption[] =
+          data.selections?.dimension_units
+            ?.map((u) => {
+              const abbr = u.unit_abbreviation?.trim();
+              const name = u.unit_name?.trim();
+              if (!abbr) return null;
+              return {
+                value: abbr.toUpperCase(),
+                label: name ? `${name} (${abbr})` : abbr,
+              };
+            })
+            .filter((x): x is DimensionUnitOption => x !== null) ?? [];
+        setDimensionUnitOptions(mappedDimensionUnits);
 
-            if (Array.isArray(value)) {
-              value.forEach((item) => process(item, parentCompanyId));
-              return;
-            }
-
-            if (typeof value !== "object") {
-              return;
-            }
-
-            const record = value as Record<string, unknown>;
-
-            if ("pricing_types" in record && record.pricing_types != null) {
-              const nextCompanyId =
-                toIdString(
-                  record.company_id ??
-                    record.companyId ??
-                    record.companyID ??
-                    record.company ??
-                    parentCompanyId
-                ) ?? parentCompanyId;
-              process(record.pricing_types, nextCompanyId);
-              return;
-            }
-
-            if ("price_types" in record && record.price_types != null) {
-              const nextCompanyId =
-                toIdString(
-                  record.company_id ??
-                    record.companyId ??
-                    record.companyID ??
-                    record.company ??
-                    parentCompanyId
-                ) ?? parentCompanyId;
-              process(record.price_types, nextCompanyId);
-              return;
-            }
-
-            const maybePriceTypeId =
-              record.price_type_id ??
-              record.priceTypeId ??
-              record.price_type ??
-              record.id ??
-              null;
-
-            if (maybePriceTypeId == null) {
-              const entries = Object.entries(record);
-              if (entries.length === 0) {
-                return;
-              }
-              entries.forEach(([key, item]) => {
-                const isNumericKey = /^[0-9]+$/.test(key);
-                const nextCompanyId = isNumericKey
-                  ? key
-                  : toIdString(
-                      record.company_id ??
-                        record.companyId ??
-                        record.companyID ??
-                        record.company ??
-                        parentCompanyId
-                    ) ?? parentCompanyId;
-                process(item, nextCompanyId);
-              });
-              return;
-            }
-
-            results.push({
-              ...record,
-              company_id:
-                toIdString(
-                  record.company_id ??
-                    record.companyId ??
-                    record.companyID ??
-                    record.company ??
-                    parentCompanyId
-                ) ?? parentCompanyId,
-            });
-          };
-
-          process(input, inheritedCompanyId);
-
-          return results;
-        };
-
-        const pricingEntries = collectPricingEntries(
-          data.selections?.pricing_types_by_company,
-          resolvedCompanyIdString
-        );
-
-        const filteredPricingEntries =
-          resolvedCompanyIdString != null
-            ? pricingEntries.filter((entry) => {
-                const companyIdValue =
-                  entry.company_id ??
-                  entry.companyId ??
-                  entry.companyID ??
-                  entry.company ??
-                  null;
-                const candidate = toIdString(companyIdValue);
-                return candidate === resolvedCompanyIdString;
-              })
-            : pricingEntries;
-
-        const mappedCompanyPriceList = filteredPricingEntries
-          .map((entry, index) => {
-            const priceTypeIdSource =
-              entry.price_type_id ??
-              entry.priceTypeId ??
-              entry.price_type ??
-              entry.id ??
-              null;
-            const priceTypeId = toIdString(priceTypeIdSource);
-            if (!priceTypeId) {
-              return null;
-            }
-
-            const rawLabel =
-              entry.price_type_label ??
-              entry.price_type_name ??
-              entry.label ??
-              entry.name ??
-              null;
-            const priceTypeLabel =
-              typeof rawLabel === "string"
-                ? rawLabel.trim()
-                : rawLabel != null
-                  ? String(rawLabel).trim()
-                  : "";
-            if (!priceTypeLabel) {
-              return null;
-            }
-
-            const rawPrice =
-              entry.price ??
-              entry.amount ??
-              entry.value ??
-              entry.rate ??
-              entry.default_price ??
-              entry.price_amount ??
-              null;
-            let numericPrice: number | null = null;
-            if (typeof rawPrice === "number") {
-              numericPrice = Number.isFinite(rawPrice) ? rawPrice : null;
-            } else if (typeof rawPrice === "string") {
-              const parsed = Number(rawPrice);
-              numericPrice = Number.isFinite(parsed) ? parsed : null;
-            }
-
-            const rawDate =
-              entry.date ??
-              entry.effective_date ??
-              entry.start_date ??
-              entry.startDate ??
-              entry.price_date ??
-              entry.effectiveDate ??
-              null;
-            const date =
-              typeof rawDate === "string" && rawDate.trim()
-                ? rawDate.trim().slice(0, 10)
-                : todayIso;
-
-            return {
-              id: `company-price-${priceTypeId}-${index}`,
-              priceTypeId,
-              priceTypeLabel,
-              price: numericPrice ?? 0,
-              date,
-            } satisfies PriceItem;
-          })
-          .filter((item): item is PriceItem => item !== null);
-
-        if (mappedCompanyPriceList.length > 0) {
-          setPriceList(mappedCompanyPriceList);
-        } else {
-          setPriceList([]);
-        }
-
+        // === Statuses ===
         const mappedStatuses =
           data.selections?.item_statuses?.map((status) => ({
             value: String(status.item_status_id),
             label: status.item_status_name ?? `Status ${status.item_status_id}`,
           })) ?? [];
-
-        const priceTypesFromCompany = mappedCompanyPriceList.map((item) => ({
-          value: item.priceTypeId,
-          label: item.priceTypeLabel,
-        }));
-
-        setPriceTypeOptions(mergePriceTypeOptions(mappedPriceTypes, priceTypesFromCompany));
         setStatusOptions(mappedStatuses);
+
+        // === Price Types for Logged-in Company ===
+        const rawPricingByCompany = data.selections?.pricing_types_by_company;
+
+        let companyPricingTypes: any[] = [];
+        if (rawPricingByCompany) {
+          const keyFromToken = resolvedCompanyIdString ?? "";
+          if (keyFromToken && rawPricingByCompany[keyFromToken]) {
+            companyPricingTypes = rawPricingByCompany[keyFromToken]?.pricing_types ?? [];
+          } else {
+            // fallback: first company entry if JWT id not present in map
+            const firstKey = Object.keys(rawPricingByCompany)[0];
+            if (firstKey && rawPricingByCompany[firstKey]) {
+              companyPricingTypes =
+                rawPricingByCompany[firstKey]?.pricing_types ?? [];
+            }
+          }
+        }
+
+        const priceTypeOptionsForCompany: PriceTypeOption[] =
+          companyPricingTypes
+            ?.map((pt: any) => {
+              const id =
+                pt.pricing_type_id ??
+                pt.price_type_id ??
+                pt.priceTypeId ??
+                pt.id;
+              if (id == null) return null;
+              const rawLabel =
+                pt.pricing_type_name ??
+                pt.price_type_label ??
+                pt.price_type_name ??
+                pt.label ??
+                pt.name ??
+                null;
+              const label =
+                typeof rawLabel === "string"
+                  ? rawLabel.trim()
+                  : rawLabel != null
+                  ? String(rawLabel).trim()
+                  : "";
+              return {
+                value: String(id),
+                label: label || `Price Type ${id}`,
+              };
+            })
+            .filter((opt: PriceTypeOption | null): opt is PriceTypeOption => opt !== null) ?? [];
+
+        setPriceTypeOptions(priceTypeOptionsForCompany);
+        // Leave priceList empty initially; user adds rows via dialog
+
       } catch (error) {
         if (!controller.signal.aborted) {
-          console.error("Failed to load product categories", error);
+          console.error("Failed to load product lookups", error);
           setCategoryError("Unable to load lookups. Please try again.");
         }
       } finally {
@@ -657,28 +558,12 @@ export default function AddProductPage() {
       }
     };
 
-    fetchCategories();
+    fetchLookups();
 
     return () => {
       controller.abort();
     };
   }, [resolveCompanyId, todayIso]);
-
-  React.useEffect(() => {
-    setSubCategory("");
-  }, [productCategory]);
-
-  React.useEffect(() => {
-    if (!statusOptions.some((item) => item.value === productStatus)) {
-      setProductStatus("");
-    }
-  }, [statusOptions, productStatus]);
-
-  React.useEffect(() => {
-    if (!DIMENSION_UNIT_OPTIONS.some((item) => item.value === dimensionUnit)) {
-      setDimensionUnit("");
-    }
-  }, [dimensionUnit]);
 
   const resolvedAssignedUserId = useMemo(() => {
     if (!decodedToken) return null;
@@ -726,11 +611,16 @@ export default function AddProductPage() {
   const upsertPrice = () => {
     const numericPrice = Number(priceForm.price);
     const priceTypeId = priceForm.priceTypeId.trim();
-    const selectedPriceType = priceTypeOptions.find((option) => option.value === priceTypeId);
+    const selectedPriceType = priceTypeOptions.find(
+      (option) => option.value === priceTypeId
+    );
     const computedLabel = selectedPriceType?.label ?? priceForm.priceTypeLabel;
     const trimmedLabel = computedLabel ? computedLabel.trim() : "";
     const isValid =
-      priceTypeId.length > 0 && trimmedLabel.length > 0 && !Number.isNaN(numericPrice) && priceForm.date;
+      priceTypeId.length > 0 &&
+      trimmedLabel.length > 0 &&
+      !Number.isNaN(numericPrice) &&
+      priceForm.date;
 
     if (!isValid) {
       return;
@@ -805,18 +695,22 @@ export default function AddProductPage() {
       const numeric = Number(value);
       return Number.isFinite(numeric) ? numeric : null;
     };
+
     const weightValue = getNumberValue("weight");
     const heightValue = getNumberValue("height");
     const widthValue = getNumberValue("width");
     const lengthValue = getNumberValue("length");
-    const weightUnitValue = getTextValue("weightUnit");
+
+    const weightUnitValue = weightUnit || getTextValue("weightUnit");
 
     const properties: Array<PropertyPayload | null> = [
       weightValue != null
         ? ({
             item_property_name_id: 1001,
             property_value: weightValue.toString(),
-            unit_code: weightUnitValue ? weightUnitValue.toUpperCase() : "KG",
+            unit_code: weightUnitValue
+              ? weightUnitValue.toUpperCase()
+              : undefined,
             unit_type: "weight",
           } satisfies PropertyPayload)
         : null,
@@ -824,7 +718,9 @@ export default function AddProductPage() {
         ? ({
             item_property_name_id: 1002,
             property_value: lengthValue.toString(),
-            unit_code: dimensionUnit ? dimensionUnit.toUpperCase() : undefined,
+            unit_code: dimensionUnit
+              ? dimensionUnit.toUpperCase()
+              : undefined,
             unit_type: "length",
           } satisfies PropertyPayload)
         : null,
@@ -832,7 +728,9 @@ export default function AddProductPage() {
         ? ({
             item_property_name_id: 1003,
             property_value: widthValue.toString(),
-            unit_code: dimensionUnit ? dimensionUnit.toUpperCase() : undefined,
+            unit_code: dimensionUnit
+              ? dimensionUnit.toUpperCase()
+              : undefined,
             unit_type: "width",
           } satisfies PropertyPayload)
         : null,
@@ -840,7 +738,9 @@ export default function AddProductPage() {
         ? ({
             item_property_name_id: 1004,
             property_value: heightValue.toString(),
-            unit_code: dimensionUnit ? dimensionUnit.toUpperCase() : undefined,
+            unit_code: dimensionUnit
+              ? dimensionUnit.toUpperCase()
+              : undefined,
             unit_type: "height",
           } satisfies PropertyPayload)
         : null,
@@ -851,24 +751,11 @@ export default function AddProductPage() {
       product_name: getTextValue("productName"),
       item_name: getTextValue("productName"),
       item_status_id: parseIdValue(productStatus),
-      //status_value: productStatus || null,
-      //status_label: statusOptions.find((item) => item.value === productStatus)?.label ?? null,
       item_category_id: parseIdValue(productCategory),
-      //category_value: productCategory || null,
-      //category_label: categoryOptions.find((item) => item.value === productCategory)?.label ?? null,
       item_subcategory_id: parseIdValue(subCategory),
-      //subcategory_value: subCategory || null,
-      //subcategory_label: availableSubCategories.find((item) => item.value === subCategory)?.label ?? null,
       description: getTextValue("productDescription") || null,
       calibration: getTextValue("calibration") || null,
-      //weight_unit: getTextValue("weightUnit") || null,
-      //dimension_unit: dimensionUnit || getTextValue("dimensionUnit") || null,
-     // weight: weightValue,
-      //height: heightValue,
-      //width: widthValue,
-      //length: lengthValue,
-      //global_item: normalizeNumericId(matchedGlobalItem?.id) ?? null,
-global_item:  productCode,
+      global_item: productCode,
       item_type_id: 1,
       company_id: normalizeNumericId(resolveCompanyId) ?? 0,
       created_by: normalizeNumericId(resolvedAssignedUserId) ?? 0,
@@ -908,9 +795,8 @@ global_item:  productCode,
         headers: { "Content-Type": "application/json" },
         requiresAuth: true,
         body: JSON.stringify(payload),
-    
       });
-      console.log(payload);
+
       const responseText = await response.text();
       let data: any = null;
       if (responseText) {
@@ -923,15 +809,20 @@ global_item:  productCode,
 
       if (!response.ok || (data && typeof data === "object" && data.ok === false)) {
         const errorMessage =
-          (typeof data === "object" && data !== null && (data.error || data.message)) ||
-          (typeof data === "string" ? data : `Request failed (${response.status})`);
+          (typeof data === "object" &&
+            data !== null &&
+            (data.error || data.message)) ||
+          (typeof data === "string"
+            ? data
+            : `Request failed (${response.status})`);
         throw new Error(errorMessage);
       }
 
       setSubmitSuccess(true);
       router.push("/dashboard/products");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to save product.";
+      const message =
+        error instanceof Error ? error.message : "Failed to save product.";
       setSubmitError(message);
     } finally {
       setSubmitLoading(false);
@@ -939,7 +830,16 @@ global_item:  productCode,
   };
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", gap: 3, p: 2, bgcolor: "#FAFAFD", minHeight: "100%" }}>
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 3,
+        p: 2,
+        bgcolor: "#FAFAFD",
+        minHeight: "100%",
+      }}
+    >
       <Box
         sx={{
           display: "flex",
@@ -956,11 +856,13 @@ global_item:  productCode,
           <Typography variant="h4" sx={{ fontWeight: 500 }}>
             Add New Product
           </Typography>
-          
         </Box>
 
         <Stack direction="row" spacing={2}>
-          <Button variant="outlined" onClick={() => router.push("/dashboard/products")}>
+          <Button
+            variant="outlined"
+            onClick={() => router.push("/dashboard/products")}
+          >
             Cancel
           </Button>
           <Button
@@ -974,7 +876,6 @@ global_item:  productCode,
           </Button>
         </Stack>
       </Box>
-
 
       <Box
         component="form"
@@ -1002,7 +903,17 @@ global_item:  productCode,
             {submitError ?? "Product saved successfully."}
           </Alert>
         )}
-        <Box sx={{ bgcolor: "#FFF", borderRadius: 2, p: 3, display: "flex", flexDirection: "column", gap: 3 }}>
+
+        <Box
+          sx={{
+            bgcolor: "#FFF",
+            borderRadius: 2,
+            p: 3,
+            display: "flex",
+            flexDirection: "column",
+            gap: 3,
+          }}
+        >
           <Box>
             <Typography
               variant="subtitle1"
@@ -1015,9 +926,7 @@ global_item:  productCode,
                 display: "inline-flex",
                 mb: 2,
               }}
-            >
-              
-            </Typography>
+            />
 
             <Box
               sx={{
@@ -1040,8 +949,8 @@ global_item:  productCode,
                     categoryLoading
                       ? "Loading product codes..."
                       : categoryError
-                        ? categoryError
-                        : "No product codes found"
+                      ? categoryError
+                      : "No product codes found"
                   }
                   renderInput={(params) => (
                     <TextField
@@ -1055,11 +964,19 @@ global_item:  productCode,
                       size="small"
                       required
                       InputLabelProps={{ shrink: true }}
-                      placeholder={categoryLoading ? "Loading product codes..." : "Search product code"}
-                      error={Boolean(productCodeError || productCodeExists)}
+                      placeholder={
+                        categoryLoading
+                          ? "Loading product codes..."
+                          : "Search product code"
+                      }
+                      error={Boolean(
+                        productCodeError || productCodeExists
+                      )}
                       helperText={
                         productCodeError ??
-                        (productCodeExists ? "Note: This product code already exists. Please Enter Unique one." : undefined)
+                        (productCodeExists
+                          ? "Note: This product code already exists. Please Enter Unique one."
+                          : undefined)
                       }
                       FormHelperTextProps={
                         productCodeError
@@ -1090,7 +1007,9 @@ global_item:  productCode,
                   size="small"
                   name="status"
                   value={productStatus}
-                  onChange={(event) => setProductStatus(event.target.value)}
+                  onChange={(event) =>
+                    setProductStatus(event.target.value)
+                  }
                   required
                   InputLabelProps={{ shrink: true }}
                   SelectProps={{
@@ -1100,7 +1019,9 @@ global_item:  productCode,
                       if (!value) {
                         return "Select Status";
                       }
-                      const option = statusOptions.find((item) => item.value === value);
+                      const option = statusOptions.find(
+                        (item) => item.value === value
+                      );
                       return option?.label ?? value;
                     },
                   }}
@@ -1113,18 +1034,25 @@ global_item:  productCode,
                       Loading statuses...
                     </MenuItem>
                   )}
-                  {categoryError && !categoryLoading && statusOptions.length === 0 && (
-                    <MenuItem value="" disabled>
-                      {categoryError}
-                    </MenuItem>
-                  )}
-                  {!categoryLoading && !categoryError && statusOptions.length === 0 && (
-                    <MenuItem value="" disabled>
-                      No statuses available
-                    </MenuItem>
-                  )}
+                  {categoryError &&
+                    !categoryLoading &&
+                    statusOptions.length === 0 && (
+                      <MenuItem value="" disabled>
+                        {categoryError}
+                      </MenuItem>
+                    )}
+                  {!categoryLoading &&
+                    !categoryError &&
+                    statusOptions.length === 0 && (
+                      <MenuItem value="" disabled>
+                        No statuses available
+                      </MenuItem>
+                    )}
                   {statusOptions.map((option) => (
-                    <MenuItem key={option.value} value={option.value}>
+                    <MenuItem
+                      key={option.value}
+                      value={option.value}
+                    >
                       {option.label}
                     </MenuItem>
                   ))}
@@ -1138,6 +1066,7 @@ global_item:  productCode,
                   name="productDescription"
                 />
               </Stack>
+
               <Stack spacing={2}>
                 <TextField
                   select
@@ -1146,7 +1075,9 @@ global_item:  productCode,
                   size="small"
                   name="category"
                   value={productCategory}
-                  onChange={(event) => setProductCategory(event.target.value)}
+                  onChange={(event) =>
+                    setProductCategory(event.target.value)
+                  }
                   InputLabelProps={{ shrink: true }}
                   SelectProps={{
                     displayEmpty: true,
@@ -1155,7 +1086,9 @@ global_item:  productCode,
                       if (!value) {
                         return "Select Category";
                       }
-                      const option = categoryOptions.find((item) => item.value === value);
+                      const option = categoryOptions.find(
+                        (item) => item.value === value
+                      );
                       return option?.label ?? value;
                     },
                   }}
@@ -1169,13 +1102,18 @@ global_item:  productCode,
                       Loading categories...
                     </MenuItem>
                   )}
-                  {categoryError && !categoryLoading && categoryOptions.length === 0 && (
-                    <MenuItem value="" disabled>
-                      {categoryError}
-                    </MenuItem>
-                  )}
+                  {categoryError &&
+                    !categoryLoading &&
+                    categoryOptions.length === 0 && (
+                      <MenuItem value="" disabled>
+                        {categoryError}
+                      </MenuItem>
+                    )}
                   {categoryOptions.map((option) => (
-                    <MenuItem key={option.value} value={option.value}>
+                    <MenuItem
+                      key={option.value}
+                      value={option.value}
+                    >
                       {option.label}
                     </MenuItem>
                   ))}
@@ -1187,7 +1125,9 @@ global_item:  productCode,
                   size="small"
                   name="subCategory"
                   value={subCategory}
-                  onChange={(event) => setSubCategory(event.target.value)}
+                  onChange={(event) =>
+                    setSubCategory(event.target.value)
+                  }
                   disabled={!productCategory}
                   InputLabelProps={{ shrink: true }}
                   SelectProps={{
@@ -1195,29 +1135,41 @@ global_item:  productCode,
                     renderValue: (selected: unknown): React.ReactNode => {
                       const value = selected as string;
                       if (!value) {
-                        return productCategory ? "Select Sub Category" : "Choose a category first";
+                        return productCategory
+                          ? "Select Sub Category"
+                          : "Choose a category first";
                       }
-                      const option = availableSubCategories.find((item) => item.value === value);
+                      const option = availableSubCategories.find(
+                        (item) => item.value === value
+                      );
                       return option?.label ?? value;
                     },
                   }}
                   required
                 >
                   <MenuItem value="" disabled>
-                    {productCategory ? "Select Sub Category" : "Choose a category first"}
+                    {productCategory
+                      ? "Select Sub Category"
+                      : "Choose a category first"}
                   </MenuItem>
                   {categoryLoading && productCategory && (
                     <MenuItem value="" disabled>
                       Loading subcategories...
                     </MenuItem>
                   )}
-                  {categoryError && productCategory && availableSubCategories.length === 0 && !categoryLoading && (
-                    <MenuItem value="" disabled>
-                      {categoryError}
-                    </MenuItem>
-                  )}
+                  {categoryError &&
+                    productCategory &&
+                    availableSubCategories.length === 0 &&
+                    !categoryLoading && (
+                      <MenuItem value="" disabled>
+                        {categoryError}
+                      </MenuItem>
+                    )}
                   {availableSubCategories.map((option) => (
-                    <MenuItem key={option.value} value={option.value}>
+                    <MenuItem
+                      key={option.value}
+                      value={option.value}
+                    >
                       {option.label}
                     </MenuItem>
                   ))}
@@ -1233,23 +1185,67 @@ global_item:  productCode,
                   <MenuItem value="yes">Yes</MenuItem>
                   <MenuItem value="no">No</MenuItem>
                 </TextField>
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+
+                <Box
+                  sx={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 1,
+                  }}
+                >
+                  <Typography
+                    variant="subtitle2"
+                    sx={{ fontWeight: 600 }}
+                  >
                     Properties
                   </Typography>
-                  <Stack spacing={2} direction={{ xs: "column", md: "row" }}>
+
+                  <Stack
+                    spacing={2}
+                    direction={{ xs: "column", md: "row" }}
+                  >
+                    {/* Dynamic Weight Unit */}
                     <TextField
                       select
                       label="Weight Unit"
                       size="small"
                       fullWidth
                       name="weightUnit"
-                      defaultValue="kg"
+                      value={weightUnit}
+                      onChange={(e) => setWeightUnit(e.target.value)}
+                      InputLabelProps={{ shrink: true }}
+                      SelectProps={{
+                        displayEmpty: true,
+                        renderValue: (selected: unknown): React.ReactNode => {
+                          const value = selected as string;
+                          if (!value) {
+                            return weightUnitOptions.length
+                              ? "Select Weight Unit"
+                              : "No weight units available";
+                          }
+                          const option = weightUnitOptions.find(
+                            (item) => item.value === value
+                          );
+                          return option?.label ?? value;
+                        },
+                      }}
                     >
-                      <MenuItem value="kg">Kilogram (kg)</MenuItem>
-                      <MenuItem value="g">Gram (g)</MenuItem>
-                      <MenuItem value="lb">Pound (lb)</MenuItem>
+                      <MenuItem value="" disabled>
+                        {weightUnitOptions.length
+                          ? "Select Weight Unit"
+                          : "No weight units available"}
+                      </MenuItem>
+                      {weightUnitOptions.map((option) => (
+                        <MenuItem
+                          key={option.value}
+                          value={option.value}
+                        >
+                          {option.label}
+                        </MenuItem>
+                      ))}
                     </TextField>
+
+                    {/* Dynamic Dimension Unit */}
                     <TextField
                       select
                       label="Dimension Unit"
@@ -1257,31 +1253,48 @@ global_item:  productCode,
                       fullWidth
                       name="dimensionUnit"
                       value={dimensionUnit}
-                      onChange={(event) => setDimensionUnit(event.target.value)}
+                      onChange={(event) =>
+                        setDimensionUnit(event.target.value)
+                      }
                       InputLabelProps={{ shrink: true }}
                       SelectProps={{
                         displayEmpty: true,
-                        renderValue: (selected: unknown): React.ReactNode => {
+                        renderValue: (
+                          selected: unknown
+                        ): React.ReactNode => {
                           const value = selected as string;
                           if (!value) {
-                            return "Select Dimension Unit";
+                            return dimensionUnitOptions.length
+                              ? "Select Dimension Unit"
+                              : "No dimension units available";
                           }
-                          const option = DIMENSION_UNIT_OPTIONS.find((item) => item.value === value);
+                          const option = dimensionUnitOptions.find(
+                            (item) => item.value === value
+                          );
                           return option?.label ?? value;
                         },
                       }}
                     >
                       <MenuItem value="" disabled>
-                        {DIMENSION_UNIT_OPTIONS.length ? "Select Dimension Unit" : "No dimension units available"}
+                        {dimensionUnitOptions.length
+                          ? "Select Dimension Unit"
+                          : "No dimension units available"}
                       </MenuItem>
-                      {DIMENSION_UNIT_OPTIONS.map((option) => (
-                        <MenuItem key={option.value} value={option.value}>
+                      {dimensionUnitOptions.map((option) => (
+                        <MenuItem
+                          key={option.value}
+                          value={option.value}
+                        >
                           {option.label}
                         </MenuItem>
                       ))}
                     </TextField>
                   </Stack>
-                  <Stack spacing={2} direction={{ xs: "column", md: "row" }}>
+
+                  <Stack
+                    spacing={2}
+                    direction={{ xs: "column", md: "row" }}
+                  >
                     <TextField
                       label="Weight"
                       size="small"
@@ -1303,7 +1316,11 @@ global_item:  productCode,
                       sx={NUMERIC_INPUT_SX}
                     />
                   </Stack>
-                  <Stack spacing={2} direction={{ xs: "column", md: "row" }}>
+
+                  <Stack
+                    spacing={2}
+                    direction={{ xs: "column", md: "row" }}
+                  >
                     <TextField
                       label="Width"
                       size="small"
@@ -1331,9 +1348,25 @@ global_item:  productCode,
           </Box>
         </Box>
 
-        <Box sx={{ bgcolor: "#FFF", borderRadius: 2, p: 3, display: "flex", flexDirection: "column", gap: 2 }}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center">
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+        <Box
+          sx={{
+            bgcolor: "#FFF",
+            borderRadius: 2,
+            p: 3,
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+          }}
+        >
+          <Stack
+            direction="row"
+            justifyContent="space-between"
+            alignItems="center"
+          >
+            <Typography
+              variant="subtitle1"
+              sx={{ fontWeight: 700 }}
+            >
               Price List
             </Typography>
             <Button startIcon={<MdAdd />} onClick={openAddPriceDialog}>
@@ -1359,8 +1392,13 @@ global_item:  productCode,
             <TableBody>
               {priceList.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} align="center" sx={{ py: 4, color: "text.secondary" }}>
-                    No prices yet. Click &ldquo;Add Price&rdquo; to create one.
+                  <TableCell
+                    colSpan={5}
+                    align="center"
+                    sx={{ py: 4, color: "text.secondary" }}
+                  >
+                    No prices yet. Click &ldquo;Add Price&rdquo; to
+                    create one.
                   </TableCell>
                 </TableRow>
               )}
@@ -1371,10 +1409,18 @@ global_item:  productCode,
                   <TableCell>{`$${item.price.toFixed(0)}`}</TableCell>
                   <TableCell>{displayDate(item.date)}</TableCell>
                   <TableCell align="right">
-                    <IconButton size="small" color="primary" onClick={() => openEditPriceDialog(item)}>
+                    <IconButton
+                      size="small"
+                      color="primary"
+                      onClick={() => openEditPriceDialog(item)}
+                    >
                       <MdEdit size={18} />
                     </IconButton>
-                    <IconButton size="small" color="error" onClick={() => removePrice(item.id)}>
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={() => removePrice(item.id)}
+                    >
                       <MdDelete size={18} />
                     </IconButton>
                   </TableCell>
@@ -1382,16 +1428,32 @@ global_item:  productCode,
               ))}
             </TableBody>
           </Table>
-          <Typography variant="caption" color="text.secondary">
+          <Typography
+            variant="caption"
+            color="text.secondary"
+          >
             {totalPrices} price{totalPrices === 1 ? "" : "s"} configured
           </Typography>
         </Box>
-
       </Box>
 
-      <Dialog open={priceDialogOpen} onClose={closePriceDialog} maxWidth="xs" fullWidth>
-        <DialogTitle>{editingPriceId ? "Edit Price" : "Add Price"}</DialogTitle>
-        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 2 }}>
+      <Dialog
+        open={priceDialogOpen}
+        onClose={closePriceDialog}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>
+          {editingPriceId ? "Edit Price" : "Add Price"}
+        </DialogTitle>
+        <DialogContent
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+            pt: 2,
+          }}
+        >
           <TextField
             select
             label="Price Type"
@@ -1399,23 +1461,33 @@ global_item:  productCode,
             size="small"
             onChange={(event) => {
               const value = event.target.value;
-              const option = priceTypeOptions.find((item) => item.value === value);
+              const option = priceTypeOptions.find(
+                (item) => item.value === value
+              );
               setPriceForm((prev) => ({
                 ...prev,
                 priceTypeId: value,
-                priceTypeLabel: option?.label?.trim() ?? prev.priceTypeLabel,
+                priceTypeLabel:
+                  option?.label?.trim() ?? prev.priceTypeLabel,
               }));
             }}
             InputLabelProps={{ shrink: true }}
             SelectProps={{
               displayEmpty: true,
-              renderValue: (selected: unknown): React.ReactNode => {
+              renderValue: (
+                selected: unknown
+              ): React.ReactNode => {
                 const value = selected as string;
                 if (!value) {
                   return "Select Price Type";
                 }
-                const option = priceTypeOptions.find((item) => item.value === value);
-                return option?.label ?? (priceForm.priceTypeLabel || value);
+                const option = priceTypeOptions.find(
+                  (item) => item.value === value
+                );
+                return (
+                  option?.label ??
+                  (priceForm.priceTypeLabel || value)
+                );
               },
             }}
           >
@@ -1427,18 +1499,25 @@ global_item:  productCode,
                 Loading price types...
               </MenuItem>
             )}
-            {categoryError && !categoryLoading && priceTypeOptions.length === 0 && (
-              <MenuItem value="" disabled>
-                {categoryError}
-              </MenuItem>
-            )}
-            {!categoryLoading && !categoryError && priceTypeOptions.length === 0 && (
-              <MenuItem value="" disabled>
-                No price types available
-              </MenuItem>
-            )}
+            {categoryError &&
+              !categoryLoading &&
+              priceTypeOptions.length === 0 && (
+                <MenuItem value="" disabled>
+                  {categoryError}
+                </MenuItem>
+              )}
+            {!categoryLoading &&
+              !categoryError &&
+              priceTypeOptions.length === 0 && (
+                <MenuItem value="" disabled>
+                  No price types available
+                </MenuItem>
+              )}
             {priceTypeOptions.map((option) => (
-              <MenuItem key={option.value} value={option.value}>
+              <MenuItem
+                key={option.value}
+                value={option.value}
+              >
                 {option.label}
               </MenuItem>
             ))}
@@ -1449,14 +1528,24 @@ global_item:  productCode,
             size="small"
             type="number"
             inputProps={{ min: 0 }}
-            onChange={(event) => setPriceForm((prev) => ({ ...prev, price: event.target.value }))}
+            onChange={(event) =>
+              setPriceForm((prev) => ({
+                ...prev,
+                price: event.target.value,
+              }))
+            }
           />
           <TextField
             label="Date"
             value={priceForm.date}
             size="small"
             type="date"
-            onChange={(event) => setPriceForm((prev) => ({ ...prev, date: event.target.value }))}
+            onChange={(event) =>
+              setPriceForm((prev) => ({
+                ...prev,
+                date: event.target.value,
+              }))
+            }
           />
         </DialogContent>
         <DialogActions>
@@ -1469,4 +1558,3 @@ global_item:  productCode,
     </Box>
   );
 }
-

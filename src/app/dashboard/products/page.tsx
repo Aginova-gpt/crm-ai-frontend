@@ -263,7 +263,7 @@ export default function ProductsPage() {
   const total = sorted.length;
 
   // ===== Actions =====
-  const handleAddProduct = () => router.push("/dashboard/products/new");
+  const handleAddProduct = () => router.push("/dashboard/products/add-product");
   const handleEditProduct = (id: string) => console.log("Edit product:", id);
   const handleDeleteProduct = (id: string) => {
     if (window.confirm("Delete this product?")) console.log("Delete product:", id);
