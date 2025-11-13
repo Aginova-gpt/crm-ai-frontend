@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
     Box,
     Typography,
@@ -13,12 +13,22 @@ import {
     Alert,
     Tabs,
     Tab,
+    IconButton,
+    Tooltip,
+    FormControl,
+    InputLabel,
+    Select,
+    MenuItem,
 } from "@mui/material";
 import { MdSearch } from "react-icons/md";
 import StatusCard from "@/components/StatusCard/StatusCard";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBackend } from "@/contexts/BackendContext";
+import Image from "next/image";
+import { useRouter } from "next/navigation";
+import { addAsset } from "@/styles/icons";
+import { useCompany } from "@/contexts/CompanyContext";
 
 // ===== Grid layout =====
 const GRID_ORDERS = `
@@ -56,15 +66,103 @@ const orderCols = [
     { key: "actions", label: "Actions" },
 ];
 
+// ===== Types & helpers =====
+type OrderRecord = {
+    orderId: string;
+    rma?: string;
+    customer?: string;
+    products?: string;
+    runStatus?: string;
+    quantity?: string;
+    po?: string;
+    status?: string;
+    created?: string;
+    dueIn?: string;
+    subscription?: string;
+    invoice?: string;
+    certs?: string;
+    actions?: string;
+    companyId?: string;
+    companyName?: string;
+    [key: string]: unknown;
+};
+
+function formatDate(value: string | null | undefined) {
+    if (!value) return "";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
+}
+
+function extractOrders(payload: any): any[] {
+    if (!payload) return [];
+    if (Array.isArray(payload)) return payload;
+
+    const candidates = [
+        payload.orders,
+        payload.salesorders,
+        payload.data?.orders,
+        payload.data?.salesorders,
+        payload.data,
+        payload.results,
+    ];
+
+    for (const candidate of candidates) {
+        if (Array.isArray(candidate)) return candidate;
+    }
+
+    if (typeof payload === "object") {
+        const arrays = Object.values(payload).filter((value) => Array.isArray(value));
+        if (arrays.length) {
+            return arrays.reduce<any[]>((acc, arr: any) => acc.concat(arr), []);
+        }
+    }
+
+    return [];
+}
+
+function normalizeOrder(raw: any): OrderRecord {
+    const companyId =
+        raw?.company_id ??
+        raw?.companyId ??
+        raw?.company?.id ??
+        raw?.company?.company_id ??
+        raw?.company;
+    const companyName = raw?.company_name ?? raw?.companyName ?? raw?.company?.name ?? raw?.company?.company_name;
+
+    return {
+        orderId: String(raw?.order_id ?? raw?.legacy_order_id ?? raw?.orderId ?? ""),
+        rma: raw?.rma ?? raw?.rma_number ?? "",
+        customer: raw?.account_name ?? raw?.customer ?? raw?.customer_name ?? "",
+        products: raw?.products_list ?? raw?.products ?? raw?.product ?? "",
+        runStatus: raw?.run_status ?? raw?.runStatus ?? "",
+        quantity: raw?.quantity ?? raw?.qty ?? "",
+        po: raw?.po_number ?? raw?.po ?? "",
+        status: raw?.status ?? "",
+        created: formatDate(raw?.created_at ?? raw?.created_date ?? raw?.created),
+        dueIn: formatDate(raw?.due_date ?? raw?.dueIn ?? raw?.due),
+        subscription: raw?.subscription ?? "",
+        invoice: raw?.invoice ?? "",
+        certs: raw?.certs ?? "",
+        actions: raw?.actions ?? "",
+        companyId: companyId ? String(companyId) : undefined,
+        companyName: companyName ? String(companyName) : undefined,
+        raw,
+    };
+}
+
 // ===== Hook to fetch orders =====
-function useOrders() {
+function useOrders(selectedCompanyId?: string | null) {
     const { token, isLoggedIn } = useAuth();
     const { apiURL } = useBackend();
 
     return useQuery({
-        queryKey: ["orders"],
+        queryKey: ["orders", selectedCompanyId ?? "all"],
         queryFn: async () => {
-            const res = await fetch(apiURL("orders", "orders.json"), {
+            const companyParam = selectedCompanyId && selectedCompanyId !== "all" ? selectedCompanyId : undefined;
+            if (!companyParam) return { orders: [] };
+
+            const path = `salesorders?company_id=${encodeURIComponent(companyParam)}`;
+            const res = await fetch(apiURL(path, "orders.json"), {
                 headers: { Authorization: `Bearer ${token}` },
             });
             if (!res.ok) {
@@ -73,12 +171,32 @@ function useOrders() {
             }
             return res.json();
         },
-        enabled: isLoggedIn && !!token,
+        enabled: isLoggedIn && !!token && !!selectedCompanyId && selectedCompanyId !== "all",
     });
 }
 
 export default function OrdersPage() {
-    const { data, isLoading, error } = useOrders();
+    const router = useRouter();
+    const {
+        companies = [],
+        selectedCompanyId,
+        setSelectedCompanyId,
+        isLoading: companyLoading,
+    } = useCompany();
+    const nonAllCompanies = useMemo(() => companies.filter((c) => c.id !== "all"), [companies]);
+
+    useEffect(() => {
+        if ((selectedCompanyId === null || selectedCompanyId === "all") && nonAllCompanies.length > 0) {
+            setSelectedCompanyId(nonAllCompanies[0].id);
+        }
+    }, [nonAllCompanies, selectedCompanyId, setSelectedCompanyId]);
+
+    const activeCompanyId =
+        selectedCompanyId && selectedCompanyId !== "all"
+            ? selectedCompanyId
+            : nonAllCompanies[0]?.id ?? null;
+
+    const { data, isLoading, error } = useOrders(activeCompanyId);
     const [tab, setTab] = useState(0); // 0 = Orders, 1 = Reports
 
     const [searchQuery, setSearchQuery] = useState("");
@@ -95,8 +213,16 @@ export default function OrdersPage() {
         }
     };
 
-    const orders = useMemo(() => data?.orders ?? [], [data]);
+    const allOrders = useMemo(() => {
+        const rows = extractOrders(data);
+        return rows.map(normalizeOrder).filter((order) => order.orderId);
+    }, [data]);
+    const orders = useMemo(() => {
+        if (!activeCompanyId) return allOrders;
+        return allOrders.filter((order) => !order.companyId || order.companyId === activeCompanyId);
+    }, [activeCompanyId, allOrders]);
     const lastUpdate = useMemo(() => new Date().toLocaleTimeString(), [data]);
+    const handleAddOrder = () => router.push("/dashboard/orders/new");
 
     const filterAndSort = (rows: any[]) => {
         const filtered = rows.filter((r) =>
@@ -146,20 +272,49 @@ export default function OrdersPage() {
                             </Box>
 
                             {/* Search bar below */}
-                            <TextField
-                                sx={{ width: 280 }}
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="Search orders"
-                                size="small"
-                                InputProps={{
-                                    startAdornment: (
-                                        <InputAdornment position="start">
-                                            <MdSearch size={18} />
-                                        </InputAdornment>
-                                    ),
-                                }}
-                            />
+                            <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, flexWrap: "wrap" }}>
+                                <FormControl size="small" sx={{ minWidth: 200 }} disabled={companyLoading || nonAllCompanies.length === 0}>
+                                    <InputLabel>Company</InputLabel>
+                                    <Select
+                                        label="Company"
+                                        value={activeCompanyId ?? ""}
+                                        onChange={(e) => {
+                                            const value = String(e.target.value);
+                                            setSelectedCompanyId(value || null);
+                                        }}
+                                    >
+                                        {nonAllCompanies.map((company) => (
+                                            <MenuItem key={company.id} value={company.id}>
+                                                {company.name}
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                                <TextField
+                                    sx={{ width: 280 }}
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Search orders"
+                                    size="small"
+                                    InputProps={{
+                                        startAdornment: (
+                                            <InputAdornment position="start">
+                                                <MdSearch size={18} />
+                                            </InputAdornment>
+                                        ),
+                                    }}
+                                />
+                                <Tooltip title="Add Order">
+                                    <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", mb: 0.25 }}>
+                                        <IconButton color="primary" onClick={handleAddOrder} sx={{ p: 0.5 }}>
+                                            <Image src={addAsset} alt="Add order" width={36} height={36} />
+                                        </IconButton>
+                                        <Typography variant="caption" sx={{ fontSize: 11, lineHeight: 1 }}>
+                                            Add
+                                        </Typography>
+                                    </Box>
+                                </Tooltip>
+                            </Box>
                         </Box>
                     )}
 
