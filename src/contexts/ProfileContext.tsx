@@ -10,7 +10,8 @@ type CoalitionSummary = {
 
 type ProfileData = {
   email: string | null;
-  role: string | null;
+  role: string | null;               // "admin" / "coalition_owner" / etc.
+  role_level?: number | null;        // 0 = Admin, 1 = Coalition Owner, 2 = Standard User (convention)
   user_id?: number | string | null;
   company_id?: number | string | null;
   name?: string | null;
@@ -21,7 +22,7 @@ type ProfileContextType = {
   profileData: ProfileData | undefined;
   isLoading: boolean;
   isAdmin: boolean;
-  isCoalitionOwner: boolean; // 👈 added
+  isCoalitionOwner: boolean;
 };
 
 // --- helper: decode JWT payload ---
@@ -48,6 +49,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({
   const profileData: ProfileData | undefined = useMemo(() => {
     if (!isLoggedIn || !claims) return undefined;
 
+    // Coalition info (supports multiple possible claim shapes)
     const coalitionId =
       claims.coalition?.id ??
       claims.coalition_id ??
@@ -60,9 +62,28 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({
       claims.coalitionName ??
       null;
 
+    const role: string | null = claims.role ?? null;
+
+    // --- role_level: from claim if present, else derived from role string ---
+    const rawRoleLevel = claims.role_level ?? claims.roleLevel ?? null;
+    let role_level: number | null = null;
+
+    if (typeof rawRoleLevel === "number") {
+      role_level = rawRoleLevel;
+    } else if (typeof rawRoleLevel === "string" && rawRoleLevel !== "") {
+      const parsed = Number(rawRoleLevel);
+      role_level = Number.isFinite(parsed) ? parsed : null;
+    } else if (role) {
+      // Fallback mapping if backend only sends role string
+      if (role === "admin") role_level = 0;
+      else if (role === "coalition_owner") role_level = 1;
+      else role_level = 2;
+    }
+
     return {
       email: email ?? claims.email ?? null,
-      role: claims.role ?? null,
+      role,
+      role_level,
       user_id: claims.user_id ?? claims.sub ?? null,
       company_id: claims.company_id ?? null,
       name: claims.name ?? null,
@@ -78,7 +99,6 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const role = profileData?.role ?? null;
 
-  // 🔑 role-based flags
   const isAdmin = role === "admin";
 
   const isCoalitionOwner =
@@ -86,7 +106,9 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({
     Boolean(
       claims?.isCoalitionOwner ??
         claims?.is_coalition_owner ??
-        claims?.coalition_owner
+        claims?.coalition_owner ??
+        (typeof profileData?.role_level === "number" &&
+          profileData.role_level === 1)
     );
 
   return (
