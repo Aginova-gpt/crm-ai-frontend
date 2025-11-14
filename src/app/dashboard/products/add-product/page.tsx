@@ -14,19 +14,24 @@ import {
   TableCell,
   TableBody,
   IconButton,
-  Divider,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   Stack,
   MenuItem,
+  Checkbox,
+  FormControlLabel,
 } from "@mui/material";
 import { MdAdd, MdEdit, MdDelete } from "react-icons/md";
 import { useRouter } from "next/navigation";
 import { useApi } from "../../../../utils/api";
 import { useAuth } from "../../../../contexts/AuthContext";
 import { useCompany } from "../../../../contexts/CompanyContext";
+import { useProfile } from "../../../../contexts/ProfileContext";
+import { useProducts } from "@/app/dashboard/products/hooks/useProducts";
+
+// ===== Types =====
 
 type PriceItem = {
   id: string;
@@ -65,14 +70,78 @@ type GlobalItemOption = {
 };
 
 type DimensionUnitOption = {
-  value: string;
+  id: number;
+  value: string; // abbreviation (MM, CM, etc.)
   label: string;
 };
 
 type WeightUnitOption = {
-  value: string;
+  id: number;
+  value: string; // abbreviation (KG, LB, etc.)
   label: string;
 };
+
+type RawPropertyName = {
+  item_property_name_id: number;
+  item_property_name: string;
+};
+
+type PropertyNamesByCompany = Record<
+  string,
+  {
+    company_name?: string;
+    properties?: RawPropertyName[];
+  }
+>;
+
+// "Core" properties we render with numeric + unit controls
+type CorePropertyNameIds = {
+  weight?: number;
+  length?: number;
+  width?: number;
+  height?: number;
+  bundle?: number;
+};
+
+type ExtraPropertyField = {
+  id: number;
+  name: string;
+  label: string;
+};
+
+type CompanyProductOption = {
+  productId: number;
+  globalItemId?: number;
+  code: string;
+  name: string;
+};
+
+type BundleItem = {
+  id: number;
+  productId: number;
+  globalItemId?: number;
+  productCode: string;
+  productName: string;
+  quantity: number;
+};
+
+// Payload we send to backend for each property
+type PropertyPayload =
+  | {
+      item_property_name_id: number;
+      property_value: string;
+      unit_id: number | undefined;
+    }
+  | {
+      item_property_name_id: number;
+      property_value: string;
+      unit_id: number | undefined;
+    }
+  | {
+      item_property_name_id: number;
+      property_value: string;
+      unit_id?: number;
+    };
 
 type ProductLookupResponse = {
   selections?: {
@@ -104,7 +173,7 @@ type ProductLookupResponse = {
       unit_abbreviation?: string;
       unit_name?: string;
     }>;
-    property_names_by_company?: unknown;
+    property_names_by_company?: PropertyNamesByCompany;
     pricing_types_by_company?: Record<
       string,
       {
@@ -119,32 +188,33 @@ type ProductLookupResponse = {
   };
 };
 
-type PropertyPayload = {
-  item_property_name_id: number;
-  property_value: string;
-  unit_code: string | undefined;
-  unit_type: string;
-};
-
 const PRODUCT_LOOKUP_URL = "http://34.58.37.44/api/get-product-lookups";
 const PRODUCT_SAVE_URL = "http://34.58.37.44/api/add-product";
+const ITEM_BY_CODE_URL = "http://34.58.37.44/api/items/by-code";
 
 const PRODUCT_CODE_MAX_LENGTH = 255;
 const PRODUCT_CODE_ALLOWED_REGEX = /^[A-Z0-9-]*$/;
 const PRODUCT_NAME_MAX_LENGTH = 255;
-const NUMERIC_INPUT_PROPS = { inputMode: "decimal", step: "0.01" } as const;
+
+const NUMERIC_INPUT_PROPS = {
+  inputMode: "decimal",
+  step: "0.01",
+  min: 0,
+} as const;
 const NUMERIC_INPUT_SX = {
   "& input[type=number]": {
     MozAppearance: "textfield",
   },
-  "& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button": {
-    WebkitAppearance: "none",
-    margin: 0,
-  },
+  "& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button":
+    {
+      WebkitAppearance: "none",
+      margin: 0,
+    },
 } as const;
 
 const initialPrices: PriceItem[] = [];
 
+// Helpers
 const normalizeNumericId = (value: unknown): number | null => {
   if (value == null) return null;
   if (typeof value === "number") {
@@ -159,38 +229,70 @@ const normalizeNumericId = (value: unknown): number | null => {
   return null;
 };
 
+const toIdString = (value: unknown): string | null => {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return null;
+};
+
 export default function AddProductPage() {
   const router = useRouter();
   const { fetchWithAuth } = useApi();
   const { token } = useAuth();
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompanyName, userCompanyId } = useCompany();
+  const { isAdmin } = useProfile();
 
+  // Price list state
   const [priceList, setPriceList] = useState<PriceItem[]>(initialPrices);
   const [priceDialogOpen, setPriceDialogOpen] = useState(false);
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
 
+  // Lookups
   const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([]);
   const [statusOptions, setStatusOptions] = useState<StatusOption[]>([]);
   const [globalItemOptions, setGlobalItemOptions] = useState<GlobalItemOption[]>([]);
   const [priceTypeOptions, setPriceTypeOptions] = useState<PriceTypeOption[]>([]);
-
   const [weightUnitOptions, setWeightUnitOptions] = useState<WeightUnitOption[]>([]);
-  const [weightUnit, setWeightUnit] = useState<string>("");
-
   const [dimensionUnitOptions, setDimensionUnitOptions] = useState<DimensionUnitOption[]>([]);
-  const [dimensionUnit, setDimensionUnit] = useState<string>("");
 
+  // Property metadata (from property_names_by_company)
+  const [corePropertyNameIds, setCorePropertyNameIds] = useState<CorePropertyNameIds>({});
+  const [extraPropertyFields, setExtraPropertyFields] = useState<ExtraPropertyField[]>([]);
+
+  // Selected units
+  const [weightUnit, setWeightUnit] = useState<string>("");
+  const [dimensionUnit, setDimensionUnit] = useState<string>("");
+  const [isBundle, setIsBundle] = useState(false);
+
+  // Bundle state
+  const [bundleItems, setBundleItems] = useState<BundleItem[]>([]);
+  const [selectedBundleProduct, setSelectedBundleProduct] = useState<CompanyProductOption | null>(
+    null
+  );
+  const [bundleQuantity, setBundleQuantity] = useState<string>("1");
+
+  // Lookup loading
   const [categoryLoading, setCategoryLoading] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
 
+  // Product form state
   const [productCode, setProductCode] = useState("");
   const [productCategory, setProductCategory] = useState("");
   const [subCategory, setSubCategory] = useState("");
   const [productStatus, setProductStatus] = useState("");
 
-  const [productCodeExists, setProductCodeExists] = useState(false);
+  // Product code validation
   const [productCodeError, setProductCodeError] = useState<string | null>(null);
+  const [productCodeCompanyError, setProductCodeCompanyError] = useState<string | null>(null);
+  const [productCodeExists, setProductCodeExists] = useState(false); // internal
 
+  // Submission state
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
@@ -205,11 +307,11 @@ export default function AddProductPage() {
 
   const totalPrices = useMemo(() => priceList.length, [priceList]);
 
-  const availableSubCategories = useMemo(() => {
-    return (
-      categoryOptions.find((option) => option.value === productCategory)?.subCategories || []
-    );
-  }, [categoryOptions, productCategory]);
+  const availableSubCategories = useMemo(
+    () =>
+      categoryOptions.find((option) => option.value === productCategory)?.subCategories || [],
+    [categoryOptions, productCategory]
+  );
 
   const productCodeOptions = useMemo(
     () => globalItemOptions.map((item) => item.code),
@@ -230,6 +332,7 @@ export default function AddProductPage() {
     return globalItemLookupByCode.get(normalized) ?? null;
   }, [productCode, globalItemLookupByCode]);
 
+  // Keep productCodeExists & basic format error in sync
   React.useEffect(() => {
     const normalized = productCode.trim().toLowerCase();
     if (!normalized) {
@@ -244,6 +347,169 @@ export default function AddProductPage() {
     );
   }, [productCode, matchedGlobalItem]);
 
+  // Decode JWT
+  const decodedToken = useMemo(() => {
+    if (!token) return null;
+    try {
+      const parts = token.split(".");
+      if (parts.length < 2) return null;
+      const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+      const json =
+        typeof window !== "undefined"
+          ? atob(base64)
+          : Buffer.from(base64, "base64").toString("utf-8");
+      return JSON.parse(json);
+    } catch {
+      return null;
+    }
+  }, [token]);
+
+  // Effective company id: same idea as products list page
+  const effectiveCompanyId = useMemo(() => {
+    const tokenCompanyId =
+      decodedToken?.company_id != null ? String(decodedToken.company_id).trim() : null;
+
+    if (isAdmin) {
+      // Admin can choose company from dropdown; avoid "all"
+      if (selectedCompanyId && selectedCompanyId !== "all") {
+        return selectedCompanyId;
+      }
+      if (tokenCompanyId) return tokenCompanyId;
+      if (userCompanyId) return userCompanyId;
+      return null;
+    }
+
+    // Non-admin: always fixed to their own company
+    if (tokenCompanyId) return tokenCompanyId;
+    if (userCompanyId) return userCompanyId;
+    return null;
+  }, [decodedToken, isAdmin, selectedCompanyId, userCompanyId]);
+
+  const resolvedAssignedUserId = useMemo(() => {
+    if (!decodedToken) return null;
+    return (
+      decodedToken.user_id ??
+      decodedToken.userId ??
+      decodedToken.userID ??
+      decodedToken.sub ??
+      decodedToken.id ??
+      null
+    );
+  }, [decodedToken]);
+
+  // ===== Reuse products query for bundle options (ACTIVE products only) =====
+  const {
+    data: productsData,
+    isLoading: companyProductsLoading,
+    error: companyProductsErrorRaw,
+  } = useProducts(effectiveCompanyId ?? null, "products");
+
+  const companyProducts: CompanyProductOption[] = useMemo(() => {
+    if (!productsData) return [];
+
+    const collected: CompanyProductOption[] = [];
+
+    const pushProduct = (p: any) => {
+      const productId = Number(p.item_id ?? p.product_id ?? p.id);
+      if (!Number.isFinite(productId)) return;
+
+      const code = String(
+        p.product_number ?? p.product_code ?? p.item_code ?? p.code ?? ""
+      );
+      const name = String(
+        p.product_name ?? p.item_name ?? p.internal_name ?? ""
+      );
+
+      collected.push({
+        productId,
+        globalItemId: p.global_item_id ? Number(p.global_item_id) : undefined,
+        code,
+        name,
+      });
+    };
+
+    // Shape A: { products: [...] }
+    if (Array.isArray(productsData.products)) {
+      for (const p of productsData.products) pushProduct(p);
+    }
+    // Shape B: { data: [{ products: [...] }, ...] }
+    else if (Array.isArray(productsData.data)) {
+      for (const group of productsData.data) {
+        for (const p of group.products || []) pushProduct(p);
+      }
+    }
+    // Shape C: plain array
+    else if (Array.isArray(productsData)) {
+      for (const p of productsData) pushProduct(p);
+    }
+
+    // 🧹 De-duplicate by productId
+    const byId = new Map<number, CompanyProductOption>();
+    for (const opt of collected) {
+      if (!byId.has(opt.productId)) {
+        byId.set(opt.productId, opt);
+      }
+    }
+    return Array.from(byId.values());
+  }, [productsData]);
+
+  const companyProductsError =
+    companyProductsErrorRaw && companyProductsErrorRaw instanceof Error
+      ? companyProductsErrorRaw.message
+      : null;
+
+  // Product code -> company-specific item check
+  React.useEffect(() => {
+    setProductCodeCompanyError(null);
+
+    const normalizedCode = productCode.trim().toUpperCase();
+    if (!normalizedCode) return;
+
+    if (!PRODUCT_CODE_ALLOWED_REGEX.test(normalizedCode)) return;
+    if (!matchedGlobalItem) return;
+
+    const numericCompanyId = normalizeNumericId(effectiveCompanyId);
+    if (numericCompanyId == null) return;
+
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        const url = new URL(ITEM_BY_CODE_URL);
+        url.searchParams.set("code", normalizedCode);
+        url.searchParams.set("company_id", String(numericCompanyId));
+
+        const res = await fetch(url.toString(), { signal: controller.signal });
+
+        if (res.status === 404) {
+          // No product yet for this company
+          return;
+        }
+
+        if (!res.ok) {
+          console.error("items/by-code failed", res.status);
+          return;
+        }
+
+        const data = await res.json();
+        const itemTypeId = data?.item?.item_type_id;
+
+        if (itemTypeId === 1) {
+          setProductCodeCompanyError(
+            "A product with this code already exists for this company."
+          );
+        }
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          console.error("items/by-code error", err);
+        }
+      }
+    })();
+
+    return () => controller.abort();
+  }, [productCode, matchedGlobalItem, effectiveCompanyId]);
+
+  // Product code input handlers
   const handleProductCodeInputChange = (_: unknown, newInputValue: string) => {
     const upperCased = newInputValue.toUpperCase();
     const sanitized = upperCased.replace(/[^A-Z0-9-]/g, "");
@@ -270,7 +536,10 @@ export default function AddProductPage() {
     setProductCode(value);
   };
 
-  const allowOnlyNumericKeys: React.KeyboardEventHandler<HTMLInputElement> = (event) => {
+  // Numeric key guard: no minus sign, digits + one decimal point
+  const allowOnlyNumericKeys: React.KeyboardEventHandler<HTMLInputElement> = (
+    event
+  ) => {
     const allowedControlKeys = [
       "Backspace",
       "Delete",
@@ -292,16 +561,10 @@ export default function AddProductPage() {
       return;
     }
 
-    if (event.key === "-") {
-      return;
-    }
-
-    const decimalKeys = ["." , "Decimal", "NumpadDecimal"];
+    const decimalKeys = [".", "Decimal", "NumpadDecimal"];
     if (decimalKeys.includes(event.key)) {
       const input = event.currentTarget as HTMLInputElement | null;
-      if (!input) {
-        return;
-      }
+      if (!input) return;
       const value = input.value ?? "";
       const selectionStart = input.selectionStart ?? 0;
       const selectionEnd = input.selectionEnd ?? 0;
@@ -313,24 +576,24 @@ export default function AddProductPage() {
       return;
     }
 
-    if (/[0-9]/.test(event.key)) {
-      return;
-    }
+    if (/[0-9]/.test(event.key)) return;
 
     event.preventDefault();
   };
 
+  // Reset subcategory when category changes
   React.useEffect(() => {
     setSubCategory("");
   }, [productCategory]);
 
+  // Ensure status value remains valid
   React.useEffect(() => {
     if (!statusOptions.some((item) => item.value === productStatus)) {
       setProductStatus("");
     }
   }, [statusOptions, productStatus]);
 
-  // Ensure weightUnit matches API options
+  // Ensure unit selections align with options
   React.useEffect(() => {
     if (!weightUnitOptions.length) {
       setWeightUnit("");
@@ -343,7 +606,6 @@ export default function AddProductPage() {
     }
   }, [weightUnitOptions, weightUnit]);
 
-  // Ensure dimensionUnit matches API options
   React.useEffect(() => {
     if (!dimensionUnitOptions.length) {
       setDimensionUnit("");
@@ -355,39 +617,7 @@ export default function AddProductPage() {
     }
   }, [dimensionUnitOptions, dimensionUnit]);
 
-  const decodedToken = useMemo(() => {
-    if (!token) return null;
-    try {
-      const parts = token.split(".");
-      if (parts.length < 2) return null;
-      const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-      const json =
-        typeof window !== "undefined"
-          ? atob(base64)
-          : Buffer.from(base64, "base64").toString("utf-8");
-      return JSON.parse(json);
-    } catch {
-      return null;
-    }
-  }, [token]);
-
-  // 🔐 company id coming from JWT (preferred), or from selectedCompanyId
-  const resolveCompanyId = useMemo(() => {
-    const fromToken =
-      decodedToken?.company_id ??
-      decodedToken?.companyId ??
-      decodedToken?.companyID ??
-      null;
-
-    if (fromToken != null && String(fromToken).trim() !== "") {
-      return fromToken;
-    }
-    if (selectedCompanyId && selectedCompanyId !== "all") {
-      return selectedCompanyId;
-    }
-    return null;
-  }, [decodedToken, selectedCompanyId]);
-
+  // Fetch lookups (categories, statuses, units, property names, price types)
   React.useEffect(() => {
     const controller = new AbortController();
 
@@ -396,21 +626,9 @@ export default function AddProductPage() {
       setCategoryError(null);
 
       try {
-        const toIdString = (value: unknown): string | null => {
-          if (value == null) return null;
-          if (typeof value === "string") {
-            const trimmed = value.trim();
-            return trimmed.length > 0 ? trimmed : null;
-          }
-          if (typeof value === "number" && Number.isFinite(value)) {
-            return String(value);
-          }
-          return null;
-        };
-
         const resolvedCompanyIdString =
-          toIdString(normalizeNumericId(resolveCompanyId)) ??
-          toIdString(resolveCompanyId);
+          toIdString(normalizeNumericId(effectiveCompanyId)) ??
+          toIdString(effectiveCompanyId);
 
         const lookupUrl = (() => {
           try {
@@ -458,14 +676,16 @@ export default function AddProductPage() {
           })) ?? [];
         setGlobalItemOptions(mappedGlobalItems);
 
-        // === Weight units (dynamic from API) ===
+        // === Weight units ===
         const mappedWeightUnits: WeightUnitOption[] =
           data.selections?.weight_units
             ?.map((u) => {
+              const idNum = normalizeNumericId(u.weight_unit_id);
               const abbr = u.unit_abbreviation?.trim();
               const name = u.unit_name?.trim();
-              if (!abbr) return null;
+              if (idNum == null || !abbr) return null;
               return {
+                id: idNum,
                 value: abbr.toUpperCase(),
                 label: name ? `${name} (${abbr})` : abbr,
               };
@@ -473,14 +693,16 @@ export default function AddProductPage() {
             .filter((x): x is WeightUnitOption => x !== null) ?? [];
         setWeightUnitOptions(mappedWeightUnits);
 
-        // === Dimension units (dynamic from API) ===
+        // === Dimension units ===
         const mappedDimensionUnits: DimensionUnitOption[] =
           data.selections?.dimension_units
             ?.map((u) => {
+              const idNum = normalizeNumericId(u.dimension_unit_id);
               const abbr = u.unit_abbreviation?.trim();
               const name = u.unit_name?.trim();
-              if (!abbr) return null;
+              if (idNum == null || !abbr) return null;
               return {
+                id: idNum,
                 value: abbr.toUpperCase(),
                 label: name ? `${name} (${abbr})` : abbr,
               };
@@ -496,16 +718,14 @@ export default function AddProductPage() {
           })) ?? [];
         setStatusOptions(mappedStatuses);
 
-        // === Price Types for Logged-in Company ===
+        // === Price Types for company ===
         const rawPricingByCompany = data.selections?.pricing_types_by_company;
-
         let companyPricingTypes: any[] = [];
         if (rawPricingByCompany) {
           const keyFromToken = resolvedCompanyIdString ?? "";
-          if (keyFromToken && rawPricingByCompany[keyFromToken]) {
+          if (keyFromToken) {
             companyPricingTypes = rawPricingByCompany[keyFromToken]?.pricing_types ?? [];
           } else {
-            // fallback: first company entry if JWT id not present in map
             const firstKey = Object.keys(rawPricingByCompany)[0];
             if (firstKey && rawPricingByCompany[firstKey]) {
               companyPricingTypes =
@@ -542,10 +762,65 @@ export default function AddProductPage() {
               };
             })
             .filter((opt: PriceTypeOption | null): opt is PriceTypeOption => opt !== null) ?? [];
-
         setPriceTypeOptions(priceTypeOptionsForCompany);
-        // Leave priceList empty initially; user adds rows via dialog
 
+        // === Property names by company (dynamic properties) ===
+        const rawPropsByCompany = data.selections?.property_names_by_company;
+        if (rawPropsByCompany) {
+          const keyForCompany =
+            resolvedCompanyIdString &&
+            rawPropsByCompany[resolvedCompanyIdString]
+              ? resolvedCompanyIdString
+              : Object.keys(rawPropsByCompany)[0] ?? null;
+
+          const propsForCompany: RawPropertyName[] =
+            (keyForCompany && rawPropsByCompany[keyForCompany]?.properties) || [];
+
+          const nextCoreIds: CorePropertyNameIds = {};
+          const nextExtraFields: ExtraPropertyField[] = [];
+
+          const toLabelText = (name: string) =>
+            name
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, (c) => c.toUpperCase());
+
+          for (const prop of propsForCompany) {
+            const rawName = (prop.item_property_name || "").trim();
+            if (!rawName) continue;
+            const lower = rawName.toLowerCase();
+
+            if (lower === "weight") {
+              nextCoreIds.weight = prop.item_property_name_id;
+              continue;
+            }
+            if (lower === "length") {
+              nextCoreIds.length = prop.item_property_name_id;
+              continue;
+            }
+            if (lower === "width") {
+              nextCoreIds.width = prop.item_property_name_id;
+              continue;
+            }
+            if (lower === "height") {
+              nextCoreIds.height = prop.item_property_name_id;
+              continue;
+            }
+            if (lower === "bundle") {
+              nextCoreIds.bundle = prop.item_property_name_id;
+              continue;
+            }
+
+            // Extra / company-specific props (class, nmfc, label_*...)
+            nextExtraFields.push({
+              id: prop.item_property_name_id,
+              name: rawName,
+              label: toLabelText(rawName),
+            });
+          }
+
+          setCorePropertyNameIds(nextCoreIds);
+          setExtraPropertyFields(nextExtraFields);
+        }
       } catch (error) {
         if (!controller.signal.aborted) {
           console.error("Failed to load product lookups", error);
@@ -563,20 +838,9 @@ export default function AddProductPage() {
     return () => {
       controller.abort();
     };
-  }, [resolveCompanyId, todayIso]);
+  }, [effectiveCompanyId]);
 
-  const resolvedAssignedUserId = useMemo(() => {
-    if (!decodedToken) return null;
-    return (
-      decodedToken.user_id ??
-      decodedToken.userId ??
-      decodedToken.userID ??
-      decodedToken.sub ??
-      decodedToken.id ??
-      null
-    );
-  }, [decodedToken]);
-
+  // Price dialog helpers
   const resetPriceForm = () => {
     setPriceForm({
       priceTypeId: "",
@@ -669,14 +933,63 @@ export default function AddProductPage() {
     return `${month}.${day}.${year}`;
   };
 
+  // Bundle handlers
+  const handleAddBundleItem = () => {
+    if (!selectedBundleProduct) return;
+    const q = Number(bundleQuantity);
+    if (!Number.isFinite(q) || q <= 0) return;
+
+    setBundleItems((prev) => {
+      const existingIndex = prev.findIndex(
+        (b) => b.productId === selectedBundleProduct.productId
+      );
+      if (existingIndex >= 0) {
+        const copy = [...prev];
+        copy[existingIndex] = {
+          ...copy[existingIndex],
+          quantity: copy[existingIndex].quantity + q,
+        };
+        return copy;
+      }
+      return [
+        ...prev,
+        {
+          id: Date.now(),
+          productId: selectedBundleProduct.productId,
+          globalItemId: selectedBundleProduct.globalItemId,
+          productCode: selectedBundleProduct.code,
+          productName: selectedBundleProduct.name,
+          quantity: q,
+        },
+      ];
+    });
+
+    setSelectedBundleProduct(null);
+    setBundleQuantity("1");
+  };
+
+  const handleRemoveBundleItem = (id: number) => {
+    setBundleItems((prev) => prev.filter((b) => b.id !== id));
+  };
+
+  // ===== Submit =====
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (submitLoading) {
-      return;
-    }
+    if (submitLoading) return;
 
     setSubmitError(null);
     setSubmitSuccess(false);
+
+    // Block submission if company-specific product code error is set
+    if (productCodeCompanyError) {
+      setSubmitError(productCodeCompanyError);
+      return;
+    }
+
+    if (isBundle && bundleItems.length === 0) {
+      setSubmitError("Please add at least one product to the bundle.");
+      return;
+    }
 
     const formData = new FormData(event.currentTarget);
     const getTextValue = (name: string) => {
@@ -701,63 +1014,90 @@ export default function AddProductPage() {
     const widthValue = getNumberValue("width");
     const lengthValue = getNumberValue("length");
 
-    const weightUnitValue = weightUnit || getTextValue("weightUnit");
+    const productName = getTextValue("productName");
 
-    const properties: Array<PropertyPayload | null> = [
-      weightValue != null
-        ? ({
-            item_property_name_id: 1001,
-            property_value: weightValue.toString(),
-            unit_code: weightUnitValue
-              ? weightUnitValue.toUpperCase()
-              : undefined,
-            unit_type: "weight",
-          } satisfies PropertyPayload)
-        : null,
-      lengthValue != null
-        ? ({
-            item_property_name_id: 1002,
-            property_value: lengthValue.toString(),
-            unit_code: dimensionUnit
-              ? dimensionUnit.toUpperCase()
-              : undefined,
-            unit_type: "length",
-          } satisfies PropertyPayload)
-        : null,
-      widthValue != null
-        ? ({
-            item_property_name_id: 1003,
-            property_value: widthValue.toString(),
-            unit_code: dimensionUnit
-              ? dimensionUnit.toUpperCase()
-              : undefined,
-            unit_type: "width",
-          } satisfies PropertyPayload)
-        : null,
-      heightValue != null
-        ? ({
-            item_property_name_id: 1004,
-            property_value: heightValue.toString(),
-            unit_code: dimensionUnit
-              ? dimensionUnit.toUpperCase()
-              : undefined,
-            unit_type: "height",
-          } satisfies PropertyPayload)
-        : null,
-    ].filter((property): property is PropertyPayload => property !== null);
+    // Block negative weight / dimensions (even if pasted)
+    if (
+      (weightValue != null && weightValue < 0) ||
+      (heightValue != null && heightValue < 0) ||
+      (widthValue != null && widthValue < 0) ||
+      (lengthValue != null && lengthValue < 0)
+    ) {
+      setSubmitError("Weight and dimensions cannot be negative.");
+      return;
+    }
 
-    const payload = {
-      product_code: productCode.trim(),
-      product_name: getTextValue("productName"),
-      item_name: getTextValue("productName"),
+    const selectedWeightUnit = weightUnitOptions.find(
+      (u) => u.value === weightUnit
+    );
+    const selectedDimensionUnit = dimensionUnitOptions.find(
+      (u) => u.value === dimensionUnit
+    );
+
+    // Build properties from core + extra fields
+    const properties: PropertyPayload[] = [];
+
+    if (weightValue != null && corePropertyNameIds.weight) {
+      properties.push({
+        item_property_name_id: corePropertyNameIds.weight,
+        property_value: weightValue.toString(),
+        unit_id: selectedWeightUnit?.id,
+      });
+    }
+
+    if (lengthValue != null && corePropertyNameIds.length) {
+      properties.push({
+        item_property_name_id: corePropertyNameIds.length,
+        property_value: lengthValue.toString(),
+        unit_id: selectedDimensionUnit?.id,
+      });
+    }
+
+    if (widthValue != null && corePropertyNameIds.width) {
+      properties.push({
+        item_property_name_id: corePropertyNameIds.width,
+        property_value: widthValue.toString(),
+        unit_id: selectedDimensionUnit?.id,
+      });
+    }
+
+    if (heightValue != null && corePropertyNameIds.height) {
+      properties.push({
+        item_property_name_id: corePropertyNameIds.height,
+        property_value: heightValue.toString(),
+        unit_id: selectedDimensionUnit?.id,
+      });
+    }
+
+    if (isBundle && corePropertyNameIds.bundle) {
+      properties.push({
+        item_property_name_id: corePropertyNameIds.bundle,
+        property_value: "1",
+        unit_id: undefined,
+      });
+    }
+
+    // Extra company-specific properties (class, nmfc, labels, ...)
+    for (const prop of extraPropertyFields) {
+      const value = getTextValue(`prop_${prop.id}`);
+      if (!value) continue;
+      properties.push({
+        item_property_name_id: prop.id,
+        property_value: value,
+        unit_id: undefined,
+      });
+    }
+
+    const payload: any = {
+      item_name: productName,
       item_status_id: parseIdValue(productStatus),
       item_category_id: parseIdValue(productCategory),
       item_subcategory_id: parseIdValue(subCategory),
       description: getTextValue("productDescription") || null,
       calibration: getTextValue("calibration") || null,
-      global_item: productCode,
+      global_item: productCode.trim().toUpperCase(), // use code; backend will link/insert global item
       item_type_id: 1,
-      company_id: normalizeNumericId(resolveCompanyId) ?? 0,
+      company_id: normalizeNumericId(effectiveCompanyId) ?? 0,
       created_by: normalizeNumericId(resolvedAssignedUserId) ?? 0,
       modified_by: normalizeNumericId(resolvedAssignedUserId) ?? 0,
       properties,
@@ -776,9 +1116,18 @@ export default function AddProductPage() {
         }
         return base;
       }),
+      // 🔗 Bundle payload
+      is_bundle: isBundle ? 1 : 0,
+      bundle_items: isBundle
+        ? bundleItems.map((b) => ({
+            product_id: b.productId,
+            quantity: b.quantity,
+          }))
+        : [],
     };
 
-    if (!payload.product_code || !payload.product_name) {
+    // ✅ Validate against actual fields (not payload.product_code / product_name)
+    if (!productCode.trim() || !productName) {
       setSubmitError("Product code and name are required.");
       return;
     }
@@ -829,6 +1178,7 @@ export default function AddProductPage() {
     }
   };
 
+  // ===== Render =====
   return (
     <Box
       sx={{
@@ -840,6 +1190,7 @@ export default function AddProductPage() {
         minHeight: "100%",
       }}
     >
+      {/* Header */}
       <Box
         sx={{
           display: "flex",
@@ -855,6 +1206,7 @@ export default function AddProductPage() {
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
           <Typography variant="h4" sx={{ fontWeight: 500 }}>
             Add New Product
+            {selectedCompanyName ? ` For ${selectedCompanyName}` : ""}
           </Typography>
         </Box>
 
@@ -877,6 +1229,7 @@ export default function AddProductPage() {
         </Stack>
       </Box>
 
+      {/* Form */}
       <Box
         component="form"
         id="product-form"
@@ -904,6 +1257,7 @@ export default function AddProductPage() {
           </Alert>
         )}
 
+        {/* Main box */}
         <Box
           sx={{
             bgcolor: "#FFF",
@@ -935,7 +1289,9 @@ export default function AddProductPage() {
                 gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
               }}
             >
+              {/* Left column */}
               <Stack spacing={2}>
+                {/* Product Code */}
                 <Autocomplete
                   freeSolo
                   options={productCodeOptions}
@@ -970,28 +1326,23 @@ export default function AddProductPage() {
                           : "Search product code"
                       }
                       error={Boolean(
-                        productCodeError || productCodeExists
+                        productCodeError || productCodeCompanyError
                       )}
                       helperText={
-                        productCodeError ??
-                        (productCodeExists
-                          ? "Note: This product code already exists. Please Enter Unique one."
-                          : undefined)
+                        productCodeError ?? productCodeCompanyError ?? undefined
                       }
                       FormHelperTextProps={
-                        productCodeError
+                        productCodeError || productCodeCompanyError
                           ? {
                               sx: { color: "error.main" },
-                            }
-                          : productCodeExists
-                          ? {
-                              sx: { color: "warning.main" },
                             }
                           : undefined
                       }
                     />
                   )}
                 />
+
+                {/* Product Name */}
                 <TextField
                   label="Product Name"
                   fullWidth
@@ -1000,6 +1351,8 @@ export default function AddProductPage() {
                   name="productName"
                   inputProps={{ maxLength: PRODUCT_NAME_MAX_LENGTH }}
                 />
+
+                {/* Status */}
                 <TextField
                   select
                   label="Status"
@@ -1007,9 +1360,7 @@ export default function AddProductPage() {
                   size="small"
                   name="status"
                   value={productStatus}
-                  onChange={(event) =>
-                    setProductStatus(event.target.value)
-                  }
+                  onChange={(event) => setProductStatus(event.target.value)}
                   required
                   InputLabelProps={{ shrink: true }}
                   SelectProps={{
@@ -1049,14 +1400,13 @@ export default function AddProductPage() {
                       </MenuItem>
                     )}
                   {statusOptions.map((option) => (
-                    <MenuItem
-                      key={option.value}
-                      value={option.value}
-                    >
+                    <MenuItem key={option.value} value={option.value}>
                       {option.label}
                     </MenuItem>
                   ))}
                 </TextField>
+
+                {/* Description */}
                 <TextField
                   label="Product Description"
                   fullWidth
@@ -1067,7 +1417,9 @@ export default function AddProductPage() {
                 />
               </Stack>
 
+              {/* Right column */}
               <Stack spacing={2}>
+                {/* Category */}
                 <TextField
                   select
                   label="Product Category"
@@ -1075,9 +1427,7 @@ export default function AddProductPage() {
                   size="small"
                   name="category"
                   value={productCategory}
-                  onChange={(event) =>
-                    setProductCategory(event.target.value)
-                  }
+                  onChange={(event) => setProductCategory(event.target.value)}
                   InputLabelProps={{ shrink: true }}
                   SelectProps={{
                     displayEmpty: true,
@@ -1110,14 +1460,13 @@ export default function AddProductPage() {
                       </MenuItem>
                     )}
                   {categoryOptions.map((option) => (
-                    <MenuItem
-                      key={option.value}
-                      value={option.value}
-                    >
+                    <MenuItem key={option.value} value={option.value}>
                       {option.label}
                     </MenuItem>
                   ))}
                 </TextField>
+
+                {/* Sub Category */}
                 <TextField
                   select
                   label="Sub Category"
@@ -1125,9 +1474,7 @@ export default function AddProductPage() {
                   size="small"
                   name="subCategory"
                   value={subCategory}
-                  onChange={(event) =>
-                    setSubCategory(event.target.value)
-                  }
+                  onChange={(event) => setSubCategory(event.target.value)}
                   disabled={!productCategory}
                   InputLabelProps={{ shrink: true }}
                   SelectProps={{
@@ -1166,45 +1513,50 @@ export default function AddProductPage() {
                       </MenuItem>
                     )}
                   {availableSubCategories.map((option) => (
-                    <MenuItem
-                      key={option.value}
-                      value={option.value}
-                    >
+                    <MenuItem key={option.value} value={option.value}>
                       {option.label}
                     </MenuItem>
                   ))}
                 </TextField>
-                <TextField
-                  select
-                  label="Calibration"
-                  size="small"
-                  defaultValue="yes"
-                  sx={{ width: { xs: "100%", md: "50%" } }}
-                  name="calibration"
-                >
-                  <MenuItem value="yes">Yes</MenuItem>
-                  <MenuItem value="no">No</MenuItem>
-                </TextField>
 
-                <Box
-                  sx={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 1,
-                  }}
+                {/* Calibration + Bundle */}
+                <Stack
+                  spacing={2}
+                  direction={{ xs: "column", md: "row" }}
+                  alignItems="center"
                 >
-                  <Typography
-                    variant="subtitle2"
-                    sx={{ fontWeight: 600 }}
+                  <TextField
+                    select
+                    label="Calibration"
+                    size="small"
+                    defaultValue="no"
+                    sx={{ width: { xs: "100%", md: "50%" } }}
+                    name="calibration"
                   >
+                    <MenuItem value="yes">Yes</MenuItem>
+                    <MenuItem value="no">No</MenuItem>
+                  </TextField>
+
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={isBundle}
+                        onChange={(e) => setIsBundle(e.target.checked)}
+                        name="bundle"
+                      />
+                    }
+                    label="Bundle"
+                  />
+                </Stack>
+
+                {/* Properties (core + extra) */}
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                     Properties
                   </Typography>
 
-                  <Stack
-                    spacing={2}
-                    direction={{ xs: "column", md: "row" }}
-                  >
-                    {/* Dynamic Weight Unit */}
+                  {/* Units */}
+                  <Stack spacing={2} direction={{ xs: "column", md: "row" }}>
                     <TextField
                       select
                       label="Weight Unit"
@@ -1236,16 +1588,12 @@ export default function AddProductPage() {
                           : "No weight units available"}
                       </MenuItem>
                       {weightUnitOptions.map((option) => (
-                        <MenuItem
-                          key={option.value}
-                          value={option.value}
-                        >
+                        <MenuItem key={option.id} value={option.value}>
                           {option.label}
                         </MenuItem>
                       ))}
                     </TextField>
 
-                    {/* Dynamic Dimension Unit */}
                     <TextField
                       select
                       label="Dimension Unit"
@@ -1259,9 +1607,7 @@ export default function AddProductPage() {
                       InputLabelProps={{ shrink: true }}
                       SelectProps={{
                         displayEmpty: true,
-                        renderValue: (
-                          selected: unknown
-                        ): React.ReactNode => {
+                        renderValue: (selected: unknown): React.ReactNode => {
                           const value = selected as string;
                           if (!value) {
                             return dimensionUnitOptions.length
@@ -1281,20 +1627,15 @@ export default function AddProductPage() {
                           : "No dimension units available"}
                       </MenuItem>
                       {dimensionUnitOptions.map((option) => (
-                        <MenuItem
-                          key={option.value}
-                          value={option.value}
-                        >
+                        <MenuItem key={option.id} value={option.value}>
                           {option.label}
                         </MenuItem>
                       ))}
                     </TextField>
                   </Stack>
 
-                  <Stack
-                    spacing={2}
-                    direction={{ xs: "column", md: "row" }}
-                  >
+                  {/* Weight + Height */}
+                  <Stack spacing={2} direction={{ xs: "column", md: "row" }}>
                     <TextField
                       label="Weight"
                       size="small"
@@ -1317,10 +1658,8 @@ export default function AddProductPage() {
                     />
                   </Stack>
 
-                  <Stack
-                    spacing={2}
-                    direction={{ xs: "column", md: "row" }}
-                  >
+                  {/* Width + Length */}
+                  <Stack spacing={2} direction={{ xs: "column", md: "row" }}>
                     <TextField
                       label="Width"
                       size="small"
@@ -1342,12 +1681,183 @@ export default function AddProductPage() {
                       sx={NUMERIC_INPUT_SX}
                     />
                   </Stack>
+
+                  {/* Extra company-specific properties (4-column grid) */}
+                  {extraPropertyFields.length > 0 && (
+                    <>
+                      <Typography
+                        variant="subtitle2"
+                        sx={{ fontWeight: 600, mt: 1 }}
+                      >
+                        Additional Properties
+                      </Typography>
+                      <Box
+                        sx={{
+                          display: "grid",
+                          gridTemplateColumns: {
+                            xs: "1fr",
+                            md: "repeat(2, 1fr)",
+                            lg: "repeat(4, 1fr)",
+                          },
+                          gap: 2,
+                        }}
+                      >
+                        {extraPropertyFields.map((field) => (
+                          <TextField
+                            key={field.id}
+                            label={field.label}
+                            size="small"
+                            fullWidth
+                            name={`prop_${field.id}`}
+                          />
+                        ))}
+                      </Box>
+                    </>
+                  )}
                 </Box>
               </Stack>
             </Box>
           </Box>
         </Box>
 
+        {/* Bundle Section */}
+        {isBundle && (
+          <Box
+            sx={{
+              bgcolor: "#FFF",
+              borderRadius: 2,
+              p: 3,
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+            }}
+          >
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              spacing={2}
+              alignItems={{ xs: "stretch", md: "center" }}
+            >
+              <Autocomplete
+                fullWidth
+                size="small"
+                options={companyProducts}
+                loading={companyProductsLoading}
+                isOptionEqualToValue={(option, value) =>
+                  option.productId === value.productId
+                }
+                getOptionLabel={(option) =>
+                  option
+                    ? `${option.code || "—"} — ${
+                        option.name || "Unnamed product"
+                      }`
+                    : ""
+                }
+                value={selectedBundleProduct}
+                onChange={(_, value) => setSelectedBundleProduct(value)}
+                // 🔑 Ensure unique, stable keys for each option
+                renderOption={(props, option) => (
+                  <li {...props} key={option.productId}>
+                    {option.code
+                      ? `${option.code} — ${
+                          option.name || "Unnamed product"
+                        }`
+                      : option.name || "Unnamed product"}
+                  </li>
+                )}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Product in bundle"
+                    placeholder={
+                      companyProductsLoading
+                        ? "Loading products..."
+                        : companyProductsError ||
+                          "Search by product code or name"
+                    }
+                    error={!!companyProductsError}
+                    helperText={companyProductsError || undefined}
+                  />
+                )}
+              />
+
+              <TextField
+                label="Quantity"
+                size="small"
+                type="number"
+                sx={{ width: { xs: "100%", md: 120 } }}
+                value={bundleQuantity}
+                onChange={(e) => setBundleQuantity(e.target.value)}
+                inputProps={{ min: 1, step: 1 }}
+              />
+
+              <Button
+                variant="outlined"
+                startIcon={<MdAdd />}
+                onClick={handleAddBundleItem}
+                sx={{ whiteSpace: "nowrap" }}
+              >
+                Add To Bundle
+              </Button>
+            </Stack>
+
+            <Table
+              sx={{
+                mt: 1,
+                "& th": { bgcolor: "#EAF5FF", fontWeight: 600, fontSize: 13 },
+                "& td": { fontSize: 13 },
+              }}
+            >
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ width: 60 }}>#</TableCell>
+                  <TableCell>Product Code</TableCell>
+                  <TableCell>Product Name</TableCell>
+                  <TableCell sx={{ width: 120 }}>Quantity</TableCell>
+                  <TableCell align="right" sx={{ width: 80 }}>
+                    Action
+                  </TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {bundleItems.length === 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      align="center"
+                      sx={{ py: 3, color: "text.secondary" }}
+                    >
+                      No bundle items yet. Search and add products above.
+                    </TableCell>
+                  </TableRow>
+                )}
+                {bundleItems.map((item, index) => (
+                  <TableRow key={item.id}>
+                    <TableCell>{index + 1}</TableCell>
+                    <TableCell>{item.productCode || "—"}</TableCell>
+                    <TableCell>{item.productName || "—"}</TableCell>
+                    <TableCell>{item.quantity}</TableCell>
+                    <TableCell align="right">
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={() => handleRemoveBundleItem(item.id)}
+                      >
+                        <MdDelete size={18} />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+
+            <Typography variant="caption" color="text.secondary">
+              {bundleItems.length} bundle item
+              {bundleItems.length === 1 ? "" : "s"} configured
+            </Typography>
+          </Box>
+        )}
+
+        {/* Price List */}
         <Box
           sx={{
             bgcolor: "#FFF",
@@ -1363,10 +1873,7 @@ export default function AddProductPage() {
             justifyContent="space-between"
             alignItems="center"
           >
-            <Typography
-              variant="subtitle1"
-              sx={{ fontWeight: 700 }}
-            >
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
               Price List
             </Typography>
             <Button startIcon={<MdAdd />} onClick={openAddPriceDialog}>
@@ -1428,15 +1935,14 @@ export default function AddProductPage() {
               ))}
             </TableBody>
           </Table>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-          >
+
+          <Typography variant="caption" color="text.secondary">
             {totalPrices} price{totalPrices === 1 ? "" : "s"} configured
           </Typography>
         </Box>
       </Box>
 
+      {/* Price Dialog */}
       <Dialog
         open={priceDialogOpen}
         onClose={closePriceDialog}
@@ -1474,9 +1980,7 @@ export default function AddProductPage() {
             InputLabelProps={{ shrink: true }}
             SelectProps={{
               displayEmpty: true,
-              renderValue: (
-                selected: unknown
-              ): React.ReactNode => {
+              renderValue: (selected: unknown): React.ReactNode => {
                 const value = selected as string;
                 if (!value) {
                   return "Select Price Type";
@@ -1485,8 +1989,7 @@ export default function AddProductPage() {
                   (item) => item.value === value
                 );
                 return (
-                  option?.label ??
-                  (priceForm.priceTypeLabel || value)
+                  option?.label ?? (priceForm.priceTypeLabel || value)
                 );
               },
             }}
@@ -1514,10 +2017,7 @@ export default function AddProductPage() {
                 </MenuItem>
               )}
             {priceTypeOptions.map((option) => (
-              <MenuItem
-                key={option.value}
-                value={option.value}
-              >
+              <MenuItem key={option.value} value={option.value}>
                 {option.label}
               </MenuItem>
             ))}
