@@ -30,6 +30,8 @@ import { useCompany } from "@/contexts/CompanyContext";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { addAsset } from "@/styles/icons";
+import { useProfile } from "@/contexts/ProfileContext";
+import { useProducts } from "./hooks/useProducts";
 
 // ===== Types =====
 // Columns removed: systemNo, sensors, group, ecns, platform,
@@ -84,35 +86,7 @@ const COL_WIDTHS: Record<string, string> = {
 
 const GRID_COLS = headerCols.map(c => COL_WIDTHS[c.key] || "minmax(120px, 1fr)").join(" ");
 
-// ===== Data Hook =====
-function useProducts(selectedCompanyId: string | null, endpoint: string) {
-  const { token, isLoggedIn } = useAuth();
-  const { apiURL } = useBackend();
 
-  return useQuery({
-    queryKey: ["products", selectedCompanyId, endpoint],
-    queryFn: async () => {
-      const qs = selectedCompanyId && selectedCompanyId !== "all"
-        ? `?company_id=${encodeURIComponent(selectedCompanyId)}`
-        : "";
-      const base = apiURL(endpoint, "products"); // "" -> /api/products, "endoflife" -> /api/products/endoflife
-      const url = qs ? `${base}${qs}` : base;
-      const res = await fetch(url, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      if (!res.ok) {
-        if (res.status === 401) throw new Error("Unauthorized – please log in again");
-        throw new Error(`Request failed: ${res.status}`);
-      }
-      return res.json();
-    },
-    enabled: isLoggedIn && !!token,
-    staleTime: 5 * 60 * 1000,
-  });
-}
 
 export default function ProductsPage() {
   const router = useRouter();
@@ -126,15 +100,21 @@ export default function ProductsPage() {
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
   // 🌍 Company context (defaults handled in provider)
-  const { companies, selectedCompanyId, setSelectedCompanyId, isLoading: companyLoading } = useCompany();
+  const { companies, selectedCompanyId, setSelectedCompanyId, isLoading: companyLoading, userCompanyId } = useCompany();
+  const { isAdmin } = useProfile();
 
   React.useEffect(() => {
     setCategoryFilter(null);
   }, [selectedCompanyId, tab]);
 
+
+
+  const effectiveCompanyId = useMemo(() => (isAdmin ? selectedCompanyId : userCompanyId),
+    [isAdmin, selectedCompanyId, userCompanyId]);
+
   // 🧠 Fetch products (backend can filter with company_id query param)
   const endpoint = tab === "eol" ? "products/endoflife" : "products";
-  const { data, isLoading, error } = useProducts(selectedCompanyId, endpoint);
+  const { data, isLoading, error } = useProducts(effectiveCompanyId, endpoint);
 
   // ===== Transform backend response =====
   const allProducts: Product[] = useMemo(() => {
@@ -285,18 +265,35 @@ export default function ProductsPage() {
             </Typography>
 
             {/* 🔽 Company Filter Dropdown */}
-            <FormControl size="small" sx={{ minWidth: 220 }} disabled={companyLoading}>
+            <FormControl
+              size="small"
+              sx={{ minWidth: 220 }}
+              disabled={companyLoading || !isAdmin}  // 👈 non-admin: dropdown disabled
+            >
               <InputLabel>Company</InputLabel>
               <Select
                 label="Company"
-                value={selectedCompanyId ?? "all"}
-                onChange={(e) => setSelectedCompanyId(String(e.target.value))}
+                value={effectiveCompanyId ?? ""} 
+                onChange={(e) => {
+                  if (!isAdmin) return;             // safety: ignore changes for non-admins
+                  setSelectedCompanyId(String(e.target.value));
+                }}
               >
-                {companies.map((c) => (
-                  <MenuItem key={c.id} value={c.id}>
-                    {c.name}
-                  </MenuItem>
-                ))}
+                {isAdmin
+                  ? // Admin sees all options (including All)
+                  companies.map((c) => (
+                    <MenuItem key={c.id} value={c.id}>
+                      {c.name}
+                    </MenuItem>
+                  ))
+                  : // Non-admin: only their own company in the dropdown
+                  companies
+                    .filter((c) => c.id === userCompanyId)
+                    .map((c) => (
+                      <MenuItem key={c.id} value={c.id}>
+                        {c.name}
+                      </MenuItem>
+                    ))}
               </Select>
             </FormControl>
 
