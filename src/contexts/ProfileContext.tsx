@@ -14,13 +14,14 @@ type ProfileData = {
   user_id?: number | string | null;
   company_id?: number | string | null;
   name?: string | null;
-  coalition?: CoalitionSummary | null; // 👈 added
+  coalition?: CoalitionSummary | null;
 };
 
 type ProfileContextType = {
   profileData: ProfileData | undefined;
   isLoading: boolean;
   isAdmin: boolean;
+  isCoalitionOwner: boolean; // 👈 added
 };
 
 // --- helper: decode JWT payload ---
@@ -47,7 +48,6 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({
   const profileData: ProfileData | undefined = useMemo(() => {
     if (!isLoggedIn || !claims) return undefined;
 
-    // Try to derive coalition info from common claim shapes, but keep it optional
     const coalitionId =
       claims.coalition?.id ??
       claims.coalition_id ??
@@ -62,7 +62,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({
 
     return {
       email: email ?? claims.email ?? null,
-      role: claims.role ?? null, // "admin" / "user" from your backend
+      role: claims.role ?? null,
       user_id: claims.user_id ?? claims.sub ?? null,
       company_id: claims.company_id ?? null,
       name: claims.name ?? null,
@@ -76,8 +76,18 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, [claims, email, isLoggedIn]);
 
-  // 🔑 ADMIN FLAG from JWT
-  const isAdmin = profileData?.role === "admin";
+  const role = profileData?.role ?? null;
+
+  // 🔑 role-based flags
+  const isAdmin = role === "admin";
+
+  const isCoalitionOwner =
+    role === "coalition_owner" ||
+    Boolean(
+      claims?.isCoalitionOwner ??
+        claims?.is_coalition_owner ??
+        claims?.coalition_owner
+    );
 
   return (
     <ProfileContext.Provider
@@ -85,6 +95,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({
         profileData,
         isLoading: authLoading,
         isAdmin,
+        isCoalitionOwner,
       }}
     >
       {children}
