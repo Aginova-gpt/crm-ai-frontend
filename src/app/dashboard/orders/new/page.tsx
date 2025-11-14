@@ -25,6 +25,7 @@ import {
     Paper,
     Chip,
     Stack,
+    CircularProgress,
 } from "@mui/material";
 import { MdSearch } from "react-icons/md";
 import { DeleteOutline, CloudUpload, Visibility, VisibilityOff } from "@mui/icons-material";
@@ -33,12 +34,130 @@ import InputLabel from "@mui/material/InputLabel";
 import Select from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
 import { useRouter } from "next/navigation";
+import Autocomplete from "@mui/material/Autocomplete";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "../../../../contexts/AuthContext";
+import { useBackend } from "../../../../contexts/BackendContext";
+import { useCompany } from "../../../../contexts/CompanyContext";
 
 type Sensor = {
     id: string;
     name: string;
     type: string;
 };
+
+type ContactOption = {
+    id: string;
+    name: string;
+    phone?: string;
+    email?: string;
+};
+
+type CustomerOption = {
+    id: string;
+    name: string;
+    phone?: string;
+    email?: string;
+    billingAddress?: string;
+    shippingAddress?: string;
+    companyId?: string;
+    contacts?: ContactOption[];
+    raw?: any;
+};
+
+function useCustomerDirectory() {
+    const { token, isLoggedIn } = useAuth();
+    const { apiURL } = useBackend();
+
+    return useQuery({
+        queryKey: ["customers", "for-order"],
+        queryFn: async () => {
+            const url = apiURL("accounts", "accounts.json");
+            const res = await fetch(url, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) {
+                if (res.status === 401) throw new Error("Unauthorized – please log in again");
+                throw new Error(`Request failed: ${res.status}`);
+            }
+            return res.json();
+        },
+        enabled: isLoggedIn && !!token,
+        staleTime: 5 * 60 * 1000,
+    });
+}
+
+function useCustomerDetail(customerId: string | null) {
+    const { token, isLoggedIn } = useAuth();
+
+    return useQuery({
+        queryKey: ["customer-detail", customerId],
+        queryFn: async () => {
+            if (!customerId) return null;
+            const res = await fetch(`http://34.58.37.44/api/get-account/${customerId}`, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            });
+            if (!res.ok) {
+                if (res.status === 401) throw new Error("Unauthorized – please log in again");
+                throw new Error(`Failed to fetch customer detail: ${res.status}`);
+            }
+            return res.json();
+        },
+        enabled: isLoggedIn && !!token && !!customerId,
+        staleTime: 0,
+        refetchOnWindowFocus: false,
+    });
+}
+
+function formatAddress(address: any): string {
+    if (!address) return "";
+    if (typeof address === "string") return address;
+    if (typeof address !== "object") return "";
+    const candidates = [
+        address.street ?? address.address ?? address.line1,
+        address.city,
+        address.state ?? address.region,
+        address.postalcode ?? address.zip ?? address.postal_code,
+        address.country,
+    ];
+    return candidates.filter((part) => typeof part === "string" && part.trim().length > 0).join(", ");
+}
+
+function mapContacts(rawContacts: any[]): ContactOption[] {
+    if (!Array.isArray(rawContacts)) return [];
+    return (
+        rawContacts
+        .map((contact, idx) => {
+            if (!contact) return null;
+            const id =
+                contact?.id ??
+                contact?.contact_id ??
+                contact?.contactId ??
+                contact?.contactID ??
+                contact?.email ??
+                `contact-${idx}`;
+            const name = contact?.name ?? contact?.contact_name ?? contact?.full_name ?? contact?.username ?? "";
+            if (!id || !name) return null;
+            const mapped: ContactOption = {
+                id: String(id),
+                name: String(name),
+                phone:
+                    contact?.phone ??
+                    contact?.contact_phone ??
+                    contact?.mobile ??
+                    contact?.primary_phone ??
+                    contact?.work_phone,
+                email:
+                    contact?.email ??
+                    contact?.contact_email ??
+                    contact?.primary_email ??
+                    contact?.work_email,
+            };
+            return mapped;
+        })
+        .filter((contact): contact is ContactOption => contact !== null)
+    );
+}
 
 const mockShipments = [
     {
@@ -67,6 +186,15 @@ const initialAvailableSensors = initialSensors.slice(8);
 
 export default function CreateOrderPage() {
     const router = useRouter();
+    const { selectedCompanyId } = useCompany();
+    const { data: customersData, isLoading: customersLoading } = useCustomerDirectory();
+    const [selectedCustomer, setSelectedCustomer] = React.useState<CustomerOption | null>(null);
+    const selectedCustomerId = selectedCustomer?.id ?? null;
+    const {
+        data: customerDetail,
+        isFetching: customerDetailLoading,
+        error: customerDetailError,
+    } = useCustomerDetail(selectedCustomerId);
     const [shipmentTab, setShipmentTab] = React.useState(0);
     const [availableSensors, setAvailableSensors] = React.useState<Sensor[]>(initialAvailableSensors);
     const [assignedSensors, setAssignedSensors] = React.useState<Sensor[]>(initialAssignedSensors);
@@ -75,16 +203,154 @@ export default function CreateOrderPage() {
     const [sensorSearch, setSensorSearch] = React.useState("");
     const [shippingMethod, setShippingMethod] = React.useState("FedEx Ground");
     const [orderStatus, setOrderStatus] = React.useState("Processing");
-    const [terms, setTerms] = React.useState("Net 30");
+    const [specialConditions, setSpecialConditions] = React.useState("");
+    const [orderCategory, setOrderCategory] = React.useState("");
     const [shipmentStatus, setShipmentStatus] = React.useState("Approved");
     const [shipmentAccount, setShipmentAccount] = React.useState("Account 1");
     const [showWifiPassword, setShowWifiPassword] = React.useState(false);
+    const [customerPhone, setCustomerPhone] = React.useState("");
+    const [customerEmail, setCustomerEmail] = React.useState("");
+    const [customerBillingAddress, setCustomerBillingAddress] = React.useState("");
+    const [customerShippingAddress, setCustomerShippingAddress] = React.useState("");
+    const [customerContacts, setCustomerContacts] = React.useState<ContactOption[]>([]);
+    const [selectedContact, setSelectedContact] = React.useState<ContactOption | null>(null);
+    const [shippingComments, setShippingComments] = React.useState("");
+    const [processingComments, setProcessingComments] = React.useState("");
 
     const shippingMethodOptions = ["FedEx Ground", "FedEx 2Day", "UPS Ground", "DHL Express"];
     const orderStatusOptions = ["Draft", "Processing", "Fulfilled", "Shipped", "Closed"];
-    const termsOptions = ["Net 15", "Net 30", "Net 45", "Due on Receipt"];
+    const orderCategoryOptions = ["Standard", "Rush", "Replacement", "Maintenance"];
     const shipmentStatusOptions = ["Pending", "Approved", "In Transit", "Delivered", "Closed"];
     const shippingAccountOptions = ["Account 1", "Account 2", "Account 3"];
+
+    const customerOptions = React.useMemo(() => {
+        if (!customersData?.data) return [];
+        return customersData.data
+            .flatMap((company: any) => {
+                const companyId = company?.company_id != null ? String(company.company_id) : undefined;
+                const companyCustomers = Array.isArray(company?.data) ? company.data : [];
+                return companyCustomers.map((acc: any, idx: number) => {
+                    const phone =
+                        acc?.phone ??
+                        acc?.account_phone ??
+                        acc?.primary_phone ??
+                        acc?.contact_phone ??
+                        "";
+                    const email =
+                        acc?.email ??
+                        acc?.account_email ??
+                        acc?.primary_email ??
+                        acc?.contact_email ??
+                        "";
+                    const billingAddress =
+                        formatAddress(acc?.billing_address) ??
+                        formatAddress(acc?.accountAddress?.billingAddress) ??
+                        formatAddress(acc?.billingAddress);
+                    const contacts = mapContacts(acc?.contacts ?? []);
+
+                    return {
+                        id: String(acc?.id ?? acc?.account_id ?? acc?.accountId ?? `${companyId ?? "company"}-${idx}`),
+                        name: String(acc?.name ?? acc?.account_name ?? "Unnamed Customer"),
+                        phone,
+                        email,
+                        billingAddress,
+                        shippingAddress:
+                            formatAddress(acc?.shipping_address) ??
+                            formatAddress(acc?.accountAddress?.shippingAddress) ??
+                            formatAddress(acc?.shippingAddress),
+                        companyId,
+                        contacts: contacts.length ? contacts : undefined,
+                        raw: acc,
+                    } as CustomerOption;
+                });
+            })
+            .filter((option: CustomerOption) => option.name.trim().length > 0);
+    }, [customersData]);
+
+    const filteredCustomerOptions = React.useMemo(() => {
+        if (!selectedCompanyId || selectedCompanyId === "all") return customerOptions;
+        return customerOptions.filter((option) => option.companyId === String(selectedCompanyId));
+    }, [customerOptions, selectedCompanyId]);
+
+    const handleCustomerSelect = React.useCallback(
+        (_event: React.SyntheticEvent, newValue: CustomerOption | null) => {
+            setSelectedCustomer(newValue);
+            const initialContacts = newValue?.contacts ?? [];
+            setCustomerContacts(initialContacts);
+            if (newValue) {
+                setCustomerPhone(newValue.phone ?? "");
+                setCustomerEmail(newValue.email ?? "");
+                setCustomerBillingAddress(newValue.billingAddress ?? "");
+                setCustomerShippingAddress(newValue.shippingAddress ?? "");
+                const firstContact = initialContacts[0];
+                setSelectedContact(firstContact ?? null);
+            } else {
+                setCustomerPhone("");
+                setCustomerEmail("");
+                setCustomerBillingAddress("");
+                setCustomerShippingAddress("");
+                setSelectedContact(null);
+                setCustomerContacts([]);
+            }
+        },
+        []
+    );
+
+    React.useEffect(() => {
+        if (!selectedCustomer) return;
+        const stillExists = filteredCustomerOptions.some((option) => option.id === selectedCustomer.id);
+        if (!stillExists) {
+            setSelectedCustomer(null);
+            setCustomerPhone("");
+            setCustomerEmail("");
+            setCustomerBillingAddress("");
+            setCustomerShippingAddress("");
+            setSelectedContact(null);
+            setCustomerContacts([]);
+        }
+    }, [filteredCustomerOptions, selectedCustomer]);
+
+    React.useEffect(() => {
+        if (!customerDetail) return;
+        const phone =
+            customerDetail.account_phone ??
+            customerDetail.phone ??
+            customerDetail.contact_phone ??
+            customerDetail.primary_phone ??
+            customerDetail.mobile ??
+            "";
+        const email =
+            customerDetail.account_email ??
+            customerDetail.email ??
+            customerDetail.contact_email ??
+            customerDetail.primary_email ??
+            customerDetail.work_email ??
+            "";
+        const billingAddressData =
+            customerDetail.billing_address ??
+            customerDetail.accountAddress?.billingAddress ??
+            customerDetail.billingAddress ??
+            null;
+        const shippingAddressData =
+            customerDetail.shipping_address ??
+            customerDetail.accountAddress?.shippingAddress ??
+            customerDetail.shippingAddress ??
+            null;
+
+        setCustomerPhone(phone ?? "");
+        setCustomerEmail(email ?? "");
+        setCustomerBillingAddress(formatAddress(billingAddressData));
+        setCustomerShippingAddress(formatAddress(shippingAddressData));
+
+        const detailContacts = mapContacts(customerDetail.contacts ?? []);
+        setCustomerContacts(detailContacts);
+        setSelectedContact((prev) => {
+            if (detailContacts.length === 0) return null;
+            if (!prev) return detailContacts[0];
+            const existing = detailContacts.find((contact) => contact.id === prev.id);
+            return existing ?? detailContacts[0];
+        });
+    }, [customerDetail]);
 
     const handleCancel = React.useCallback(() => {
         router.push("/dashboard/orders");
@@ -94,15 +360,53 @@ export default function CreateOrderPage() {
         const payload = {
             shippingMethod,
             orderStatus,
-            terms,
+            specialConditions,
+            orderCategory,
             shipmentStatus,
             shipmentAccount,
             assignedSensors,
+            customer: {
+                id: selectedCustomer?.id ?? null,
+                name: selectedCustomer?.name ?? "",
+                phone: customerPhone,
+                email: customerEmail,
+                billingAddress: customerBillingAddress,
+                shippingAddress: customerShippingAddress,
+                contact: selectedContact
+                    ? {
+                          id: selectedContact.id,
+                          name: selectedContact.name,
+                          phone: selectedContact.phone ?? "",
+                          email: selectedContact.email ?? "",
+                      }
+                    : null,
+            },
+            notes: {
+                shippingComments,
+                processingComments,
+            },
         };
         console.log("Saving order draft:", payload);
         alert("Order saved successfully.");
         router.push("/dashboard/orders");
-    }, [assignedSensors, orderStatus, router, shipmentAccount, shipmentStatus, shippingMethod, terms]);
+    }, [
+        assignedSensors,
+        customerBillingAddress,
+        customerEmail,
+        customerShippingAddress,
+        customerPhone,
+        orderStatus,
+        router,
+        selectedCustomer,
+        selectedContact,
+        shipmentAccount,
+        shippingComments,
+        processingComments,
+        shipmentStatus,
+        shippingMethod,
+        specialConditions,
+        orderCategory,
+    ]);
 
     const toggleSelect = React.useCallback(
         (id: string, type: "available" | "assigned") => {
@@ -236,72 +540,236 @@ export default function CreateOrderPage() {
                                 gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
                             }}
                         >
-                            <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                                <Typography variant="subtitle2">Customer Details</Typography>
-                                <Stack spacing={1.5}>
-                                    <TextField fullWidth size="small" label="Customer Name" />
-                                    <TextField fullWidth size="small" label="Customer Phone" />
-                                    <TextField fullWidth size="small" label="Customer Email" />
-                                    <TextField fullWidth size="small" label="Billing Address" multiline minRows={2} />
-                                </Stack>
+                                <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+                                    <Typography variant="subtitle2">Customer Details</Typography>
+                                    <Stack spacing={1.5}>
+                                        <TextField fullWidth size="small" label="Order Subject" />
+                                        <Autocomplete
+                                            size="small"
+                                            options={filteredCustomerOptions}
+                                            value={selectedCustomer}
+                                            onChange={handleCustomerSelect}
+                                            loading={customersLoading}
+                                            disableClearable={false}
+                                            isOptionEqualToValue={(option, value) => option.id === value.id}
+                                            getOptionLabel={(option) => option?.name ?? ""}
+                                            renderInput={(params) => (
+                                                <TextField
+                                                    {...params}
+                                                    label="Customer Name"
+                                                    size="small"
+                                                    InputProps={{
+                                                        ...params.InputProps,
+                                                        endAdornment: (
+                                                            <>
+                                                                {customersLoading ? <CircularProgress color="inherit" size={16} /> : null}
+                                                                {params.InputProps.endAdornment}
+                                                            </>
+                                                        ),
+                                                    }}
+                                                />
+                                            )}
+                                        />
+                                        {customerDetailLoading && selectedCustomer ? (
+                                            <Typography variant="caption" color="text.secondary">
+                                                Loading latest customer details…
+                                            </Typography>
+                                        ) : null}
+                                        {customerDetailError ? (
+                                            <Typography variant="caption" color="error">
+                                                Unable to refresh customer details. Using existing data.
+                                            </Typography>
+                                        ) : null}
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Customer Phone"
+                                            value={customerPhone}
+                                            onChange={(event) => setCustomerPhone(event.target.value)}
+                                            InputProps={{
+                                                endAdornment: customerDetailLoading ? (
+                                                    <InputAdornment position="end">
+                                                        <CircularProgress size={16} />
+                                                    </InputAdornment>
+                                                ) : undefined,
+                                            }}
+                                        />
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Customer Email"
+                                            value={customerEmail}
+                                            onChange={(event) => setCustomerEmail(event.target.value)}
+                                            InputProps={{
+                                                endAdornment: customerDetailLoading ? (
+                                                    <InputAdornment position="end">
+                                                        <CircularProgress size={16} />
+                                                    </InputAdornment>
+                                                ) : undefined,
+                                            }}
+                                        />
+                                        <Autocomplete
+                                            size="small"
+                                            options={customerContacts}
+                                            value={selectedContact}
+                                            onChange={(_, contact) => setSelectedContact(contact)}
+                                            getOptionLabel={(option) => option?.name ?? ""}
+                                            isOptionEqualToValue={(option, value) => option.id === value.id}
+                                            renderInput={(params) => <TextField {...params} label="Contact Name" size="small" />}
+                                            disabled={customerContacts.length === 0}
+                                        />
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Contact Phone"
+                                            value={selectedContact?.phone ?? ""}
+                                            InputProps={{ readOnly: true }}
+                                        />
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Contact Email"
+                                            value={selectedContact?.email ?? ""}
+                                            InputProps={{ readOnly: true }}
+                                        />
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Billing Address"
+                                            multiline
+                                            minRows={3}
+                                            value={customerBillingAddress}
+                                            onChange={(event) => setCustomerBillingAddress(event.target.value)}
+                                            InputProps={{
+                                                endAdornment: customerDetailLoading ? (
+                                                    <InputAdornment position="end">
+                                                        <CircularProgress size={16} />
+                                                    </InputAdornment>
+                                                ) : undefined,
+                                            }}
+                                        />
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Shipping Address"
+                                            multiline
+                                            minRows={3}
+                                            value={customerShippingAddress}
+                                            onChange={(event) => setCustomerShippingAddress(event.target.value)}
+                                            InputProps={{
+                                                endAdornment: customerDetailLoading ? (
+                                                    <InputAdornment position="end">
+                                                        <CircularProgress size={16} />
+                                                    </InputAdornment>
+                                                ) : undefined,
+                                            }}
+                                        />
+                                    </Stack>
                             </Box>
-                            <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                                <Typography variant="subtitle2">Order Details</Typography>
-                                <Box
-                                    sx={{
-                                        display: "grid",
-                                        gap: 1.5,
-                                        gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
-                                    }}
-                                >
-                                    <TextField fullWidth size="small" label="Due Date" type="date" InputLabelProps={{ shrink: true }} />
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel id="shipping-method-label">Shipping Method</InputLabel>
-                                        <Select
-                                            labelId="shipping-method-label"
-                                            label="Shipping Method"
-                                            value={shippingMethod}
-                                            onChange={(event) => setShippingMethod(event.target.value as string)}
-                                        >
-                                            {shippingMethodOptions.map((option) => (
-                                                <MenuItem key={option} value={option}>
-                                                    {option}
-                                                </MenuItem>
-                                            ))}
-                                        </Select>
-                                    </FormControl>
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel id="order-status-label">Status</InputLabel>
-                                        <Select
-                                            labelId="order-status-label"
-                                            label="Status"
-                                            value={orderStatus}
-                                            onChange={(event) => setOrderStatus(event.target.value as string)}
-                                        >
-                                            {orderStatusOptions.map((option) => (
-                                                <MenuItem key={option} value={option}>
-                                                    {option}
-                                                </MenuItem>
-                                            ))}
-                                        </Select>
-                                    </FormControl>
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel id="terms-label">Terms &amp; Conditions</InputLabel>
-                                        <Select
-                                            labelId="terms-label"
-                                            label="Terms & Conditions"
-                                            value={terms}
-                                            onChange={(event) => setTerms(event.target.value as string)}
-                                        >
-                                            {termsOptions.map((option) => (
-                                                <MenuItem key={option} value={option}>
-                                                    {option}
-                                                </MenuItem>
-                                            ))}
-                                        </Select>
-                                    </FormControl>
+                                <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+                                    <Typography variant="subtitle2">Order Details</Typography>
+                                    <Box
+                                        sx={{
+                                            display: "grid",
+                                            gap: 1.5,
+                                            gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                                        }}
+                                    >
+                                        <TextField fullWidth size="small" label="Purchase Order" />
+                                        <TextField fullWidth size="small" label="Quote Name" />
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Shipping Account"
+                                            value={shipmentAccount}
+                                            onChange={(event) => setShipmentAccount(event.target.value)}
+                                        />
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel id="order-category-label">Order Category</InputLabel>
+                                            <Select
+                                                labelId="order-category-label"
+                                                label="Order Category"
+                                                value={orderCategory}
+                                                onChange={(event) => setOrderCategory(event.target.value as string)}
+                                            >
+                                                {orderCategoryOptions.map((option) => (
+                                                    <MenuItem key={option} value={option}>
+                                                        {option}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                        </FormControl>
+                                        <TextField fullWidth size="small" label="Due Date" type="date" InputLabelProps={{ shrink: true }} />
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel id="shipping-method-label">Shipping Method</InputLabel>
+                                            <Select
+                                                labelId="shipping-method-label"
+                                                label="Shipping Method"
+                                                value={shippingMethod}
+                                                onChange={(event) => setShippingMethod(event.target.value as string)}
+                                            >
+                                                {shippingMethodOptions.map((option) => (
+                                                    <MenuItem key={option} value={option}>
+                                                        {option}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                        </FormControl>
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel id="order-status-label">Status</InputLabel>
+                                            <Select
+                                                labelId="order-status-label"
+                                                label="Status"
+                                                value={orderStatus}
+                                                onChange={(event) => setOrderStatus(event.target.value as string)}
+                                            >
+                                                {orderStatusOptions.map((option) => (
+                                                    <MenuItem key={option} value={option}>
+                                                        {option}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                        </FormControl>
+                                    </Box>
+                                    <Box
+                                        sx={{
+                                            display: "grid",
+                                            gap: 1.5,
+                                            gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                                        }}
+                                    >
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Special Conditions"
+                                            multiline
+                                            minRows={3}
+                                            value={specialConditions}
+                                            onChange={(event) => setSpecialConditions(event.target.value)}
+                                            sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
+                                        />
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Shipping Comments"
+                                            multiline
+                                            minRows={4}
+                                            value={shippingComments}
+                                            onChange={(event) => setShippingComments(event.target.value)}
+                                            sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
+                                        />
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Processing Comments"
+                                            multiline
+                                            minRows={4.5}
+                                            value={processingComments}
+                                            onChange={(event) => setProcessingComments(event.target.value)}
+                                            sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
+                                        />
+                                    </Box>
                                 </Box>
-                            </Box>
                         </Box>
                     </Box>
 
