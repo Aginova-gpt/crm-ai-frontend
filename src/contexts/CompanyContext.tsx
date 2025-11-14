@@ -15,6 +15,7 @@ type CompanyContextType = {
   selectedCompanyName: string | null;
   isLoading: boolean;
   error: string | null;
+  userCompanyId: string | null;
 };
 
 const CompanyContext = createContext<CompanyContextType | undefined>(undefined);
@@ -40,10 +41,16 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [userCompanyId, setUserCompanyId] = useState<string | null>(null);
 
   // 1) First-run: restore selection OR default from JWT
   useEffect(() => {
-    // If already set, do nothing
+    const claims = decodeJwtPayload(token ?? localStorage.getItem("token"));
+    const cid = claims?.company_id;
+    const cidstr = cid ? String(cid) : null;
+
+    setUserCompanyId(cidstr);
+    
     if (selectedCompanyId) return;
 
     const saved = localStorage.getItem("selectedCompanyId");
@@ -51,13 +58,10 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setSelectedCompanyId(saved);
       return;
     }
-
-    // Default from JWT claim company_id
-    const claims = decodeJwtPayload(token ?? localStorage.getItem("token"));
-    const cid = claims?.company_id;
-    const initial = cid ? String(cid) : "all";
-    setSelectedCompanyId(initial);
-    localStorage.setItem("selectedCompanyId", initial);
+    if(cidstr) {
+      setSelectedCompanyId(cidstr);
+      localStorage.setItem("selectedCompanyId", cidstr);
+    }
   }, [token, selectedCompanyId]);
 
   // 2) Fetch companies list when logged in
@@ -75,19 +79,23 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (!Array.isArray(data?.companies)) {
           throw new Error("Invalid response structure from backend");
         }
+        const list: Company[] = data.companies.map((c: any) => ({ id: String(c.id), name: c.name }));
 
-        const list: Company[] = [
-          { id: "all", name: "All" },
-          ...data.companies.map((c: any) => ({ id: String(c.id), name: c.name })),
-        ];
         setCompanies(list);
 
         // If the current selection doesn't exist in list, fall back to "all"
-        const current = (selectedCompanyId ?? localStorage.getItem("selectedCompanyId")) || "all";
-        const exists = list.some((c) => c.id === current);
+        let current = selectedCompanyId ?? localStorage.getItem("selectedCompanyId");
+        if(!current) {
+          current = userCompanyId;
+        }
+
+        const exists = current && list.some((c) => c.id === current);
         if (!exists) {
-          setSelectedCompanyId("all");
-          localStorage.setItem("selectedCompanyId", "all");
+          current = list.length > 0 ? list[0].id : null;
+        }
+        if(current) {
+          setSelectedCompanyId(current);
+          localStorage.setItem("selectedCompanyId", current);
         }
       } catch (err: any) {
         console.error("❌ Failed to fetch companies:", err);
@@ -98,7 +106,7 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
 
     fetchCompanies();
-  }, [isLoggedIn]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isLoggedIn, userCompanyId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 3) Persist selection on change
   useEffect(() => {
@@ -111,9 +119,7 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const selectedCompanyName = useMemo(() => {
     if (!selectedCompanyId) return null;
     const found = companies.find((c) => c.id === selectedCompanyId);
-    if (found) return found.name;
-    if (selectedCompanyId === "all") return "All";
-    return null;
+    return found ? found.name : null;
   }, [companies, selectedCompanyId]);
 
   return (
@@ -125,6 +131,7 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
         selectedCompanyName,
         isLoading,
         error,
+        userCompanyId,
       }}
     >
       {children}
