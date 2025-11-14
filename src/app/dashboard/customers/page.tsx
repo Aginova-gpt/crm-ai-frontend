@@ -31,6 +31,7 @@ import { useCompany } from "@/contexts/CompanyContext";
 import Image from "next/image";
 import { addAsset } from "@/styles/icons";
 import { useRouter } from "next/navigation";
+import { useProfile } from "@/contexts/ProfileContext";
 
 const GRID_COLS = "repeat(11, minmax(110px, 1fr))";
 const HEADER_MIN_WIDTH = 11 * 110;
@@ -119,7 +120,12 @@ export default function CustomersPage() {
     selectedCompanyId,
     setSelectedCompanyId,
     isLoading: companyLoading,
+    userCompanyId,
   } = useCompany();
+  const { isAdmin } = useProfile();
+
+  const effectiveCompanyId = useMemo(() => (isAdmin ? selectedCompanyId : userCompanyId),
+    [isAdmin, selectedCompanyId, userCompanyId]);
 
   // 🧠 Fetch Customers for all companies
   const { data, isLoading, error } = useCustomers();
@@ -152,10 +158,10 @@ export default function CustomersPage() {
 
   // 🏢 Filter by company (or show all)
   const filteredByCompany = useMemo(() => {
-    if (!selectedCompanyId || selectedCompanyId === "all") return allCustomers;
-    const selected = String(selectedCompanyId);
+    if (!effectiveCompanyId) return allCustomers;
+    const selected = String(effectiveCompanyId);
     return allCustomers.filter((c) => String(c.company_id) === selected);
-  }, [allCustomers, selectedCompanyId]);
+  }, [allCustomers, effectiveCompanyId]);
 
   // 🔍 Apply search + status filters on top of company filter
   const filtered = useMemo(() => {
@@ -173,7 +179,7 @@ export default function CustomersPage() {
         return match && parseInt(match[1]) > 0;
       });
     }
-    
+
 
     // ✅ Apply search
     if (searchQuery.trim()) {
@@ -196,7 +202,7 @@ export default function CustomersPage() {
       const match = c.openOrders?.match(/\((\d+)\)/);
       return match && parseInt(match[1]) > 0;
     }).length;
-    
+
     const customersWithQuotes = filteredByCompany.filter((c) => {
       const match = c.openQuotes?.match(/\((\d+)\)/);
       return match && parseInt(match[1]) > 0;
@@ -238,11 +244,13 @@ export default function CustomersPage() {
   // 🧾 Dynamic summary (global or per company)
   const currentSummary = useMemo(() => {
     if (!data?.data) return null;
-    if (!selectedCompanyId || selectedCompanyId === "all") return data.summary;
+    if (effectiveCompanyId)
+      return data.summary ?? null;
+
     return data.data.find(
-      (c: any) => String(c.company_id) === String(selectedCompanyId)
-    );
-  }, [data, selectedCompanyId]);
+      (c: any) => String(c.company_id) === String(effectiveCompanyId)
+    ) ?? data.summary ?? null;
+  }, [data, effectiveCompanyId]);
 
   // ===== Placeholder Actions =====
   const handleEditCustomer = (c: Customer) => {
@@ -252,7 +260,7 @@ export default function CustomersPage() {
     console.log("Delete clicked for:", c.name);
   };
   const handleAddCustomer = () => {
-    router.push(`/dashboard/customers/customerDetail/new`);  
+    router.push(`/dashboard/customers/customerDetail/new`);
   };
 
   return (
@@ -290,19 +298,32 @@ export default function CustomersPage() {
             <FormControl
               size="small"
               sx={{ minWidth: 200 }}
-              disabled={companyLoading || companies.length === 0}
+              disabled={companyLoading || companies.length === 0 || !isAdmin}
             >
               <InputLabel>Company</InputLabel>
               <Select
-                value={selectedCompanyId ?? ""}
+                value={effectiveCompanyId ?? ""}
                 label="Company"
-                onChange={(e) => setSelectedCompanyId(e.target.value || "all")}
+                onChange={(e) => {
+                  if (!isAdmin) return;
+                  setSelectedCompanyId(e.target.value || null);
+                }}
               >
-                {companies.map((c) => (
-                  <MenuItem key={c.id} value={c.id}>
-                    {c.name}
-                  </MenuItem>
-                ))}
+                {isAdmin
+                  ? // Admin: show all companies
+                  companies.map((c) => (
+                    <MenuItem key={c.id} value={c.id}>
+                      {c.name}
+                    </MenuItem>
+                  ))
+                  : // Non-admin: show only their own company (read-only)
+                  companies
+                    .filter((c) => c.id === userCompanyId)
+                    .map((c) => (
+                      <MenuItem key={c.id} value={c.id}>
+                        {c.name}
+                      </MenuItem>
+                    ))}
               </Select>
             </FormControl>
 
