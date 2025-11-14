@@ -33,7 +33,7 @@ import FormControl from "@mui/material/FormControl";
 import InputLabel from "@mui/material/InputLabel";
 import Select from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Autocomplete from "@mui/material/Autocomplete";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../../../../contexts/AuthContext";
@@ -186,6 +186,10 @@ const initialAvailableSensors = initialSensors.slice(8);
 
 export default function CreateOrderPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const orderIdFromUrl =
+        searchParams.get("orderId") ?? searchParams.get("orderID") ?? searchParams.get("orderid");
+    const showAdvancedSections = Boolean(orderIdFromUrl);
     const { selectedCompanyId } = useCompany();
     const { data: customersData, isLoading: customersLoading } = useCustomerDirectory();
     const [selectedCustomer, setSelectedCustomer] = React.useState<CustomerOption | null>(null);
@@ -834,151 +838,164 @@ export default function CreateOrderPage() {
                             </Tooltip>
                         </Paper>
                     </Box>
-
-                    <Divider />
-
-                    <Box>
-                        <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
-                            Setup Network Information
-                        </Typography>
-                        <Stack spacing={3}>
-                            <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                    1. WiFi Access Point Router
-                                </Typography>
-                                <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-                                    <TextField fullWidth size="small" label="Brand" />
-                                    <TextField fullWidth size="small" label="Model" />
-                                </Box>
-                            </Box>
-                            <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                    2. SSID of the WiFi network
-                                </Typography>
-                                <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-                                    <TextField fullWidth size="small" label="SSID 1" />
-                                    <TextField fullWidth size="small" label="Channel" />
-                                    <TextField fullWidth size="small" label="SSID 2" />
-                                    <TextField fullWidth size="small" label="Channel" />
-                                </Box>
-                            </Box>
-                            <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                    3. Level of security used in the network
-                                </Typography>
-                                <RadioGroup row defaultValue="open">
-                                    <FormControlLabel value="open" control={<Radio size="small" />} label="Open (None)" />
-                                    <FormControlLabel value="wpa2" control={<Radio size="small" />} label="WPA2-802.1x" />
-                                    <FormControlLabel value="psk" control={<Radio size="small" />} label="WPA2-PSK" />
-                                    <FormControlLabel value="others" control={<Radio size="small" />} label="Others" />
-                                </RadioGroup>
-                                <Box
-                                    sx={{
-                                        display: "grid",
-                                        gap: 2,
-                                        gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
-                                        mt: 1,
-                                    }}
-                                >
-                                    <TextField fullWidth size="small" label="Username" />
-                                    <TextField
-                                        fullWidth
-                                        size="small"
-                                        label="Password"
-                                        type={showWifiPassword ? "text" : "password"}
-                                        autoComplete="new-password"
-                                        InputProps={{
-                                            endAdornment: (
-                                                <InputAdornment position="end">
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={() => setShowWifiPassword((prev) => !prev)}
-                                                        onMouseDown={(event) => event.preventDefault()}
-                                                    >
-                                                        {showWifiPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                                                    </IconButton>
-                                                </InputAdornment>
-                                            ),
-                                        }}
-                                    />
-                                </Box>
-                            </Box>
-                            <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                    4. DHCP
-                                </Typography>
-                                <RadioGroup row defaultValue="yes">
-                                    <FormControlLabel value="yes" control={<Radio size="small" />} label="Yes (Recommended)" />
-                                    <FormControlLabel value="no" control={<Radio size="small" />} label="No" />
-                                </RadioGroup>
-                            </Box>
-                            <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                    5. WiFi Access Point IP
-                                </Typography>
-                                <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-                                    <TextField fullWidth size="small" label="IP Address" />
-                                    <TextField fullWidth size="small" label="Netmask" />
-                                </Box>
-                            </Box>
-                            <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                    6. Web Portal Server
-                                </Typography>
-                                <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-                                    <TextField fullWidth size="small" label="IP Address" />
-                                    <TextField fullWidth size="small" label="Netmask" />
-                                </Box>
-                            </Box>
-                            <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                    7. Sensor IP
-                                </Typography>
-                                <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-                                    <TextField fullWidth size="small" label="Starting IP" />
-                                    <TextField fullWidth size="small" label="Ending IP" />
-                                </Box>
-                            </Box>
-                            <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                    8. DNS
-                                </Typography>
-                                <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-                                    <TextField fullWidth size="small" label="Primary DNS" />
-                                    <TextField fullWidth size="small" label="Secondary DNS" />
-                                </Box>
-                            </Box>
-                            <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                    9. Comments
-                                </Typography>
-                                <TextField fullWidth size="small" multiline minRows={3} placeholder="Add any additional comments" />
-                            </Box>
-                            <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                    Upload Setup Document
-                                </Typography>
-                                <Button variant="outlined" component="label" startIcon={<CloudUpload />}>
-                                    Choose File
-                                    <input hidden type="file" />
-                                </Button>
-                            </Box>
-                        </Stack>
-                    </Box>
                 </Paper>
 
-                <Paper
-                    elevation={0}
-                    sx={{
-                        bgcolor: "#FFFFFF",
-                        borderRadius: 1,
-                        border: "1px solid",
-                        borderColor: "divider",
-                        overflow: "hidden",
-                        display: "flex",
-                        flexDirection: "column",
-                    }}
-                >
+                {showAdvancedSections && (
+                    <Paper
+                        elevation={0}
+                        sx={{
+                            bgcolor: "#FFFFFF",
+                            borderRadius: 1,
+                            p: 3,
+                            border: "1px solid",
+                            borderColor: "divider",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 3,
+                        }}
+                    >
+                    <Typography variant="h6" fontWeight={600}>
+                        Setup Network Information
+                    </Typography>
+                    <Stack spacing={3}>
+                        <Box>
+                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                                1. WiFi Access Point Router
+                            </Typography>
+                            <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
+                                <TextField fullWidth size="small" label="Brand" />
+                                <TextField fullWidth size="small" label="Model" />
+                            </Box>
+                        </Box>
+                        <Box>
+                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                                2. SSID of the WiFi network
+                            </Typography>
+                            <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
+                                <TextField fullWidth size="small" label="SSID 1" />
+                                <TextField fullWidth size="small" label="Channel" />
+                                <TextField fullWidth size="small" label="SSID 2" />
+                                <TextField fullWidth size="small" label="Channel" />
+                            </Box>
+                        </Box>
+                        <Box>
+                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                                3. Level of security used in the network
+                            </Typography>
+                            <RadioGroup row defaultValue="open">
+                                <FormControlLabel value="open" control={<Radio size="small" />} label="Open (None)" />
+                                <FormControlLabel value="wpa2" control={<Radio size="small" />} label="WPA2-802.1x" />
+                                <FormControlLabel value="psk" control={<Radio size="small" />} label="WPA2-PSK" />
+                                <FormControlLabel value="others" control={<Radio size="small" />} label="Others" />
+                            </RadioGroup>
+                            <Box
+                                sx={{
+                                    display: "grid",
+                                    gap: 2,
+                                    gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                                    mt: 1,
+                                }}
+                            >
+                                <TextField fullWidth size="small" label="Username" />
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Password"
+                                    type={showWifiPassword ? "text" : "password"}
+                                    autoComplete="new-password"
+                                    InputProps={{
+                                        endAdornment: (
+                                            <InputAdornment position="end">
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => setShowWifiPassword((prev) => !prev)}
+                                                    onMouseDown={(event) => event.preventDefault()}
+                                                >
+                                                    {showWifiPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                                                </IconButton>
+                                            </InputAdornment>
+                                        ),
+                                    }}
+                                />
+                            </Box>
+                        </Box>
+                        <Box>
+                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                                4. DHCP
+                            </Typography>
+                            <RadioGroup row defaultValue="yes">
+                                <FormControlLabel value="yes" control={<Radio size="small" />} label="Yes (Recommended)" />
+                                <FormControlLabel value="no" control={<Radio size="small" />} label="No" />
+                            </RadioGroup>
+                        </Box>
+                        <Box>
+                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                                5. WiFi Access Point IP
+                            </Typography>
+                            <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
+                                <TextField fullWidth size="small" label="IP Address" />
+                                <TextField fullWidth size="small" label="Netmask" />
+                            </Box>
+                        </Box>
+                        <Box>
+                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                                6. Web Portal Server
+                            </Typography>
+                            <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
+                                <TextField fullWidth size="small" label="IP Address" />
+                                <TextField fullWidth size="small" label="Netmask" />
+                            </Box>
+                        </Box>
+                        <Box>
+                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                                7. Sensor IP
+                            </Typography>
+                            <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
+                                <TextField fullWidth size="small" label="Starting IP" />
+                                <TextField fullWidth size="small" label="Ending IP" />
+                            </Box>
+                        </Box>
+                        <Box>
+                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                                8. DNS
+                            </Typography>
+                            <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
+                                <TextField fullWidth size="small" label="Primary DNS" />
+                                <TextField fullWidth size="small" label="Secondary DNS" />
+                            </Box>
+                        </Box>
+                        <Box>
+                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                                9. Comments
+                            </Typography>
+                            <TextField fullWidth size="small" multiline minRows={3} placeholder="Add any additional comments" />
+                        </Box>
+                        <Box>
+                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                                Upload Setup Document
+                            </Typography>
+                            <Button variant="outlined" component="label" startIcon={<CloudUpload />}>
+                                Choose File
+                                <input hidden type="file" />
+                            </Button>
+                        </Box>
+                    </Stack>
+                    </Paper>
+                )}
+
+                {showAdvancedSections && (
+                    <Paper
+                        elevation={0}
+                        sx={{
+                            bgcolor: "#FFFFFF",
+                            borderRadius: 1,
+                            border: "1px solid",
+                            borderColor: "divider",
+                            overflow: "hidden",
+                            display: "flex",
+                            flexDirection: "column",
+                        }}
+                    >
                     <Box sx={{ px: 3, pt: 3, pb: 2 }}>
                         <Typography variant="h6" fontWeight={600}>
                             Processing and Shipping
@@ -1240,7 +1257,8 @@ export default function CreateOrderPage() {
                             <Typography variant="body2">Content for this tab will be available soon.</Typography>
                         </Box>
                     )}
-                </Paper>
+                    </Paper>
+                )}
             </Box>
         </Box>
     );
