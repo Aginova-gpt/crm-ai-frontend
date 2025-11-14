@@ -3,12 +3,18 @@
 import React, { createContext, useContext, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 
+type CoalitionSummary = {
+  id: number | string;
+  name?: string | null;
+};
+
 type ProfileData = {
   email: string | null;
   role: string | null;
   user_id?: number | string | null;
   company_id?: number | string | null;
   name?: string | null;
+  coalition?: CoalitionSummary | null; // 👈 added
 };
 
 type ProfileContextType = {
@@ -31,19 +37,42 @@ function decodeJwtPayload(token: string | null): any | null {
 
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined);
 
-export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const { token, email, isLoading: authLoading, isLoggedIn } = useAuth();
 
   const claims = useMemo(() => decodeJwtPayload(token), [token]);
 
   const profileData: ProfileData | undefined = useMemo(() => {
     if (!isLoggedIn || !claims) return undefined;
+
+    // Try to derive coalition info from common claim shapes, but keep it optional
+    const coalitionId =
+      claims.coalition?.id ??
+      claims.coalition_id ??
+      claims.coalitionId ??
+      null;
+
+    const coalitionName =
+      claims.coalition?.name ??
+      claims.coalition_name ??
+      claims.coalitionName ??
+      null;
+
     return {
       email: email ?? claims.email ?? null,
-      role: claims.role ?? null,              // "admin" / "user" from your backend
+      role: claims.role ?? null, // "admin" / "user" from your backend
       user_id: claims.user_id ?? claims.sub ?? null,
       company_id: claims.company_id ?? null,
       name: claims.name ?? null,
+      coalition:
+        coalitionId != null
+          ? {
+              id: coalitionId,
+              name: coalitionName ?? null,
+            }
+          : null,
     };
   }, [claims, email, isLoggedIn]);
 
