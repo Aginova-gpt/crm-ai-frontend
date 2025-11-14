@@ -126,22 +126,13 @@ type BundleItem = {
 };
 
 // Payload we send to backend for each property
-type PropertyPayload =
-  | {
-      item_property_name_id: number;
-      property_value: string;
-      unit_id: number | undefined;
-    }
-  | {
-      item_property_name_id: number;
-      property_value: string;
-      unit_id: number | undefined;
-    }
-  | {
-      item_property_name_id: number;
-      property_value: string;
-      unit_id?: number;
-    };
+type PropertyPayload = {
+  item_property_name_id: number;
+  property_value: string;
+  unit_id: number | null;
+  unit_type: "weight" | "dimension" | null;
+};
+
 
 type ProductLookupResponse = {
   selections?: {
@@ -1041,39 +1032,58 @@ export default function AddProductPage() {
       properties.push({
         item_property_name_id: corePropertyNameIds.weight,
         property_value: weightValue.toString(),
-        unit_id: selectedWeightUnit?.id,
+        unit_id: selectedWeightUnit?.id ?? null,
+        unit_type: "weight",
       });
     }
-
+    
+    // Dimensions: length, width, height
     if (lengthValue != null && corePropertyNameIds.length) {
       properties.push({
         item_property_name_id: corePropertyNameIds.length,
         property_value: lengthValue.toString(),
-        unit_id: selectedDimensionUnit?.id,
+        unit_id: selectedDimensionUnit?.id ?? null,
+        unit_type: "dimension",
       });
     }
-
+    
     if (widthValue != null && corePropertyNameIds.width) {
       properties.push({
         item_property_name_id: corePropertyNameIds.width,
         property_value: widthValue.toString(),
-        unit_id: selectedDimensionUnit?.id,
+        unit_id: selectedDimensionUnit?.id ?? null,
+        unit_type: "dimension",
       });
     }
-
+    
     if (heightValue != null && corePropertyNameIds.height) {
       properties.push({
         item_property_name_id: corePropertyNameIds.height,
         property_value: heightValue.toString(),
-        unit_id: selectedDimensionUnit?.id,
+        unit_id: selectedDimensionUnit?.id ?? null,
+        unit_type: "dimension",
       });
     }
-
+    
+    // Bundle flag property (unit-less)
     if (isBundle && corePropertyNameIds.bundle) {
       properties.push({
         item_property_name_id: corePropertyNameIds.bundle,
         property_value: "1",
-        unit_id: undefined,
+        unit_id: null,
+        unit_type: null,
+      });
+    }
+    
+    // Extra company-specific properties (class, nmfc, labels, ... – all unit-less)
+    for (const prop of extraPropertyFields) {
+      const value = getTextValue(`prop_${prop.id}`);
+      if (!value) continue;
+      properties.push({
+        item_property_name_id: prop.id,
+        property_value: value,
+        unit_id: null,
+        unit_type: null,
       });
     }
 
@@ -1084,7 +1094,8 @@ export default function AddProductPage() {
       properties.push({
         item_property_name_id: prop.id,
         property_value: value,
-        unit_id: undefined,
+        unit_id: null,
+        unit_type: null,
       });
     }
 
