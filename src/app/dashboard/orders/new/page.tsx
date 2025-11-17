@@ -32,6 +32,7 @@ import { DeleteOutline, CloudUpload, Visibility, VisibilityOff } from "@mui/icon
 import FormControl from "@mui/material/FormControl";
 import InputLabel from "@mui/material/InputLabel";
 import Select from "@mui/material/Select";
+import type { SelectChangeEvent } from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
 import { useRouter, useSearchParams } from "next/navigation";
 import Autocomplete from "@mui/material/Autocomplete";
@@ -39,6 +40,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../../../../contexts/AuthContext";
 import { useBackend } from "../../../../contexts/BackendContext";
 import { useCompany } from "../../../../contexts/CompanyContext";
+import { useProfile } from "../../../../contexts/ProfileContext";
+import { useProducts } from "../../products/hooks/useProducts";
 
 type Sensor = {
     id: string;
@@ -65,6 +68,32 @@ type CustomerOption = {
     raw?: any;
 };
 
+type ProductOption = {
+    id: string;
+    name: string;
+    productNumber?: string;
+    description?: string;
+    listPrice?: number;
+    oemPrice?: number;
+    resellerPrice?: number;
+    hostingPrice?: number;
+    raw?: any;
+};
+
+type PriceType = "listPrice" | "oemPrice" | "resellerPrice" | "hostingPrice";
+
+type ProductRow = {
+    id: string;
+    product: ProductOption | null;
+    productCode: string;
+    productDescription: string;
+    productNotes: string;
+    priceType: PriceType;
+    productPrice: string;
+    productQuantity: string;
+    productTotal: string;
+};
+
 function useCustomerDirectory() {
     const { token, isLoggedIn } = useAuth();
     const { apiURL } = useBackend();
@@ -85,6 +114,10 @@ function useCustomerDirectory() {
         enabled: isLoggedIn && !!token,
         staleTime: 5 * 60 * 1000,
     });
+}
+
+function useProductDirectory(effectiveCompanyId: string | null) {
+    return useProducts(effectiveCompanyId, "products");
 }
 
 function useCustomerDetail(customerId: string | null) {
@@ -109,6 +142,29 @@ function useCustomerDetail(customerId: string | null) {
     });
 }
 
+function useProductDetail(productId: string | null) {
+    const { token, isLoggedIn } = useAuth();
+
+    return useQuery({
+        queryKey: ["product-detail", productId],
+        queryFn: async () => {
+            if (!productId) return null;
+            const res = await fetch(`http://34.58.37.44/api/get-product/${productId}`, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            });
+            if (!res.ok) {
+                if (res.status === 401) throw new Error("Unauthorized – please log in again");
+                if (res.status === 404) return null; // Product not found, return null instead of throwing
+                throw new Error(`Failed to fetch product detail: ${res.status}`);
+            }
+            return res.json();
+        },
+        enabled: isLoggedIn && !!token && !!productId,
+        staleTime: 0,
+        refetchOnWindowFocus: false,
+    });
+}
+
 function formatAddress(address: any): string {
     if (!address) return "";
     if (typeof address === "string") return address;
@@ -121,6 +177,34 @@ function formatAddress(address: any): string {
         address.country,
     ];
     return candidates.filter((part) => typeof part === "string" && part.trim().length > 0).join(", ");
+}
+
+function parseAddress(address: any): {
+    street: string;
+    poBox: string;
+    city: string;
+    state: string;
+    code: string;
+    country: string;
+} {
+    if (!address) {
+        return { street: "", poBox: "", city: "", state: "", code: "", country: "" };
+    }
+    if (typeof address === "string") {
+        // If it's a formatted string, try to parse it or return as street
+        return { street: address, poBox: "", city: "", state: "", code: "", country: "" };
+    }
+    if (typeof address !== "object") {
+        return { street: "", poBox: "", city: "", state: "", code: "", country: "" };
+    }
+    return {
+        street: address.street ?? address.address ?? address.line1 ?? "",
+        poBox: address.poBox ?? address.po_box ?? address.poBoxNumber ?? "",
+        city: address.city ?? "",
+        state: address.state ?? address.region ?? "",
+        code: address.postalcode ?? address.zip ?? address.postal_code ?? address.code ?? "",
+        country: address.country ?? "",
+    };
 }
 
 function mapContacts(rawContacts: any[]): ContactOption[] {
@@ -190,9 +274,33 @@ export default function CreateOrderPage() {
     const orderIdFromUrl =
         searchParams.get("orderId") ?? searchParams.get("orderID") ?? searchParams.get("orderid");
     const showAdvancedSections = Boolean(orderIdFromUrl);
-    const { selectedCompanyId } = useCompany();
+    const { selectedCompanyId, userCompanyId } = useCompany();
+    const { isAdmin } = useProfile();
+    const effectiveCompanyId = React.useMemo(() => (isAdmin ? selectedCompanyId : userCompanyId), [
+        isAdmin,
+        selectedCompanyId,
+        userCompanyId,
+    ]);
     const { data: customersData, isLoading: customersLoading } = useCustomerDirectory();
+    const { data: productsData, isLoading: productsLoading, error: productsError } = useProductDirectory(effectiveCompanyId);
+    const [orderSubject, setOrderSubject] = React.useState("");
+    const [orderSubjectError, setOrderSubjectError] = React.useState("");
+    const [customerNameError, setCustomerNameError] = React.useState("");
     const [selectedCustomer, setSelectedCustomer] = React.useState<CustomerOption | null>(null);
+    const [productRows, setProductRows] = React.useState<ProductRow[]>([
+        {
+            id: "1",
+            product: null,
+            productCode: "",
+            productDescription: "",
+            productNotes: "",
+            priceType: "listPrice",
+            productPrice: "",
+            productQuantity: "",
+            productTotal: "",
+        },
+    ]);
+    const [globalPriceType, setGlobalPriceType] = React.useState<PriceType>("listPrice");
     const selectedCustomerId = selectedCustomer?.id ?? null;
     const {
         data: customerDetail,
@@ -214,8 +322,20 @@ export default function CreateOrderPage() {
     const [showWifiPassword, setShowWifiPassword] = React.useState(false);
     const [customerPhone, setCustomerPhone] = React.useState("");
     const [customerEmail, setCustomerEmail] = React.useState("");
-    const [customerBillingAddress, setCustomerBillingAddress] = React.useState("");
-    const [customerShippingAddress, setCustomerShippingAddress] = React.useState("");
+    // Billing address fields
+    const [billingAddress, setBillingAddress] = React.useState("");
+    const [billingPOBox, setBillingPOBox] = React.useState("");
+    const [billingCity, setBillingCity] = React.useState("");
+    const [billingState, setBillingState] = React.useState("");
+    const [billingCode, setBillingCode] = React.useState("");
+    const [billingCountry, setBillingCountry] = React.useState("");
+    // Shipping address fields
+    const [shippingAddress, setShippingAddress] = React.useState("");
+    const [shippingPOBox, setShippingPOBox] = React.useState("");
+    const [shippingCity, setShippingCity] = React.useState("");
+    const [shippingState, setShippingState] = React.useState("");
+    const [shippingCode, setShippingCode] = React.useState("");
+    const [shippingCountry, setShippingCountry] = React.useState("");
     const [customerContacts, setCustomerContacts] = React.useState<ContactOption[]>([]);
     const [selectedContact, setSelectedContact] = React.useState<ContactOption | null>(null);
     const [shippingComments, setShippingComments] = React.useState("");
@@ -276,6 +396,249 @@ export default function CreateOrderPage() {
         return customerOptions.filter((option) => option.companyId === String(selectedCompanyId));
     }, [customerOptions, selectedCompanyId]);
 
+    const productOptions = React.useMemo(() => {
+        if (!productsData) return [];
+        const options: ProductOption[] = [];
+        const seenIds = new Set<string>();
+
+        const pushProduct = (p: any) => {
+            if (!p) return;
+            const id = String(p.product_id ?? p.id ?? "");
+            const name = p.internal_name ?? p.product_name ?? p.name ?? "";
+            const productNumber = p.product_number ?? p.productNumber ?? "";
+            const description = p.description ?? "";
+            const listPrice = typeof p.list_price === "number" ? p.list_price : typeof p.listPrice === "number" ? p.listPrice : undefined;
+            const oemPrice = typeof p.oem_price === "number" ? p.oem_price : typeof p.oemPrice === "number" ? p.oemPrice : undefined;
+            const resellerPrice = typeof p.reseller_price === "number" ? p.reseller_price : typeof p.resellerPrice === "number" ? p.resellerPrice : undefined;
+            const hostingPrice = typeof p.hosting_price === "number" ? p.hosting_price : typeof p.hostingPrice === "number" ? p.hostingPrice : undefined;
+
+            // Skip if no id or name, or if we've already seen this id
+            if (!id || !name || seenIds.has(id)) return;
+
+            seenIds.add(id);
+            options.push({
+                id,
+                name,
+                productNumber,
+                description,
+                listPrice,
+                oemPrice,
+                resellerPrice,
+                hostingPrice,
+                raw: p,
+            });
+        };
+
+        // Shape A: { products: [...] }
+        if (productsData.products && Array.isArray(productsData.products)) {
+            productsData.products.forEach(pushProduct);
+        }
+        // Shape B: { data: [{ company_id, company_name, products: [...] }, ...] }
+        else if (productsData.data && Array.isArray(productsData.data)) {
+            productsData.data.forEach((group: any) => {
+                if (group && Array.isArray(group.products)) {
+                    group.products.forEach(pushProduct);
+                }
+            });
+        }
+        // Shape C: direct array
+        else if (Array.isArray(productsData)) {
+            productsData.forEach(pushProduct);
+        }
+
+        return options;
+    }, [productsData]);
+
+    // Helper function to get price from product
+    const getProductPrice = React.useCallback((product: ProductOption, type: PriceType): number | undefined => {
+        let price: number | undefined = undefined;
+        
+        // Try from productOption first
+        price = product[type];
+        
+        // If not found, try from raw data
+        if ((price === undefined || price === null) && product.raw) {
+            const raw = product.raw;
+            switch (type) {
+                case "listPrice":
+                    price = raw.list_price ?? raw.listPrice ?? raw.listPrice_value ?? raw.price ?? undefined;
+                    break;
+                case "oemPrice":
+                    price = raw.oem_price ?? raw.oemPrice ?? raw.oemPrice_value ?? undefined;
+                    break;
+                case "resellerPrice":
+                    price = raw.reseller_price ?? raw.resellerPrice ?? raw.resellerPrice_value ?? undefined;
+                    break;
+                case "hostingPrice":
+                    price = raw.hosting_price ?? raw.hostingPrice ?? raw.hostingPrice_value ?? undefined;
+                    break;
+            }
+        }
+        
+        // Convert string prices to numbers if needed
+        if (typeof price === "string") {
+            const parsed = parseFloat(price);
+            price = isNaN(parsed) ? undefined : parsed;
+        }
+        
+        return price !== undefined && price !== null && typeof price === "number" && !isNaN(price) ? price : undefined;
+    }, []);
+
+    // Helper function to calculate total
+    const calculateRowTotal = React.useCallback((price: string, quantity: string): string => {
+        const priceNum = parseFloat(price) || 0;
+        const quantityNum = parseFloat(quantity) || 0;
+        const total = priceNum * quantityNum;
+        return total > 0 ? total.toFixed(2) : "";
+    }, []);
+
+    // Update a specific product row
+    const updateProductRow = React.useCallback((rowId: string, updates: Partial<ProductRow>) => {
+        setProductRows((prevRows) =>
+            prevRows.map((row) => {
+                if (row.id === rowId) {
+                    const updated = { ...row, ...updates };
+                    // Auto-calculate total if price or quantity changes
+                    if (updates.productPrice !== undefined || updates.productQuantity !== undefined) {
+                        updated.productTotal = calculateRowTotal(updated.productPrice, updated.productQuantity);
+                    }
+                    return updated;
+                }
+                return row;
+            })
+        );
+    }, [calculateRowTotal]);
+
+    // Add a new product row
+    const handleAddProductRow = React.useCallback(() => {
+        const newId = String(Date.now());
+        setProductRows((prevRows) => [
+            ...prevRows,
+            {
+                id: newId,
+                product: null,
+                productCode: "",
+                productDescription: "",
+                productNotes: "",
+                priceType: globalPriceType,
+                productPrice: "",
+                productQuantity: "",
+                productTotal: "",
+            },
+        ]);
+    }, [globalPriceType]);
+
+    // Remove a product row
+    const handleRemoveProductRow = React.useCallback((rowId: string) => {
+        setProductRows((prevRows) => prevRows.filter((row) => row.id !== rowId));
+    }, []);
+
+    // Handle product selection for a specific row
+    const handleProductSelect = React.useCallback(
+        (rowId: string, _event: React.SyntheticEvent, newValue: ProductOption | null) => {
+            if (newValue) {
+                // Get price based on current price type for the row
+                const row = productRows.find((r) => r.id === rowId);
+                const priceType = row?.priceType ?? globalPriceType;
+                const price = getProductPrice(newValue, priceType);
+                
+                updateProductRow(rowId, {
+                    product: newValue,
+                    productCode: newValue.productNumber ?? "",
+                    productDescription: newValue.description ?? "",
+                    productPrice: price !== undefined ? price.toFixed(2) : "",
+                });
+            } else {
+                updateProductRow(rowId, {
+                    product: null,
+                    productCode: "",
+                    productDescription: "",
+                    productPrice: "",
+                    productQuantity: "",
+                    productTotal: "",
+                });
+            }
+        },
+        [productRows, globalPriceType, getProductPrice, updateProductRow]
+    );
+
+    // Handle price type change for a specific row
+    const handlePriceTypeChange = React.useCallback(
+        (rowId: string, event: SelectChangeEvent<PriceType>) => {
+            const newPriceType = event.target.value as PriceType;
+            const row = productRows.find((r) => r.id === rowId);
+            if (row?.product) {
+                const price = getProductPrice(row.product, newPriceType);
+                updateProductRow(rowId, {
+                    priceType: newPriceType,
+                    productPrice: price !== undefined ? price.toFixed(2) : "",
+                });
+            } else {
+                updateProductRow(rowId, { priceType: newPriceType });
+            }
+        },
+        [productRows, getProductPrice, updateProductRow]
+    );
+
+    // Handle global price type change
+    const handleGlobalPriceTypeChange = React.useCallback((event: SelectChangeEvent<PriceType>) => {
+        const newPriceType = event.target.value as PriceType;
+        setGlobalPriceType(newPriceType);
+        
+        // Update all rows that have a product selected
+        setProductRows((prevRows) =>
+            prevRows.map((row) => {
+                if (row.product) {
+                    const price = getProductPrice(row.product, newPriceType);
+                    return {
+                        ...row,
+                        priceType: newPriceType,
+                        productPrice: price !== undefined ? price.toFixed(2) : "",
+                        productTotal: calculateRowTotal(
+                            price !== undefined ? price.toFixed(2) : "",
+                            row.productQuantity
+                        ),
+                    };
+                }
+                return { ...row, priceType: newPriceType };
+            })
+        );
+    }, [getProductPrice, calculateRowTotal]);
+
+    // Handle quantity change for a specific row
+    const handleQuantityChange = React.useCallback(
+        (rowId: string, event: React.ChangeEvent<HTMLInputElement>) => {
+            const newQuantity = event.target.value;
+            const row = productRows.find((r) => r.id === rowId);
+            updateProductRow(rowId, {
+                productQuantity: newQuantity,
+                productTotal: calculateRowTotal(row?.productPrice ?? "", newQuantity),
+            });
+        },
+        [productRows, updateProductRow, calculateRowTotal]
+    );
+
+    // Handle price change for a specific row
+    const handlePriceChange = React.useCallback(
+        (rowId: string, event: React.ChangeEvent<HTMLInputElement>) => {
+            const newPrice = event.target.value;
+            const row = productRows.find((r) => r.id === rowId);
+            updateProductRow(rowId, {
+                productPrice: newPrice,
+                productTotal: calculateRowTotal(newPrice, row?.productQuantity ?? ""),
+            });
+        },
+        [productRows, updateProductRow, calculateRowTotal]
+    );
+
+    // Handle notes change for a specific row
+    const handleNotesChange = React.useCallback(
+        (rowId: string, event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+            updateProductRow(rowId, { productNotes: event.target.value });
+        },
+        [updateProductRow]
+    );
+
     const handleCustomerSelect = React.useCallback(
         (_event: React.SyntheticEvent, newValue: CustomerOption | null) => {
             setSelectedCustomer(newValue);
@@ -284,15 +647,50 @@ export default function CreateOrderPage() {
             if (newValue) {
                 setCustomerPhone(newValue.phone ?? "");
                 setCustomerEmail(newValue.email ?? "");
-                setCustomerBillingAddress(newValue.billingAddress ?? "");
-                setCustomerShippingAddress(newValue.shippingAddress ?? "");
+                
+                // Parse billing address
+                const billingAddr = newValue.billingAddress 
+                    ? (typeof newValue.billingAddress === "string" 
+                        ? { street: newValue.billingAddress, poBox: "", city: "", state: "", code: "", country: "" }
+                        : parseAddress(newValue.billingAddress))
+                    : parseAddress(newValue.raw?.billing_address);
+                setBillingAddress(billingAddr.street);
+                setBillingPOBox(billingAddr.poBox);
+                setBillingCity(billingAddr.city);
+                setBillingState(billingAddr.state);
+                setBillingCode(billingAddr.code);
+                setBillingCountry(billingAddr.country);
+                
+                // Parse shipping address
+                const shippingAddr = newValue.shippingAddress 
+                    ? (typeof newValue.shippingAddress === "string" 
+                        ? { street: newValue.shippingAddress, poBox: "", city: "", state: "", code: "", country: "" }
+                        : parseAddress(newValue.shippingAddress))
+                    : parseAddress(newValue.raw?.shipping_address);
+                setShippingAddress(shippingAddr.street);
+                setShippingPOBox(shippingAddr.poBox);
+                setShippingCity(shippingAddr.city);
+                setShippingState(shippingAddr.state);
+                setShippingCode(shippingAddr.code);
+                setShippingCountry(shippingAddr.country);
+                
                 const firstContact = initialContacts[0];
                 setSelectedContact(firstContact ?? null);
             } else {
                 setCustomerPhone("");
                 setCustomerEmail("");
-                setCustomerBillingAddress("");
-                setCustomerShippingAddress("");
+                setBillingAddress("");
+                setBillingPOBox("");
+                setBillingCity("");
+                setBillingState("");
+                setBillingCode("");
+                setBillingCountry("");
+                setShippingAddress("");
+                setShippingPOBox("");
+                setShippingCity("");
+                setShippingState("");
+                setShippingCode("");
+                setShippingCountry("");
                 setSelectedContact(null);
                 setCustomerContacts([]);
             }
@@ -307,8 +705,18 @@ export default function CreateOrderPage() {
             setSelectedCustomer(null);
             setCustomerPhone("");
             setCustomerEmail("");
-            setCustomerBillingAddress("");
-            setCustomerShippingAddress("");
+            setBillingAddress("");
+            setBillingPOBox("");
+            setBillingCity("");
+            setBillingState("");
+            setBillingCode("");
+            setBillingCountry("");
+            setShippingAddress("");
+            setShippingPOBox("");
+            setShippingCity("");
+            setShippingState("");
+            setShippingCode("");
+            setShippingCountry("");
             setSelectedContact(null);
             setCustomerContacts([]);
         }
@@ -343,8 +751,24 @@ export default function CreateOrderPage() {
 
         setCustomerPhone(phone ?? "");
         setCustomerEmail(email ?? "");
-        setCustomerBillingAddress(formatAddress(billingAddressData));
-        setCustomerShippingAddress(formatAddress(shippingAddressData));
+        
+        // Parse billing address fields
+        const billingAddr = parseAddress(billingAddressData);
+        setBillingAddress(billingAddr.street);
+        setBillingPOBox(billingAddr.poBox);
+        setBillingCity(billingAddr.city);
+        setBillingState(billingAddr.state);
+        setBillingCode(billingAddr.code);
+        setBillingCountry(billingAddr.country);
+        
+        // Parse shipping address fields
+        const shippingAddr = parseAddress(shippingAddressData);
+        setShippingAddress(shippingAddr.street);
+        setShippingPOBox(shippingAddr.poBox);
+        setShippingCity(shippingAddr.city);
+        setShippingState(shippingAddr.state);
+        setShippingCode(shippingAddr.code);
+        setShippingCountry(shippingAddr.country);
 
         const detailContacts = mapContacts(customerDetail.contacts ?? []);
         setCustomerContacts(detailContacts);
@@ -361,7 +785,27 @@ export default function CreateOrderPage() {
     }, [router]);
 
     const handleSave = React.useCallback(() => {
+        // Validate required fields
+        let hasErrors = false;
+        setOrderSubjectError("");
+        setCustomerNameError("");
+
+        if (!orderSubject.trim()) {
+            setOrderSubjectError("Order Subject is required");
+            hasErrors = true;
+        }
+
+        if (!selectedCustomer) {
+            setCustomerNameError("Customer Name is required");
+            hasErrors = true;
+        }
+
+        if (hasErrors) {
+            return;
+        }
+
         const payload = {
+            orderSubject,
             shippingMethod,
             orderStatus,
             specialConditions,
@@ -374,8 +818,22 @@ export default function CreateOrderPage() {
                 name: selectedCustomer?.name ?? "",
                 phone: customerPhone,
                 email: customerEmail,
-                billingAddress: customerBillingAddress,
-                shippingAddress: customerShippingAddress,
+                billingAddress: {
+                    street: billingAddress,
+                    poBox: billingPOBox,
+                    city: billingCity,
+                    state: billingState,
+                    code: billingCode,
+                    country: billingCountry,
+                },
+                shippingAddress: {
+                    street: shippingAddress,
+                    poBox: shippingPOBox,
+                    city: shippingCity,
+                    state: shippingState,
+                    code: shippingCode,
+                    country: shippingCountry,
+                },
                 contact: selectedContact
                     ? {
                           id: selectedContact.id,
@@ -395,11 +853,22 @@ export default function CreateOrderPage() {
         router.push("/dashboard/orders");
     }, [
         assignedSensors,
-        customerBillingAddress,
+        billingAddress,
+        billingPOBox,
+        billingCity,
+        billingState,
+        billingCode,
+        billingCountry,
+        shippingAddress,
+        shippingPOBox,
+        shippingCity,
+        shippingState,
+        shippingCode,
+        shippingCountry,
         customerEmail,
-        customerShippingAddress,
         customerPhone,
         orderStatus,
+        orderSubject,
         router,
         selectedCustomer,
         selectedContact,
@@ -502,7 +971,7 @@ export default function CreateOrderPage() {
             <Box
                 sx={{
                     display: "grid",
-                    gridTemplateColumns: { xs: "1fr", lg: "1.1fr 0.9fr" },
+                    gridTemplateColumns: { xs: "1fr", lg: "1.2fr 0.7fr" },
                     gap: 2,
                 }}
             >
@@ -532,7 +1001,7 @@ export default function CreateOrderPage() {
                                 Order Details
                             </Typography>
                             <Typography variant="body2" color="text.secondary">
-                                Created at: 03.01.2025 &nbsp;•&nbsp; Modified at: 05.02.2025
+                               
                             </Typography>
                         </Box>
                         <Divider />
@@ -544,15 +1013,60 @@ export default function CreateOrderPage() {
                                 gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
                             }}
                         >
-                                <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                                    <Typography variant="subtitle2">Customer Details</Typography>
-                                    <Stack spacing={1.5}>
-                                        <TextField fullWidth size="small" label="Order Subject" />
+                                <Box 
+                                    sx={{ 
+                                        display: "flex", 
+                                        flexDirection: "column", 
+                                        gap: 1.125, // 75% of 1.5
+                                        "& .MuiInputBase-root": {
+                                            fontSize: "0.75rem", // 75% of default
+                                            height: "30px", // 75% of small size (40px)
+                                        },
+                                        "& .MuiInputBase-input": {
+                                            fontSize: "0.75rem",
+                                            padding: "6px 12px", // 75% of default padding
+                                        },
+                                        "& .MuiInputLabel-root": {
+                                            fontSize: "0.75rem",
+                                        },
+                                        "& .MuiSelect-select": {
+                                            padding: "6px 12px",
+                                            fontSize: "0.75rem",
+                                        },
+                                        "& .MuiFormControl-root": {
+                                            fontSize: "0.75rem",
+                                        },
+                                        "& .MuiTypography-root": {
+                                            fontSize: "0.875rem", // 75% of subtitle2
+                                        },
+                                        "& .MuiAutocomplete-root": {
+                                            fontSize: "0.75rem",
+                                        },
+                                    }}
+                                >
+                                    <Typography variant="subtitle2" sx={{ fontSize: "0.875rem" }}>Customer Details</Typography>
+                                    <Stack spacing={1.125}>
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            label="Order Subject"
+                                            required
+                                            value={orderSubject}
+                                            onChange={(event) => {
+                                                setOrderSubject(event.target.value);
+                                                if (orderSubjectError) setOrderSubjectError("");
+                                            }}
+                                            error={!!orderSubjectError}
+                                            helperText={orderSubjectError}
+                                        />
                                         <Autocomplete
                                             size="small"
                                             options={filteredCustomerOptions}
                                             value={selectedCustomer}
-                                            onChange={handleCustomerSelect}
+                                            onChange={(event, newValue) => {
+                                                handleCustomerSelect(event, newValue);
+                                                if (customerNameError) setCustomerNameError("");
+                                            }}
                                             loading={customersLoading}
                                             disableClearable={false}
                                             isOptionEqualToValue={(option, value) => option.id === value.id}
@@ -561,7 +1075,10 @@ export default function CreateOrderPage() {
                                                 <TextField
                                                     {...params}
                                                     label="Customer Name"
+                                                    required
                                                     size="small"
+                                                    error={!!customerNameError}
+                                                    helperText={customerNameError}
                                                     InputProps={{
                                                         ...params.InputProps,
                                                         endAdornment: (
@@ -612,6 +1129,65 @@ export default function CreateOrderPage() {
                                                 ) : undefined,
                                             }}
                                         />
+                                        {/* Billing Address Fields */}
+                                        <Box sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}>
+                                            <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>Billing Information</Typography>
+                                            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1.125 }}>
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="Billing Address"
+                                                    value={billingAddress}
+                                                    onChange={(event) => setBillingAddress(event.target.value)}
+                                                    sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
+                                                    InputProps={{
+                                                        endAdornment: customerDetailLoading ? (
+                                                            <InputAdornment position="end">
+                                                                <CircularProgress size={16} />
+                                                            </InputAdornment>
+                                                        ) : undefined,
+                                                    }}
+                                                />
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="Billing PO Box"
+                                                    value={billingPOBox}
+                                                    onChange={(event) => setBillingPOBox(event.target.value)}
+                                                    sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
+                                                />
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="Billing City"
+                                                    value={billingCity}
+                                                    onChange={(event) => setBillingCity(event.target.value)}
+                                                    sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
+                                                />
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="Billing State"
+                                                    value={billingState}
+                                                    onChange={(event) => setBillingState(event.target.value)}
+                                                />
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="Code"
+                                                    value={billingCode}
+                                                    onChange={(event) => setBillingCode(event.target.value)}
+                                                />
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="Billing Country"
+                                                    value={billingCountry}
+                                                    onChange={(event) => setBillingCountry(event.target.value)}
+                                                    sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
+                                                />
+                                            </Box>
+                                        </Box>
                                         <Autocomplete
                                             size="small"
                                             options={customerContacts}
@@ -636,46 +1212,41 @@ export default function CreateOrderPage() {
                                             value={selectedContact?.email ?? ""}
                                             InputProps={{ readOnly: true }}
                                         />
-                                        <TextField
-                                            fullWidth
-                                            size="small"
-                                            label="Billing Address"
-                                            multiline
-                                            minRows={3}
-                                            value={customerBillingAddress}
-                                            onChange={(event) => setCustomerBillingAddress(event.target.value)}
-                                            InputProps={{
-                                                endAdornment: customerDetailLoading ? (
-                                                    <InputAdornment position="end">
-                                                        <CircularProgress size={16} />
-                                                    </InputAdornment>
-                                                ) : undefined,
-                                            }}
-                                        />
-                                        <TextField
-                                            fullWidth
-                                            size="small"
-                                            label="Shipping Address"
-                                            multiline
-                                            minRows={3}
-                                            value={customerShippingAddress}
-                                            onChange={(event) => setCustomerShippingAddress(event.target.value)}
-                                            InputProps={{
-                                                endAdornment: customerDetailLoading ? (
-                                                    <InputAdornment position="end">
-                                                        <CircularProgress size={16} />
-                                                    </InputAdornment>
-                                                ) : undefined,
-                                            }}
-                                        />
                                     </Stack>
                             </Box>
-                                <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                                    <Typography variant="subtitle2">Order Details</Typography>
+                                <Box 
+                                    sx={{ 
+                                        display: "flex", 
+                                        flexDirection: "column", 
+                                        gap: 1.125, // 75% of 1.5
+                                        "& .MuiInputBase-root": {
+                                            fontSize: "0.75rem", // 75% of default
+                                            height: "30px", // 75% of small size (40px)
+                                        },
+                                        "& .MuiInputBase-input": {
+                                            fontSize: "0.75rem",
+                                            padding: "6px 12px", // 75% of default padding
+                                        },
+                                        "& .MuiInputLabel-root": {
+                                            fontSize: "0.75rem",
+                                        },
+                                        "& .MuiSelect-select": {
+                                            padding: "6px 12px",
+                                            fontSize: "0.75rem",
+                                        },
+                                        "& .MuiFormControl-root": {
+                                            fontSize: "0.75rem",
+                                        },
+                                        "& .MuiTypography-root": {
+                                            fontSize: "0.875rem", // 75% of subtitle2
+                                        },
+                                    }}
+                                >
+                                    <Typography variant="subtitle2" sx={{ fontSize: "0.875rem" }}>Order Details</Typography>
                                     <Box
                                         sx={{
                                             display: "grid",
-                                            gap: 1.5,
+                                            gap: 1.125, // 75% of 1.5
                                             gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
                                         }}
                                     >
@@ -693,8 +1264,8 @@ export default function CreateOrderPage() {
                                             <Select
                                                 labelId="order-category-label"
                                                 label="Order Category"
-                                                value={orderCategory}
-                                                onChange={(event) => setOrderCategory(event.target.value as string)}
+                                            value={orderCategory || ""}
+                                            onChange={(event) => setOrderCategory(event.target.value as string)}
                                             >
                                                 {orderCategoryOptions.map((option) => (
                                                     <MenuItem key={option} value={option}>
@@ -709,8 +1280,8 @@ export default function CreateOrderPage() {
                                             <Select
                                                 labelId="shipping-method-label"
                                                 label="Shipping Method"
-                                                value={shippingMethod}
-                                                onChange={(event) => setShippingMethod(event.target.value as string)}
+                                            value={shippingMethod || ""}
+                                            onChange={(event) => setShippingMethod(event.target.value as string)}
                                             >
                                                 {shippingMethodOptions.map((option) => (
                                                     <MenuItem key={option} value={option}>
@@ -724,8 +1295,8 @@ export default function CreateOrderPage() {
                                             <Select
                                                 labelId="order-status-label"
                                                 label="Status"
-                                                value={orderStatus}
-                                                onChange={(event) => setOrderStatus(event.target.value as string)}
+                                            value={orderStatus || ""}
+                                            onChange={(event) => setOrderStatus(event.target.value as string)}
                                             >
                                                 {orderStatusOptions.map((option) => (
                                                     <MenuItem key={option} value={option}>
@@ -735,10 +1306,69 @@ export default function CreateOrderPage() {
                                             </Select>
                                         </FormControl>
                                     </Box>
+                                    {/* Shipping Address Fields */}
+                                    <Box sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}>
+                                        <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>Shipping Information</Typography>
+                                        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1.125 }}>
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="Shipping Address"
+                                                value={shippingAddress}
+                                                onChange={(event) => setShippingAddress(event.target.value)}
+                                                sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
+                                                InputProps={{
+                                                    endAdornment: customerDetailLoading ? (
+                                                        <InputAdornment position="end">
+                                                            <CircularProgress size={16} />
+                                                        </InputAdornment>
+                                                    ) : undefined,
+                                                }}
+                                            />
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="Shipping PO Box"
+                                                value={shippingPOBox}
+                                                onChange={(event) => setShippingPOBox(event.target.value)}
+                                                sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
+                                            />
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="Shipping City"
+                                                value={shippingCity}
+                                                onChange={(event) => setShippingCity(event.target.value)}
+                                                sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
+                                            />
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="Shipping State"
+                                                value={shippingState}
+                                                onChange={(event) => setShippingState(event.target.value)}
+                                            />
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="Code"
+                                                value={shippingCode}
+                                                onChange={(event) => setShippingCode(event.target.value)}
+                                            />
+                                            <TextField
+                                                fullWidth
+                                                size="small"
+                                                label="Shipping Country"
+                                                value={shippingCountry}
+                                                onChange={(event) => setShippingCountry(event.target.value)}
+                                                sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
+                                            />
+                                        </Box>
+                                    </Box>
                                     <Box
                                         sx={{
                                             display: "grid",
-                                            gap: 1.5,
+                                            gap: 1.125, // 75% of 1.5
                                             gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
                                         }}
                                     >
@@ -750,7 +1380,20 @@ export default function CreateOrderPage() {
                                             minRows={3}
                                             value={specialConditions}
                                             onChange={(event) => setSpecialConditions(event.target.value)}
-                                            sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
+                                            sx={{ 
+                                                gridColumn: { xs: "span 1", sm: "span 2" },
+                                                "& .MuiInputBase-root": {
+                                                    fontSize: "0.875rem",
+                                                    height: "auto",
+                                                },
+                                                "& .MuiInputBase-input": {
+                                                    fontSize: "0.875rem",
+                                                    padding: "8px 12px",
+                                                },
+                                                "& .MuiInputLabel-root": {
+                                                    fontSize: "0.875rem",
+                                                },
+                                            }}
                                         />
                                         <TextField
                                             fullWidth
@@ -760,7 +1403,20 @@ export default function CreateOrderPage() {
                                             minRows={4}
                                             value={shippingComments}
                                             onChange={(event) => setShippingComments(event.target.value)}
-                                            sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
+                                            sx={{ 
+                                                gridColumn: { xs: "span 1", sm: "span 2" },
+                                                "& .MuiInputBase-root": {
+                                                    fontSize: "0.875rem",
+                                                    height: "auto",
+                                                },
+                                                "& .MuiInputBase-input": {
+                                                    fontSize: "0.875rem",
+                                                    padding: "8px 12px",
+                                                },
+                                                "& .MuiInputLabel-root": {
+                                                    fontSize: "0.875rem",
+                                                },
+                                            }}
                                         />
                                         <TextField
                                             fullWidth
@@ -770,28 +1426,50 @@ export default function CreateOrderPage() {
                                             minRows={4.5}
                                             value={processingComments}
                                             onChange={(event) => setProcessingComments(event.target.value)}
-                                            sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
+                                            sx={{ 
+                                                gridColumn: { xs: "span 1", sm: "span 2" },
+                                                "& .MuiInputBase-root": {
+                                                    fontSize: "0.875rem",
+                                                    height: "auto",
+                                                },
+                                                "& .MuiInputBase-input": {
+                                                    fontSize: "0.875rem",
+                                                    padding: "8px 12px",
+                                                },
+                                                "& .MuiInputLabel-root": {
+                                                    fontSize: "0.875rem",
+                                                },
+                                            }}
                                         />
                                     </Box>
                                 </Box>
                         </Box>
                     </Box>
-
-                    <Box>
-                        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-                            <Typography variant="subtitle1" fontWeight={600}>
+  <Box sx={{  display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+                            <Typography variant="subtitle1" fontWeight={600} >
                                 Product Details
                             </Typography>
-                            <Button size="small" variant="outlined">
-                                Add Details
+                            <Button size="small" variant="contained" onClick={handleAddProductRow}>
+                                Add Product
                             </Button>
                         </Box>
+                    <Box
+                        sx={{
+                           
+                            "& .MuiTypography-root": { fontSize: "11px" },
+                            "& .MuiInputBase-input": { fontSize: "11px", py: 0.5 },
+                            "& .MuiInputLabel-root": { fontSize: "11px" },
+                            "& .MuiButton-root": { fontSize: "11px", py: 0.25, px: 1 },
+                            "& .MuiSvgIcon-root": { fontSize: "0.8rem" },
+                        }}
+                    >
+                      
                         <Paper
                             variant="outlined"
                             sx={{
                                 display: "grid",
-                                gridTemplateColumns: "0.5fr 1.2fr 1.5fr 1fr 0.3fr",
-                                alignItems: "center",
+                                gridTemplateColumns: "0.35fr 2.5fr 0.9fr 0.6fr 0.6fr 0.6fr 0.4fr",
+                                alignItems: "stretch",
                                 px: 2,
                                 py: 1,
                                 gap: 1,
@@ -801,42 +1479,183 @@ export default function CreateOrderPage() {
                             }}
                         >
                             <Typography variant="caption" fontWeight={600}>
-                                Sr. No.
+                              #
+                            </Typography>
+                            <Box>
+                                <Typography variant="caption" fontWeight={600} >
+                                    Product Name
+                                </Typography>
+                                <Typography variant="caption" fontWeight={600} color="text.secondary" display="block">
+                                    / Notes
+                                </Typography>
+                            </Box>
+                            <Typography variant="caption" fontWeight={600}>
+                                Product Code
                             </Typography>
                             <Typography variant="caption" fontWeight={600}>
-                                Product Name
+                                Quantity
                             </Typography>
+                            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+                                <Typography variant="caption" fontWeight={600}>
+                                    Price
+                                </Typography>
+                                <FormControl size="small" fullWidth>
+                                    <Select
+                                        value={globalPriceType}
+                                        onChange={handleGlobalPriceTypeChange}
+                                        sx={{ 
+                                            fontSize: "11px",
+                                            height: "28px",
+                                            "& .MuiSelect-select": { py: 0.5 }
+                                        }}
+                                    >
+                                        <MenuItem value="listPrice" sx={{ fontSize: "11px" }}>List Price</MenuItem>
+                                        <MenuItem value="oemPrice" sx={{ fontSize: "11px" }}>OEM Price</MenuItem>
+                                        <MenuItem value="resellerPrice" sx={{ fontSize: "11px" }}>Reseller Price</MenuItem>
+                                        <MenuItem value="hostingPrice" sx={{ fontSize: "11px" }}>Hosting Price</MenuItem>
+                                    </Select>
+                                </FormControl>
+                            </Box>
                             <Typography variant="caption" fontWeight={600}>
-                                Description
-                            </Typography>
-                            <Typography variant="caption" fontWeight={600}>
-                                Notes
+                                Total
                             </Typography>
                             <Typography variant="caption" fontWeight={600}>
                                 Actions
                             </Typography>
                         </Paper>
-                        <Paper
-                            variant="outlined"
-                            sx={{
-                                display: "grid",
-                                gridTemplateColumns: "0.5fr 1.2fr 1.5fr 1fr 0.3fr",
-                                alignItems: "center",
-                                px: 2,
-                                py: 1.5,
-                                gap: 1,
-                            }}
-                        >
-                            <Typography variant="body2">1</Typography>
-                            <TextField size="small" value="Sentinel ST LTE" />
-                            <TextField size="small" value="Sentinel Next 1.5 (Lorem Ipsum dolor)" />
-                            <TextField size="small" value="Lorem ipsum dolor" />
-                            <Tooltip title="Remove">
-                                <IconButton size="small" color="error">
-                                    <DeleteOutline fontSize="small" />
-                                </IconButton>
-                            </Tooltip>
-                        </Paper>
+                        {productRows.map((row, index) => (
+                            <Paper
+                                key={row.id}
+                                variant="outlined"
+                                sx={{
+                                    display: "grid",
+                                    gridTemplateColumns: "0.35fr 2.5fr 0.9fr 0.6fr 0.6fr 0.6fr 0.4fr",
+                                    alignItems: "stretch",
+                                    px: 2,
+                                    py: 1.5,
+                                    gap: 1,
+                                    mb: 1,
+                                }}
+                            >
+                                <Typography variant="body2">{index + 1}</Typography>
+                                <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                                    <Autocomplete
+                                        size="small"
+                                        fullWidth
+                                        options={productOptions}
+                                        value={row.product}
+                                        onChange={(event, newValue) => handleProductSelect(row.id, event, newValue)}
+                                        loading={productsLoading}
+                                        disableClearable={false}
+                                        isOptionEqualToValue={(option, value) => option.id === value.id}
+                                        getOptionLabel={(option) => (typeof option === "string" ? option : option?.name ?? "")}
+                                        renderOption={(props, option) => (
+                                            <li {...props} key={option.id}>
+                                                {option.name}
+                                            </li>
+                                        )}
+                                        renderInput={(params) => (
+                                            <TextField
+                                                {...params}
+                                                size="small"
+                                                fullWidth
+                                                placeholder="Product Name"
+                                                error={!!productsError}
+                                                helperText={productsError ? (productsError instanceof Error ? productsError.message : "Failed to load products") : undefined}
+                                                InputProps={{
+                                                    ...params.InputProps,
+                                                    endAdornment: (
+                                                        <>
+                                                            {productsLoading ? <CircularProgress color="inherit" size={16} /> : null}
+                                                            {params.InputProps.endAdornment}
+                                                        </>
+                                                    ),
+                                                }}
+                                            />
+                                        )}
+                                        noOptionsText={productsLoading ? "Loading..." : productsError ? "Error loading products" : "No products found"}
+                                    />
+                                    <TextField
+                                        size="small"
+                                        value={row.productNotes}
+                                        onChange={(event) => handleNotesChange(row.id, event)}
+                                        multiline
+                                        minRows={1}
+                                        placeholder="Notes"
+                                    />
+                                </Box>
+                                <TextField
+                                    size="small"
+                                    value={row.productCode}
+                                    placeholder="Product Code"
+                                    InputProps={{ readOnly: true }}
+                                />
+                                <TextField
+                                    size="small"
+                                    type="number"
+                                    value={row.productQuantity}
+                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => handleQuantityChange(row.id, event)}
+                                    placeholder="Quantity"
+                                    inputProps={{
+                                        style: { MozAppearance: "textfield" },
+                                    }}
+                                    sx={{
+                                        "& input[type=number]": {
+                                            MozAppearance: "textfield",
+                                        },
+                                        "& input[type=number]::-webkit-outer-spin-button": {
+                                            WebkitAppearance: "none",
+                                            margin: 0,
+                                        },
+                                        "& input[type=number]::-webkit-inner-spin-button": {
+                                            WebkitAppearance: "none",
+                                            margin: 0,
+                                        },
+                                    }}
+                                />
+                                <TextField
+                                    size="small"
+                                    type="number"
+                                    value={row.productPrice}
+                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => handlePriceChange(row.id, event)}
+                                    placeholder="Price"
+                                    inputProps={{
+                                        step: "0.01",
+                                        min: "0",
+                                        style: { MozAppearance: "textfield" },
+                                    }}
+                                    sx={{
+                                        "& input[type=number]": {
+                                            MozAppearance: "textfield",
+                                        },
+                                        "& input[type=number]::-webkit-outer-spin-button": {
+                                            WebkitAppearance: "none",
+                                            margin: 0,
+                                        },
+                                        "& input[type=number]::-webkit-inner-spin-button": {
+                                            WebkitAppearance: "none",
+                                            margin: 0,
+                                        },
+                                    }}
+                                />
+                                <TextField
+                                    size="small"
+                                    value={row.productTotal}
+                                    placeholder="Total"
+                                    InputProps={{ readOnly: true }}
+                                />
+                                <Tooltip title="Remove">
+                                    <IconButton
+                                        size="small"
+                                        color="error"
+                                        sx={{ alignSelf: "flex-start" }}
+                                        onClick={() => handleRemoveProductRow(row.id)}
+                                    >
+                                        <DeleteOutline fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                            </Paper>
+                        ))}
                     </Box>
                 </Paper>
 
@@ -854,48 +1673,57 @@ export default function CreateOrderPage() {
                             gap: 3,
                         }}
                     >
-                    <Typography variant="h6" fontWeight={600}>
-                        Setup Network Information
-                    </Typography>
-                    <Stack spacing={3}>
-                        <Box>
-                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                1. WiFi Access Point Router
-                            </Typography>
-                            <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-                                <TextField fullWidth size="small" label="Brand" />
-                                <TextField fullWidth size="small" label="Model" />
-                            </Box>
-                        </Box>
-                        <Box>
-                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                2. SSID of the WiFi network
-                            </Typography>
-                            <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
+                    <Box
+                        sx={{
+                            "& .MuiInputBase-root": {
+                                fontSize: "0.75rem",
+                                height: "30px",
+                            },
+                            "& .MuiInputBase-input": {
+                                fontSize: "0.75rem",
+                                padding: "6px 12px",
+                            },
+                            "& .MuiInputLabel-root": {
+                                fontSize: "0.75rem",
+                            },
+                            "& .MuiTypography-root": {
+                                fontSize: "0.875rem",
+                            },
+                        }}
+                    >
+                        <Typography variant="h6" fontWeight={600} sx={{ fontSize: "1rem" }}>
+                            Setup Network Information
+                        </Typography>
+                        <Stack spacing={2.25}>
+                            <Box>
+                                <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
+                                    1. SSID of the WiFi network
+                                </Typography>
+                                <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
                                 <TextField fullWidth size="small" label="SSID 1" />
                                 <TextField fullWidth size="small" label="Channel" />
                                 <TextField fullWidth size="small" label="SSID 2" />
                                 <TextField fullWidth size="small" label="Channel" />
                             </Box>
                         </Box>
-                        <Box>
-                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                3. Level of security used in the network
-                            </Typography>
-                            <RadioGroup row defaultValue="open">
-                                <FormControlLabel value="open" control={<Radio size="small" />} label="Open (None)" />
-                                <FormControlLabel value="wpa2" control={<Radio size="small" />} label="WPA2-802.1x" />
-                                <FormControlLabel value="psk" control={<Radio size="small" />} label="WPA2-PSK" />
-                                <FormControlLabel value="others" control={<Radio size="small" />} label="Others" />
-                            </RadioGroup>
-                            <Box
-                                sx={{
-                                    display: "grid",
-                                    gap: 2,
-                                    gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
-                                    mt: 1,
-                                }}
-                            >
+                            <Box>
+                                <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
+                                    2. Level of security used in the network
+                                </Typography>
+                                <RadioGroup row defaultValue="open">
+                                    <FormControlLabel value="open" control={<Radio size="small" />} label="Open (None)" sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.75rem" } }} />
+                                    <FormControlLabel value="wpa2" control={<Radio size="small" />} label="WPA2-802.1x" sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.75rem" } }} />
+                                    <FormControlLabel value="psk" control={<Radio size="small" />} label="WPA2-PSK" sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.75rem" } }} />
+                                    <FormControlLabel value="others" control={<Radio size="small" />} label="Others" sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.75rem" } }} />
+                                </RadioGroup>
+                                <Box
+                                    sx={{
+                                        display: "grid",
+                                        gap: 1.5,
+                                        gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                                        mt: 0.75,
+                                    }}
+                                >
                                 <TextField fullWidth size="small" label="Username" />
                                 <TextField
                                     fullWidth
@@ -919,67 +1747,59 @@ export default function CreateOrderPage() {
                                 />
                             </Box>
                         </Box>
-                        <Box>
-                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                4. DHCP
-                            </Typography>
-                            <RadioGroup row defaultValue="yes">
-                                <FormControlLabel value="yes" control={<Radio size="small" />} label="Yes (Recommended)" />
-                                <FormControlLabel value="no" control={<Radio size="small" />} label="No" />
-                            </RadioGroup>
-                        </Box>
-                        <Box>
-                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                5. WiFi Access Point IP
-                            </Typography>
-                            <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-                                <TextField fullWidth size="small" label="IP Address" />
-                                <TextField fullWidth size="small" label="Netmask" />
+                            <Box>
+                                <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
+                                    3. DHCP
+                                </Typography>
+                                <RadioGroup row defaultValue="yes">
+                                    <FormControlLabel value="yes" control={<Radio size="small" />} label="Yes (Recommended)" sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.75rem" } }} />
+                                    <FormControlLabel value="no" control={<Radio size="small" />} label="No" sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.75rem" } }} />
+                                </RadioGroup>
                             </Box>
-                        </Box>
-                        <Box>
-                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                6. Web Portal Server
-                            </Typography>
-                            <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-                                <TextField fullWidth size="small" label="IP Address" />
-                                <TextField fullWidth size="small" label="Netmask" />
+                            <Box>
+                                <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
+                                    4. Web Portal Server
+                                </Typography>
+                                <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
+                                    <TextField fullWidth size="small" label="IP Address" />
+                                    <TextField fullWidth size="small" label="Netmask" />
+                                </Box>
                             </Box>
-                        </Box>
-                        <Box>
-                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                7. Sensor IP
-                            </Typography>
-                            <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-                                <TextField fullWidth size="small" label="Starting IP" />
-                                <TextField fullWidth size="small" label="Ending IP" />
+                            <Box>
+                                <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
+                                    5. Sensor IP
+                                </Typography>
+                                <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
+                                    <TextField fullWidth size="small" label="Starting IP" />
+                                    <TextField fullWidth size="small" label="Ending IP" />
+                                </Box>
                             </Box>
-                        </Box>
-                        <Box>
-                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                8. DNS
-                            </Typography>
-                            <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-                                <TextField fullWidth size="small" label="Primary DNS" />
-                                <TextField fullWidth size="small" label="Secondary DNS" />
+                            <Box>
+                                <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
+                                    6. DNS
+                                </Typography>
+                                <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
+                                    <TextField fullWidth size="small" label="Primary DNS" />
+                                    <TextField fullWidth size="small" label="Secondary DNS" />
+                                </Box>
                             </Box>
-                        </Box>
-                        <Box>
-                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                9. Comments
-                            </Typography>
-                            <TextField fullWidth size="small" multiline minRows={3} placeholder="Add any additional comments" />
-                        </Box>
-                        <Box>
-                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                                Upload Setup Document
-                            </Typography>
+                            <Box>
+                                <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
+                                    7. Comments
+                                </Typography>
+                                <TextField fullWidth size="small" multiline minRows={2.25} placeholder="Add any additional comments" />
+                            </Box>
+                            <Box>
+                                <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
+                                    Upload Setup Document
+                                </Typography>
                             <Button variant="outlined" component="label" startIcon={<CloudUpload />}>
                                 Choose File
                                 <input hidden type="file" />
                             </Button>
                         </Box>
                     </Stack>
+                    </Box>
                     </Paper>
                 )}
 
