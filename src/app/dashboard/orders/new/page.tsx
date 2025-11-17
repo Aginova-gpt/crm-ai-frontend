@@ -26,9 +26,13 @@ import {
     Chip,
     Stack,
     CircularProgress,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
 } from "@mui/material";
 import { MdSearch } from "react-icons/md";
-import { DeleteOutline, CloudUpload, Visibility, VisibilityOff } from "@mui/icons-material";
+import { DeleteOutline, CloudUpload, Visibility, VisibilityOff, ExpandMore, ExpandLess } from "@mui/icons-material";
 import FormControl from "@mui/material/FormControl";
 import InputLabel from "@mui/material/InputLabel";
 import Select from "@mui/material/Select";
@@ -301,6 +305,10 @@ export default function CreateOrderPage() {
         },
     ]);
     const [globalPriceType, setGlobalPriceType] = React.useState<PriceType>("listPrice");
+    const [expandedNotes, setExpandedNotes] = React.useState<Record<string, boolean>>({});
+    const [discountType, setDiscountType] = React.useState<"zero" | "percentage" | "direct">("zero");
+    const [discount, setDiscount] = React.useState("");
+    const [discountDialogOpen, setDiscountDialogOpen] = React.useState(false);
     const selectedCustomerId = selectedCustomer?.id ?? null;
     const {
         data: customerDetail,
@@ -315,6 +323,7 @@ export default function CreateOrderPage() {
     const [sensorSearch, setSensorSearch] = React.useState("");
     const [shippingMethod, setShippingMethod] = React.useState("FedEx Ground");
     const [orderStatus, setOrderStatus] = React.useState("Processing");
+    const [orderPriority, setOrderPriority] = React.useState("");
     const [specialConditions, setSpecialConditions] = React.useState("");
     const [orderCategory, setOrderCategory] = React.useState("");
     const [shipmentStatus, setShipmentStatus] = React.useState("Approved");
@@ -343,6 +352,7 @@ export default function CreateOrderPage() {
 
     const shippingMethodOptions = ["FedEx Ground", "FedEx 2Day", "UPS Ground", "DHL Express"];
     const orderStatusOptions = ["Draft", "Processing", "Fulfilled", "Shipped", "Closed"];
+    const orderPriorityOptions = ["Low", "Normal", "High", "Urgent"];
     const orderCategoryOptions = ["Standard", "Rush", "Replacement", "Maintenance"];
     const shipmentStatusOptions = ["Pending", "Approved", "In Transit", "Delivered", "Closed"];
     const shippingAccountOptions = ["Account 1", "Account 2", "Account 3"];
@@ -639,6 +649,43 @@ export default function CreateOrderPage() {
         [updateProductRow]
     );
 
+    // Toggle notes field visibility for a specific row
+    const toggleNotes = React.useCallback((rowId: string) => {
+        setExpandedNotes((prev) => ({
+            ...prev,
+            [rowId]: !prev[rowId],
+        }));
+    }, []);
+
+    // Calculate net total (sum of all product row totals)
+    const netTotal = React.useMemo(() => {
+        return productRows.reduce((sum, row) => {
+            const total = parseFloat(row.productTotal) || 0;
+            return sum + total;
+        }, 0);
+    }, [productRows]);
+
+    // Calculate discount amount based on discount type
+    const discountAmount = React.useMemo(() => {
+        if (discountType === "zero" || !discount) return 0;
+        const discountValue = parseFloat(discount) || 0;
+        if (discountValue <= 0) return 0;
+        
+        if (discountType === "percentage") {
+            // Percentage of price
+            return (netTotal * discountValue) / 100;
+        } else if (discountType === "direct") {
+            // Direct price reduction (absolute amount)
+            return discountValue;
+        }
+        return 0;
+    }, [discountType, discount, netTotal]);
+
+    // Calculate grand total
+    const grandTotal = React.useMemo(() => {
+        return netTotal - discountAmount;
+    }, [netTotal, discountAmount]);
+
     const handleCustomerSelect = React.useCallback(
         (_event: React.SyntheticEvent, newValue: CustomerOption | null) => {
             setSelectedCustomer(newValue);
@@ -808,11 +855,19 @@ export default function CreateOrderPage() {
             orderSubject,
             shippingMethod,
             orderStatus,
+            orderPriority,
             specialConditions,
             orderCategory,
             shipmentStatus,
             shipmentAccount,
             assignedSensors,
+            netTotal,
+            discount: {
+                type: discountType,
+                value: discount,
+                amount: discountAmount,
+            },
+            grandTotal,
             customer: {
                 id: selectedCustomer?.id ?? null,
                 name: selectedCustomer?.name ?? "",
@@ -847,6 +902,18 @@ export default function CreateOrderPage() {
                 shippingComments,
                 processingComments,
             },
+            productDetails: productRows.map((row) => ({
+                id: row.id,
+                productId: row.product?.id ?? null,
+                productName: row.product?.name ?? "",
+                productCode: row.productCode,
+                productDescription: row.productDescription,
+                productNotes: row.productNotes,
+                priceType: row.priceType,
+                price: row.productPrice ? parseFloat(row.productPrice) : 0,
+                quantity: row.productQuantity ? parseFloat(row.productQuantity) : 0,
+                total: row.productTotal ? parseFloat(row.productTotal) : 0,
+            })),
         };
         console.log("Saving order draft:", payload);
         alert("Order saved successfully.");
@@ -868,6 +935,7 @@ export default function CreateOrderPage() {
         customerEmail,
         customerPhone,
         orderStatus,
+        orderPriority,
         orderSubject,
         router,
         selectedCustomer,
@@ -879,6 +947,12 @@ export default function CreateOrderPage() {
         shippingMethod,
         specialConditions,
         orderCategory,
+        discount,
+        discountType,
+        discountAmount,
+        netTotal,
+        grandTotal,
+        productRows,
     ]);
 
     const toggleSelect = React.useCallback(
@@ -1265,7 +1339,7 @@ export default function CreateOrderPage() {
                                                 labelId="order-category-label"
                                                 label="Order Category"
                                             value={orderCategory || ""}
-                                            onChange={(event) => setOrderCategory(event.target.value as string)}
+                                                onChange={(event) => setOrderCategory(event.target.value as string)}
                                             >
                                                 {orderCategoryOptions.map((option) => (
                                                     <MenuItem key={option} value={option}>
@@ -1281,7 +1355,7 @@ export default function CreateOrderPage() {
                                                 labelId="shipping-method-label"
                                                 label="Shipping Method"
                                             value={shippingMethod || ""}
-                                            onChange={(event) => setShippingMethod(event.target.value as string)}
+                                                onChange={(event) => setShippingMethod(event.target.value as string)}
                                             >
                                                 {shippingMethodOptions.map((option) => (
                                                     <MenuItem key={option} value={option}>
@@ -1296,9 +1370,24 @@ export default function CreateOrderPage() {
                                                 labelId="order-status-label"
                                                 label="Status"
                                             value={orderStatus || ""}
-                                            onChange={(event) => setOrderStatus(event.target.value as string)}
+                                                onChange={(event) => setOrderStatus(event.target.value as string)}
                                             >
                                                 {orderStatusOptions.map((option) => (
+                                                    <MenuItem key={option} value={option}>
+                                                        {option}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                        </FormControl>
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel id="order-priority-label">Priority</InputLabel>
+                                            <Select
+                                                labelId="order-priority-label"
+                                                label="Priority"
+                                                value={orderPriority || ""}
+                                                onChange={(event) => setOrderPriority(event.target.value as string)}
+                                            >
+                                                {orderPriorityOptions.map((option) => (
                                                     <MenuItem key={option} value={option}>
                                                         {option}
                                                     </MenuItem>
@@ -1383,15 +1472,15 @@ export default function CreateOrderPage() {
                                             sx={{ 
                                                 gridColumn: { xs: "span 1", sm: "span 2" },
                                                 "& .MuiInputBase-root": {
-                                                    fontSize: "0.875rem",
+                                                    fontSize: "0.75rem",
                                                     height: "auto",
                                                 },
                                                 "& .MuiInputBase-input": {
-                                                    fontSize: "0.875rem",
-                                                    padding: "8px 12px",
+                                                    fontSize: "0.75rem",
+                                                    padding: 0,
                                                 },
                                                 "& .MuiInputLabel-root": {
-                                                    fontSize: "0.875rem",
+                                                    fontSize: "0.75rem",
                                                 },
                                             }}
                                         />
@@ -1406,15 +1495,15 @@ export default function CreateOrderPage() {
                                             sx={{ 
                                                 gridColumn: { xs: "span 1", sm: "span 2" },
                                                 "& .MuiInputBase-root": {
-                                                    fontSize: "0.875rem",
+                                                    fontSize: "0.75rem",
                                                     height: "auto",
                                                 },
                                                 "& .MuiInputBase-input": {
-                                                    fontSize: "0.875rem",
-                                                    padding: "8px 12px",
+                                                    fontSize: "0.75rem",
+                                                    padding: 0,
                                                 },
                                                 "& .MuiInputLabel-root": {
-                                                    fontSize: "0.875rem",
+                                                    fontSize: "0.75rem",
                                                 },
                                             }}
                                         />
@@ -1429,15 +1518,15 @@ export default function CreateOrderPage() {
                                             sx={{ 
                                                 gridColumn: { xs: "span 1", sm: "span 2" },
                                                 "& .MuiInputBase-root": {
-                                                    fontSize: "0.875rem",
+                                                    fontSize: "0.75rem",
                                                     height: "auto",
                                                 },
                                                 "& .MuiInputBase-input": {
-                                                    fontSize: "0.875rem",
-                                                    padding: "8px 12px",
+                                                    fontSize: "0.75rem",
+                                                    padding: 0,
                                                 },
                                                 "& .MuiInputLabel-root": {
-                                                    fontSize: "0.875rem",
+                                                    fontSize: "0.75rem",
                                                 },
                                             }}
                                         />
@@ -1456,10 +1545,10 @@ export default function CreateOrderPage() {
                     <Box
                         sx={{
                            
-                            "& .MuiTypography-root": { fontSize: "11px" },
-                            "& .MuiInputBase-input": { fontSize: "11px", py: 0.5 },
-                            "& .MuiInputLabel-root": { fontSize: "11px" },
-                            "& .MuiButton-root": { fontSize: "11px", py: 0.25, px: 1 },
+                            "& .MuiTypography-root": { fontSize: "12px" },
+                            "& .MuiInputBase-input": { fontSize: "12px", py: 0.5 },
+                            "& .MuiInputLabel-root": { fontSize: "12px" },
+                            "& .MuiButton-root": { fontSize: "12px", py: 0.25, px: 1 },
                             "& .MuiSvgIcon-root": { fontSize: "0.8rem" },
                         }}
                     >
@@ -1496,9 +1585,9 @@ export default function CreateOrderPage() {
                                 Quantity
                             </Typography>
                             <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
-                                <Typography variant="caption" fontWeight={600}>
-                                    Price
-                                </Typography>
+                            <Typography variant="caption" fontWeight={600}>
+                                Price
+                            </Typography>
                                 <FormControl size="small" fullWidth>
                                     <Select
                                         value={globalPriceType}
@@ -1524,21 +1613,21 @@ export default function CreateOrderPage() {
                             </Typography>
                         </Paper>
                         {productRows.map((row, index) => (
-                            <Paper
+                        <Paper
                                 key={row.id}
-                                variant="outlined"
-                                sx={{
-                                    display: "grid",
+                            variant="outlined"
+                            sx={{
+                                display: "grid",
                                     gridTemplateColumns: "0.35fr 2.5fr 0.9fr 0.6fr 0.6fr 0.6fr 0.4fr",
-                                    alignItems: "stretch",
-                                    px: 2,
-                                    py: 1.5,
-                                    gap: 1,
+                                alignItems: "stretch",
+                                px: 2,
+                                py: 1.5,
+                                gap: 1,
                                     mb: 1,
-                                }}
-                            >
+                            }}
+                        >
                                 <Typography variant="body2">{index + 1}</Typography>
-                                <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                            <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
                                     <Autocomplete
                                         size="small"
                                         fullWidth
@@ -1575,14 +1664,35 @@ export default function CreateOrderPage() {
                                         )}
                                         noOptionsText={productsLoading ? "Loading..." : productsError ? "Error loading products" : "No products found"}
                                     />
-                                    <TextField
-                                        size="small"
-                                        value={row.productNotes}
-                                        onChange={(event) => handleNotesChange(row.id, event)}
-                                        multiline
-                                        minRows={1}
-                                        placeholder="Notes"
-                                    />
+                                    <Box sx={{ display: "flex", alignItems: expandedNotes[row.id] ? "flex-start" : "center", gap: 0.5 }}>
+                                        {expandedNotes[row.id] && (
+                                            <TextField
+                                                size="small"
+                                                value={row.productNotes}
+                                                onChange={(event) => handleNotesChange(row.id, event)}
+                                                multiline
+                                                minRows={1}
+                                                placeholder="Notes"
+                                                sx={{ flex: 1 }}
+                                            />
+                                        )}
+                                        <Tooltip title={expandedNotes[row.id] ? "Hide Notes" : "Show Notes"}>
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => toggleNotes(row.id)}
+                                                sx={{ 
+                                                    mt: expandedNotes[row.id] ? 0.5 : 0,
+                                                    flexShrink: 0,
+                                                }}
+                                            >
+                                                {expandedNotes[row.id] ? (
+                                                    <ExpandLess fontSize="small" />
+                                                ) : (
+                                                    <ExpandMore fontSize="small" />
+                                                )}
+                                            </IconButton>
+                                        </Tooltip>
+                            </Box>
                                 </Box>
                                 <TextField
                                     size="small"
@@ -1644,18 +1754,196 @@ export default function CreateOrderPage() {
                                     placeholder="Total"
                                     InputProps={{ readOnly: true }}
                                 />
-                                <Tooltip title="Remove">
+                             <Tooltip title="Remove">
                                     <IconButton
                                         size="small"
                                         color="error"
                                         sx={{ alignSelf: "flex-start" }}
                                         onClick={() => handleRemoveProductRow(row.id)}
                                     >
-                                        <DeleteOutline fontSize="small" />
-                                    </IconButton>
-                                </Tooltip>
-                            </Paper>
+                                    <DeleteOutline fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
+                        </Paper>
                         ))}
+                        {/* Net Total, Discount, and Grand Total Rows */}
+                        <Paper
+                            variant="outlined"
+                            sx={{
+                                display: "grid",
+                                gridTemplateColumns: "0.35fr 2.5fr 0.9fr 0.6fr 0.6fr 0.6fr 0.9fr",
+                                alignItems: "stretch",
+                                px: 2,
+                                py: 1.5,
+                                gap: 1,
+                                mb: 1,
+                                mt: 1,
+                            }}
+                        >
+                            <Box sx={{ gridColumn: "span 5" }} />
+                            <Typography variant="caption" fontWeight={600} sx={{ alignSelf: "center", textAlign: "right", pr: 1 }}>
+                                Net Total:
+                            </Typography>
+                            <TextField
+                                size="small"
+                                value={netTotal > 0 ? netTotal.toFixed(2) : ""}
+                                placeholder="0.00"
+                                InputProps={{ readOnly: true }}
+                                fullWidth
+                            />
+                        </Paper>
+                        <Paper
+                            variant="outlined"
+                            sx={{
+                                display: "grid",
+                                gridTemplateColumns: "0.35fr 2.5fr 0.9fr 0.6fr 0.6fr 0.6fr 0.9fr",
+                                alignItems: "stretch",
+                                px: 2,
+                                py: 1.5,
+                                gap: 1,
+                                mb: 1,
+                            }}
+                        >
+                            <Box sx={{ gridColumn: "span 5" }} />
+                            <Typography variant="caption" fontWeight={600} sx={{ alignSelf: "center", textAlign: "right", pr: 1 }}>
+                                Discount:
+                            </Typography>
+                            <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => setDiscountDialogOpen(true)}
+                                sx={{ 
+                                    fontSize: "11px",
+                                    textTransform: "none",
+                                    minWidth: "60px",
+                                    alignSelf: "center",
+                                }}
+                            >
+                                {discountType === "zero" 
+                                    ? "Zero Discount" 
+                                    : discountType === "percentage" 
+                                    ? `${discount || "0"}%` 
+                                    : discountAmount > 0 
+                                    ? discountAmount.toFixed(2) 
+                                    : "Set Discount"}
+                            </Button>
+                        </Paper>
+                        {/* Discount Dialog */}
+                        <Dialog
+                            open={discountDialogOpen}
+                            onClose={() => setDiscountDialogOpen(false)}
+                            maxWidth="sm"
+                            fullWidth
+                        >
+                            <DialogTitle sx={{ fontSize: "14px", pb: 1 }}>Discount Details</DialogTitle>
+                            <DialogContent>
+                                <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+                                    <RadioGroup
+                                        value={discountType}
+                                        onChange={(event) => {
+                                            const newType = event.target.value as "zero" | "percentage" | "direct";
+                                            setDiscountType(newType);
+                                            if (newType === "zero") {
+                                                setDiscount("");
+                                            }
+                                        }}
+                                    >
+                                        <FormControlLabel
+                                            value="zero"
+                                            control={<Radio size="small" />}
+                                            label="Zero Discount"
+                                            sx={{ "& .MuiFormControlLabel-label": { fontSize: "12px" } }}
+                                        />
+                                        <FormControlLabel
+                                            value="percentage"
+                                            control={<Radio size="small" />}
+                                            label="% of Price"
+                                            sx={{ "& .MuiFormControlLabel-label": { fontSize: "12px" } }}
+                                        />
+                                        <FormControlLabel
+                                            value="direct"
+                                            control={<Radio size="small" />}
+                                            label="Direct Price Reduction"
+                                            sx={{ "& .MuiFormControlLabel-label": { fontSize: "12px" } }}
+                                        />
+                                    </RadioGroup>
+                                    {(discountType === "percentage" || discountType === "direct") && (
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            type="number"
+                                            label={discountType === "percentage" ? "Discount Percentage (%)" : "Discount Amount"}
+                                            value={discount}
+                                            onChange={(event) => setDiscount(event.target.value)}
+                                            placeholder={discountType === "percentage" ? "Enter %" : "Enter amount"}
+                                            inputProps={{
+                                                step: "0.01",
+                                                min: "0",
+                                                max: discountType === "percentage" ? "100" : undefined,
+                                                style: { MozAppearance: "textfield" },
+                                            }}
+                                            sx={{
+                                                "& input[type=number]": {
+                                                    MozAppearance: "textfield",
+                                                },
+                                                "& input[type=number]::-webkit-outer-spin-button": {
+                                                    WebkitAppearance: "none",
+                                                    margin: 0,
+                                                },
+                                                "& input[type=number]::-webkit-inner-spin-button": {
+                                                    WebkitAppearance: "none",
+                                                    margin: 0,
+                                                },
+                                            }}
+                                        />
+                                    )}
+                                    {discountType !== "zero" && discountAmount > 0 && (
+                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: "12px", mt: 1 }}>
+                                            Discount Amount: {discountAmount.toFixed(2)}
+                                        </Typography>
+                                    )}
+                                </Box>
+                            </DialogContent>
+                            <DialogActions sx={{ px: 2, pb: 2 }}>
+                                <Button size="small" onClick={() => setDiscountDialogOpen(false)}>
+                                    Close
+                                </Button>
+                            </DialogActions>
+                        </Dialog>
+                        <Paper
+                            variant="outlined"
+                            sx={{
+                                display: "grid",
+                                gridTemplateColumns: "0.35fr 2.5fr 0.9fr 0.6fr 0.6fr 0.6fr 0.9fr",
+                                alignItems: "stretch",
+                                px: 2,
+                                py: 1.5,
+                                gap: 1,
+                                mb: 1,
+                                bgcolor: "#F9FAFB",
+                                border: "2px solid",
+                                borderColor: "primary.main",
+                            }}
+                        >
+                            <Box sx={{ gridColumn: "span 5" }} />
+                            <Typography variant="caption" fontWeight={700} sx={{ alignSelf: "center", fontSize: "13px", textAlign: "right", pr: 1 }}>
+                                Grand Total:
+                            </Typography>
+                            <TextField
+                                size="small"
+                                value={grandTotal > 0 ? grandTotal.toFixed(2) : ""}
+                                placeholder="0.00"
+                                InputProps={{ readOnly: true }}
+                                fullWidth
+                                sx={{
+                                    fontWeight: 600,
+                                    "& .MuiInputBase-input": {
+                                        fontWeight: 600,
+                                        fontSize: "13px",
+                                    },
+                                }}
+                            />
+                        </Paper>
                     </Box>
                 </Paper>
 
@@ -1692,13 +1980,13 @@ export default function CreateOrderPage() {
                         }}
                     >
                         <Typography variant="h6" fontWeight={600} sx={{ fontSize: "1rem" }}>
-                            Setup Network Information
-                        </Typography>
+                        Setup Network Information
+                    </Typography>
                         <Stack spacing={2.25}>
-                            <Box>
+                        <Box>
                                 <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
-                                    1. SSID of the WiFi network
-                                </Typography>
+                                1. SSID of the WiFi network
+                            </Typography>
                                 <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
                                 <TextField fullWidth size="small" label="SSID 1" />
                                 <TextField fullWidth size="small" label="Channel" />
@@ -1706,24 +1994,24 @@ export default function CreateOrderPage() {
                                 <TextField fullWidth size="small" label="Channel" />
                             </Box>
                         </Box>
-                            <Box>
+                        <Box>
                                 <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
-                                    2. Level of security used in the network
-                                </Typography>
-                                <RadioGroup row defaultValue="open">
+                                2. Level of security used in the network
+                            </Typography>
+                            <RadioGroup row defaultValue="open">
                                     <FormControlLabel value="open" control={<Radio size="small" />} label="Open (None)" sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.75rem" } }} />
                                     <FormControlLabel value="wpa2" control={<Radio size="small" />} label="WPA2-802.1x" sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.75rem" } }} />
                                     <FormControlLabel value="psk" control={<Radio size="small" />} label="WPA2-PSK" sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.75rem" } }} />
                                     <FormControlLabel value="others" control={<Radio size="small" />} label="Others" sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.75rem" } }} />
-                                </RadioGroup>
-                                <Box
-                                    sx={{
-                                        display: "grid",
+                            </RadioGroup>
+                            <Box
+                                sx={{
+                                    display: "grid",
                                         gap: 1.5,
-                                        gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                                    gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
                                         mt: 0.75,
-                                    }}
-                                >
+                                }}
+                            >
                                 <TextField fullWidth size="small" label="Username" />
                                 <TextField
                                     fullWidth
@@ -1747,52 +2035,52 @@ export default function CreateOrderPage() {
                                 />
                             </Box>
                         </Box>
-                            <Box>
+                        <Box>
                                 <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
-                                    3. DHCP
-                                </Typography>
-                                <RadioGroup row defaultValue="yes">
+                                3. DHCP
+                            </Typography>
+                            <RadioGroup row defaultValue="yes">
                                     <FormControlLabel value="yes" control={<Radio size="small" />} label="Yes (Recommended)" sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.75rem" } }} />
                                     <FormControlLabel value="no" control={<Radio size="small" />} label="No" sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.75rem" } }} />
-                                </RadioGroup>
-                            </Box>
-                            <Box>
+                            </RadioGroup>
+                        </Box>
+                        <Box>
                                 <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
-                                    4. Web Portal Server
-                                </Typography>
+                                4. Web Portal Server
+                            </Typography>
                                 <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-                                    <TextField fullWidth size="small" label="IP Address" />
-                                    <TextField fullWidth size="small" label="Netmask" />
-                                </Box>
+                                <TextField fullWidth size="small" label="IP Address" />
+                                <TextField fullWidth size="small" label="Netmask" />
                             </Box>
-                            <Box>
+                        </Box>
+                        <Box>
                                 <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
-                                    5. Sensor IP
-                                </Typography>
+                                5. Sensor IP
+                            </Typography>
                                 <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-                                    <TextField fullWidth size="small" label="Starting IP" />
-                                    <TextField fullWidth size="small" label="Ending IP" />
-                                </Box>
+                                <TextField fullWidth size="small" label="Starting IP" />
+                                <TextField fullWidth size="small" label="Ending IP" />
                             </Box>
-                            <Box>
+                        </Box>
+                        <Box>
                                 <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
-                                    6. DNS
-                                </Typography>
+                                6. DNS
+                            </Typography>
                                 <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-                                    <TextField fullWidth size="small" label="Primary DNS" />
-                                    <TextField fullWidth size="small" label="Secondary DNS" />
-                                </Box>
+                                <TextField fullWidth size="small" label="Primary DNS" />
+                                <TextField fullWidth size="small" label="Secondary DNS" />
                             </Box>
-                            <Box>
+                        </Box>
+                        <Box>
                                 <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
-                                    7. Comments
-                                </Typography>
+                                7. Comments
+                            </Typography>
                                 <TextField fullWidth size="small" multiline minRows={2.25} placeholder="Add any additional comments" />
-                            </Box>
-                            <Box>
+                        </Box>
+                        <Box>
                                 <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
-                                    Upload Setup Document
-                                </Typography>
+                                Upload Setup Document
+                            </Typography>
                             <Button variant="outlined" component="label" startIcon={<CloudUpload />}>
                                 Choose File
                                 <input hidden type="file" />
