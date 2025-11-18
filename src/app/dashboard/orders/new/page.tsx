@@ -169,6 +169,27 @@ function useProductDetail(productId: string | null) {
     });
 }
 
+function useSalesOrderLookups() {
+    const { token, isLoggedIn } = useAuth();
+
+    return useQuery({
+        queryKey: ["salesorder-lookups"],
+        queryFn: async () => {
+            const res = await fetch(`http://34.58.37.44/api/salesorders/lookups`, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            });
+            if (!res.ok) {
+                if (res.status === 401) throw new Error("Unauthorized – please log in again");
+                throw new Error(`Failed to fetch lookups: ${res.status}`);
+            }
+            return res.json();
+        },
+        enabled: isLoggedIn && !!token,
+        staleTime: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
+    });
+}
+
 function formatAddress(address: any): string {
     if (!address) return "";
     if (typeof address === "string") return address;
@@ -287,6 +308,7 @@ export default function CreateOrderPage() {
     ]);
     const { data: customersData, isLoading: customersLoading } = useCustomerDirectory();
     const { data: productsData, isLoading: productsLoading, error: productsError } = useProductDirectory(effectiveCompanyId);
+    const { data: lookupsData, isLoading: lookupsLoading } = useSalesOrderLookups();
     const [orderSubject, setOrderSubject] = React.useState("");
     const [orderSubjectError, setOrderSubjectError] = React.useState("");
     const [customerNameError, setCustomerNameError] = React.useState("");
@@ -324,6 +346,7 @@ export default function CreateOrderPage() {
     const [shippingMethod, setShippingMethod] = React.useState("FedEx Ground");
     const [orderStatus, setOrderStatus] = React.useState("Processing");
     const [orderPriority, setOrderPriority] = React.useState("");
+    const [certificateType, setCertificateType] = React.useState("");
     const [specialConditions, setSpecialConditions] = React.useState("");
     const [orderCategory, setOrderCategory] = React.useState("");
     const [shipmentStatus, setShipmentStatus] = React.useState("Approved");
@@ -350,12 +373,100 @@ export default function CreateOrderPage() {
     const [shippingComments, setShippingComments] = React.useState("");
     const [processingComments, setProcessingComments] = React.useState("");
 
-    const shippingMethodOptions = ["FedEx Ground", "FedEx 2Day", "UPS Ground", "DHL Express"];
-    const orderStatusOptions = ["Draft", "Processing", "Fulfilled", "Shipped", "Closed"];
-    const orderPriorityOptions = ["Low", "Normal", "High", "Urgent"];
-    const orderCategoryOptions = ["Standard", "Rush", "Replacement", "Maintenance"];
     const shipmentStatusOptions = ["Pending", "Approved", "In Transit", "Delivered", "Closed"];
     const shippingAccountOptions = ["Account 1", "Account 2", "Account 3"];
+
+    const certificateTypeOptions = React.useMemo(() => {
+        if (!lookupsData) return [];
+        // Extract certificate_types from API response
+        if (lookupsData?.certificate_types) {
+            const types = lookupsData.certificate_types;
+            if (Array.isArray(types)) {
+                return types.map((item: any) => 
+                    typeof item === "string" ? item : (item?.name ?? item?.label ?? item?.value ?? String(item))
+                );
+            }
+        }
+        return [];
+    }, [lookupsData]);
+
+    const orderPriorityOptions = React.useMemo(() => {
+        if (!lookupsData) return [];
+        // Extract salesorder_priorities from API response
+        if (lookupsData?.salesorder_priorities) {
+            const priorities = lookupsData.salesorder_priorities;
+            if (Array.isArray(priorities)) {
+                return priorities.map((item: any) => 
+                    typeof item === "string" ? item : (item?.name ?? item?.label ?? item?.value ?? String(item))
+                );
+            }
+        }
+        return [];
+    }, [lookupsData]);
+
+    const orderStatusOptions = React.useMemo(() => {
+        if (!lookupsData) return [];
+        // Extract salesorder_statuses from API response
+        if (lookupsData?.salesorder_statuses) {
+            const statuses = lookupsData.salesorder_statuses;
+            if (Array.isArray(statuses)) {
+                return statuses.map((item: any) => 
+                    typeof item === "string" ? item : (item?.name ?? item?.label ?? item?.value ?? String(item))
+                );
+            }
+        }
+        return [];
+    }, [lookupsData]);
+
+    const orderCategoryOptions = React.useMemo(() => {
+        if (!lookupsData) return [];
+        // Extract salesorder_types from API response
+        if (lookupsData?.salesorder_types) {
+            const types = lookupsData.salesorder_types;
+            if (Array.isArray(types)) {
+                return types.map((item: any) => 
+                    typeof item === "string" ? item : (item?.name ?? item?.label ?? item?.value ?? String(item))
+                );
+            }
+        }
+        return [];
+    }, [lookupsData]);
+
+    const shippingMethodOptions = React.useMemo(() => {
+        if (!lookupsData) return [];
+        // Handle different possible response structures
+        if (Array.isArray(lookupsData)) {
+            return lookupsData.map((item: any) => 
+                typeof item === "string" ? item : (item?.name ?? item?.label ?? item?.value ?? String(item))
+            );
+        }
+        if (lookupsData?.shippingMethods || lookupsData?.shipping_method || lookupsData?.shippingMethod) {
+            const methods = lookupsData.shippingMethods || lookupsData.shipping_method || lookupsData.shippingMethod;
+            if (Array.isArray(methods)) {
+                return methods.map((item: any) => 
+                    typeof item === "string" ? item : (item?.name ?? item?.label ?? item?.value ?? String(item))
+                );
+            }
+        }
+        // If it's an object, try to extract values (fallback to certificate types if shipping methods not found)
+        if (typeof lookupsData === "object") {
+            // First try shipping methods
+            const shippingMethods = lookupsData.shippingMethods || lookupsData.shipping_method || lookupsData.shippingMethod;
+            if (Array.isArray(shippingMethods)) {
+                return shippingMethods.map((item: any) => 
+                    typeof item === "string" ? item : (item?.name ?? item?.label ?? item?.value ?? String(item))
+                );
+            }
+            // Fallback: use certificate types if shipping methods not available
+            const values = Object.values(lookupsData);
+            if (values.length > 0 && Array.isArray(values[0])) {
+                return values[0].map((item: any) => 
+                    typeof item === "string" ? item : (item?.name ?? item?.label ?? item?.value ?? String(item))
+                );
+            }
+        }
+        return [];
+    }, [lookupsData]);
 
     const customerOptions = React.useMemo(() => {
         if (!customersData?.data) return [];
@@ -856,6 +967,7 @@ export default function CreateOrderPage() {
             shippingMethod,
             orderStatus,
             orderPriority,
+            certificateType,
             specialConditions,
             orderCategory,
             shipmentStatus,
@@ -916,8 +1028,8 @@ export default function CreateOrderPage() {
             })),
         };
         console.log("Saving order draft:", payload);
-        alert("Order saved successfully.");
-        router.push("/dashboard/orders");
+    //    alert("Order saved successfully.");
+      //  router.push("/dashboard/orders");
     }, [
         assignedSensors,
         billingAddress,
@@ -936,6 +1048,7 @@ export default function CreateOrderPage() {
         customerPhone,
         orderStatus,
         orderPriority,
+        certificateType,
         orderSubject,
         router,
         selectedCustomer,
@@ -1203,65 +1316,6 @@ export default function CreateOrderPage() {
                                                 ) : undefined,
                                             }}
                                         />
-                                        {/* Billing Address Fields */}
-                                        <Box sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}>
-                                            <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>Billing Information</Typography>
-                                            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1.125 }}>
-                                                <TextField
-                                                    fullWidth
-                                                    size="small"
-                                                    label="Billing Address"
-                                                    value={billingAddress}
-                                                    onChange={(event) => setBillingAddress(event.target.value)}
-                                                    sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
-                                                    InputProps={{
-                                                        endAdornment: customerDetailLoading ? (
-                                                            <InputAdornment position="end">
-                                                                <CircularProgress size={16} />
-                                                            </InputAdornment>
-                                                        ) : undefined,
-                                                    }}
-                                                />
-                                                <TextField
-                                                    fullWidth
-                                                    size="small"
-                                                    label="Billing PO Box"
-                                                    value={billingPOBox}
-                                                    onChange={(event) => setBillingPOBox(event.target.value)}
-                                                    sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
-                                                />
-                                                <TextField
-                                                    fullWidth
-                                                    size="small"
-                                                    label="Billing City"
-                                                    value={billingCity}
-                                                    onChange={(event) => setBillingCity(event.target.value)}
-                                                    sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
-                                                />
-                                                <TextField
-                                                    fullWidth
-                                                    size="small"
-                                                    label="Billing State"
-                                                    value={billingState}
-                                                    onChange={(event) => setBillingState(event.target.value)}
-                                                />
-                                                <TextField
-                                                    fullWidth
-                                                    size="small"
-                                                    label="Code"
-                                                    value={billingCode}
-                                                    onChange={(event) => setBillingCode(event.target.value)}
-                                                />
-                                                <TextField
-                                                    fullWidth
-                                                    size="small"
-                                                    label="Billing Country"
-                                                    value={billingCountry}
-                                                    onChange={(event) => setBillingCountry(event.target.value)}
-                                                    sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
-                                                />
-                                            </Box>
-                                        </Box>
                                         <Autocomplete
                                             size="small"
                                             options={customerContacts}
@@ -1286,6 +1340,120 @@ export default function CreateOrderPage() {
                                             value={selectedContact?.email ?? ""}
                                             InputProps={{ readOnly: true }}
                                         />
+                                        <Divider sx={{ gridColumn: { xs: "span 1", sm: "span 2" }, my: 2 }} />
+                                        {/* Billing and Shipping Address Fields */}
+                                        <Box sx={{ gridColumn: { xs: "span 1", sm: "span 2" }, display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 2 }}>
+                                            {/* Billing Information */}
+                                            <Box>
+                                                <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>Billing Information</Typography>
+                                                <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr" }, gap: 1.125 }}>
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="Billing Address"
+                                                        value={billingAddress}
+                                                        onChange={(event) => setBillingAddress(event.target.value)}
+                                                        InputProps={{
+                                                            endAdornment: customerDetailLoading ? (
+                                                                <InputAdornment position="end">
+                                                                    <CircularProgress size={16} />
+                                                                </InputAdornment>
+                                                            ) : undefined,
+                                                        }}
+                                                    />
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="Billing PO Box"
+                                                        value={billingPOBox}
+                                                        onChange={(event) => setBillingPOBox(event.target.value)}
+                                                    />
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="Billing City"
+                                                        value={billingCity}
+                                                        onChange={(event) => setBillingCity(event.target.value)}
+                                                    />
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="Billing State"
+                                                        value={billingState}
+                                                        onChange={(event) => setBillingState(event.target.value)}
+                                                    />
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="Code"
+                                                        value={billingCode}
+                                                        onChange={(event) => setBillingCode(event.target.value)}
+                                                    />
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="Billing Country"
+                                                        value={billingCountry}
+                                                        onChange={(event) => setBillingCountry(event.target.value)}
+                                                    />
+                                                </Box>
+                                            </Box>
+                                            {/* Shipping Information */}
+                                            <Box>
+                                                <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>Shipping Information</Typography>
+                                                <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr" }, gap: 1.125 }}>
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="Shipping Address"
+                                                        value={shippingAddress}
+                                                        onChange={(event) => setShippingAddress(event.target.value)}
+                                                        InputProps={{
+                                                            endAdornment: customerDetailLoading ? (
+                                                                <InputAdornment position="end">
+                                                                    <CircularProgress size={16} />
+                                                                </InputAdornment>
+                                                            ) : undefined,
+                                                        }}
+                                                    />
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="Shipping PO Box"
+                                                        value={shippingPOBox}
+                                                        onChange={(event) => setShippingPOBox(event.target.value)}
+                                                    />
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="Shipping City"
+                                                        value={shippingCity}
+                                                        onChange={(event) => setShippingCity(event.target.value)}
+                                                    />
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="Shipping State"
+                                                        value={shippingState}
+                                                        onChange={(event) => setShippingState(event.target.value)}
+                                                    />
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="Code"
+                                                        value={shippingCode}
+                                                        onChange={(event) => setShippingCode(event.target.value)}
+                                                    />
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="Shipping Country"
+                                                        value={shippingCountry}
+                                                        onChange={(event) => setShippingCountry(event.target.value)}
+                                                    />
+                                                </Box>
+                                            </Box>
+                                        </Box>
                                     </Stack>
                             </Box>
                                 <Box 
@@ -1338,14 +1506,21 @@ export default function CreateOrderPage() {
                                             <Select
                                                 labelId="order-category-label"
                                                 label="Order Category"
-                                            value={orderCategory || ""}
+                                                value={orderCategory || ""}
                                                 onChange={(event) => setOrderCategory(event.target.value as string)}
+                                                disabled={lookupsLoading}
                                             >
-                                                {orderCategoryOptions.map((option) => (
-                                                    <MenuItem key={option} value={option}>
-                                                        {option}
+                                                {orderCategoryOptions.length > 0 ? (
+                                                    orderCategoryOptions.map((option) => (
+                                                        <MenuItem key={option} value={option}>
+                                                            {option}
+                                                        </MenuItem>
+                                                    ))
+                                                ) : (
+                                                    <MenuItem value="" disabled>
+                                                        {lookupsLoading ? "Loading..." : "No options available"}
                                                     </MenuItem>
-                                                ))}
+                                                )}
                                             </Select>
                                         </FormControl>
                                         <TextField fullWidth size="small" label="Due Date" type="date" InputLabelProps={{ shrink: true }} />
@@ -1354,14 +1529,21 @@ export default function CreateOrderPage() {
                                             <Select
                                                 labelId="shipping-method-label"
                                                 label="Shipping Method"
-                                            value={shippingMethod || ""}
+                                                value={shippingMethod || ""}
                                                 onChange={(event) => setShippingMethod(event.target.value as string)}
+                                                disabled={lookupsLoading}
                                             >
-                                                {shippingMethodOptions.map((option) => (
-                                                    <MenuItem key={option} value={option}>
-                                                        {option}
+                                                {shippingMethodOptions.length > 0 ? (
+                                                    shippingMethodOptions.map((option) => (
+                                                        <MenuItem key={option} value={option}>
+                                                            {option}
+                                                        </MenuItem>
+                                                    ))
+                                                ) : (
+                                                    <MenuItem value="" disabled>
+                                                        {lookupsLoading ? "Loading..." : "No options available"}
                                                     </MenuItem>
-                                                ))}
+                                                )}
                                             </Select>
                                         </FormControl>
                                         <FormControl fullWidth size="small">
@@ -1369,14 +1551,21 @@ export default function CreateOrderPage() {
                                             <Select
                                                 labelId="order-status-label"
                                                 label="Status"
-                                            value={orderStatus || ""}
+                                                value={orderStatus || ""}
                                                 onChange={(event) => setOrderStatus(event.target.value as string)}
+                                                disabled={lookupsLoading}
                                             >
-                                                {orderStatusOptions.map((option) => (
-                                                    <MenuItem key={option} value={option}>
-                                                        {option}
+                                                {orderStatusOptions.length > 0 ? (
+                                                    orderStatusOptions.map((option) => (
+                                                        <MenuItem key={option} value={option}>
+                                                            {option}
+                                                        </MenuItem>
+                                                    ))
+                                                ) : (
+                                                    <MenuItem value="" disabled>
+                                                        {lookupsLoading ? "Loading..." : "No options available"}
                                                     </MenuItem>
-                                                ))}
+                                                )}
                                             </Select>
                                         </FormControl>
                                         <FormControl fullWidth size="small">
@@ -1386,73 +1575,43 @@ export default function CreateOrderPage() {
                                                 label="Priority"
                                                 value={orderPriority || ""}
                                                 onChange={(event) => setOrderPriority(event.target.value as string)}
+                                                disabled={lookupsLoading}
                                             >
-                                                {orderPriorityOptions.map((option) => (
-                                                    <MenuItem key={option} value={option}>
-                                                        {option}
+                                                {orderPriorityOptions.length > 0 ? (
+                                                    orderPriorityOptions.map((option) => (
+                                                        <MenuItem key={option} value={option}>
+                                                            {option}
+                                                        </MenuItem>
+                                                    ))
+                                                ) : (
+                                                    <MenuItem value="" disabled>
+                                                        {lookupsLoading ? "Loading..." : "No options available"}
                                                     </MenuItem>
-                                                ))}
+                                                )}
                                             </Select>
                                         </FormControl>
-                                    </Box>
-                                    {/* Shipping Address Fields */}
-                                    <Box sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}>
-                                        <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>Shipping Information</Typography>
-                                        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" }, gap: 1.125 }}>
-                                            <TextField
-                                                fullWidth
-                                                size="small"
-                                                label="Shipping Address"
-                                                value={shippingAddress}
-                                                onChange={(event) => setShippingAddress(event.target.value)}
-                                                sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
-                                                InputProps={{
-                                                    endAdornment: customerDetailLoading ? (
-                                                        <InputAdornment position="end">
-                                                            <CircularProgress size={16} />
-                                                        </InputAdornment>
-                                                    ) : undefined,
-                                                }}
-                                            />
-                                            <TextField
-                                                fullWidth
-                                                size="small"
-                                                label="Shipping PO Box"
-                                                value={shippingPOBox}
-                                                onChange={(event) => setShippingPOBox(event.target.value)}
-                                                sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
-                                            />
-                                            <TextField
-                                                fullWidth
-                                                size="small"
-                                                label="Shipping City"
-                                                value={shippingCity}
-                                                onChange={(event) => setShippingCity(event.target.value)}
-                                                sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
-                                            />
-                                            <TextField
-                                                fullWidth
-                                                size="small"
-                                                label="Shipping State"
-                                                value={shippingState}
-                                                onChange={(event) => setShippingState(event.target.value)}
-                                            />
-                                            <TextField
-                                                fullWidth
-                                                size="small"
-                                                label="Code"
-                                                value={shippingCode}
-                                                onChange={(event) => setShippingCode(event.target.value)}
-                                            />
-                                            <TextField
-                                                fullWidth
-                                                size="small"
-                                                label="Shipping Country"
-                                                value={shippingCountry}
-                                                onChange={(event) => setShippingCountry(event.target.value)}
-                                                sx={{ gridColumn: { xs: "span 1", sm: "span 2" } }}
-                                            />
-                                        </Box>
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel id="certificate-type-label">Certificate Type</InputLabel>
+                                            <Select
+                                                labelId="certificate-type-label"
+                                                label="Certificate Type"
+                                                value={certificateType || ""}
+                                                onChange={(event) => setCertificateType(event.target.value as string)}
+                                                disabled={lookupsLoading}
+                                            >
+                                                {certificateTypeOptions.length > 0 ? (
+                                                    certificateTypeOptions.map((option) => (
+                                                        <MenuItem key={option} value={option}>
+                                                            {option}
+                                                        </MenuItem>
+                                                    ))
+                                                ) : (
+                                                    <MenuItem value="" disabled>
+                                                        {lookupsLoading ? "Loading..." : "No options available"}
+                                                    </MenuItem>
+                                                )}
+                                            </Select>
+                                        </FormControl>
                                     </Box>
                                     <Box
                                         sx={{
