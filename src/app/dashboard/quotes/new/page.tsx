@@ -26,6 +26,10 @@ import {
     Chip,
     Stack,
     CircularProgress,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
 } from "@mui/material";
 import { MdSearch } from "react-icons/md";
 import { DeleteOutline, CloudUpload, Visibility, VisibilityOff, ExpandMore, ExpandLess } from "@mui/icons-material";
@@ -73,14 +77,14 @@ type ProductOption = {
     name: string;
     productNumber?: string;
     description?: string;
+    listPrice?: number;
+    oemPrice?: number;
+    resellerPrice?: number;
+    hostingPrice?: number;
     raw?: any;
 };
 
-type QuoteOption = {
-    id: string;
-    name: string;
-    raw?: any;
-};
+type PriceType = "listPrice" | "oemPrice" | "resellerPrice" | "hostingPrice";
 
 type ProductRow = {
     id: string;
@@ -88,6 +92,7 @@ type ProductRow = {
     productCode: string;
     productDescription: string;
     productNotes: string;
+    priceType: PriceType;
     productPrice: string;
     productQuantity: string;
     productTotal: string;
@@ -182,28 +187,6 @@ function useSalesOrderLookups() {
         enabled: isLoggedIn && !!token,
         staleTime: 5 * 60 * 1000,
         refetchOnWindowFocus: false,
-    });
-}
-
-function useQuotes() {
-    const { token, isLoggedIn } = useAuth();
-    const { apiURL } = useBackend();
-
-    return useQuery({
-        queryKey: ["quotes", "for-order"],
-        queryFn: async () => {
-            const url = apiURL("quotes", "quotes.json");
-            const res = await fetch(url, {
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-            });
-            if (!res.ok) {
-                if (res.status === 401) throw new Error("Unauthorized – please log in again");
-                throw new Error(`Failed to fetch quotes: ${res.status}`);
-            }
-            return res.json();
-        },
-        enabled: isLoggedIn && !!token,
-        staleTime: 5 * 60 * 1000,
     });
 }
 
@@ -326,7 +309,6 @@ export default function CreateOrderPage() {
     const { data: customersData, isLoading: customersLoading } = useCustomerDirectory();
     const { data: productsData, isLoading: productsLoading, error: productsError } = useProductDirectory(effectiveCompanyId);
     const { data: lookupsData, isLoading: lookupsLoading } = useSalesOrderLookups();
-    const { data: quotesData, isLoading: quotesLoading, error: quotesError } = useQuotes();
     const [orderSubject, setOrderSubject] = React.useState("");
     const [orderSubjectError, setOrderSubjectError] = React.useState("");
     const [customerNameError, setCustomerNameError] = React.useState("");
@@ -338,12 +320,17 @@ export default function CreateOrderPage() {
             productCode: "",
             productDescription: "",
             productNotes: "",
+            priceType: "listPrice",
             productPrice: "",
             productQuantity: "",
             productTotal: "",
         },
     ]);
+    const [globalPriceType, setGlobalPriceType] = React.useState<PriceType>("listPrice");
     const [expandedNotes, setExpandedNotes] = React.useState<Record<string, boolean>>({});
+    const [discountType, setDiscountType] = React.useState<"zero" | "percentage" | "direct">("zero");
+    const [discount, setDiscount] = React.useState("");
+    const [discountDialogOpen, setDiscountDialogOpen] = React.useState(false);
     const selectedCustomerId = selectedCustomer?.id ?? null;
     const {
         data: customerDetail,
@@ -356,22 +343,14 @@ export default function CreateOrderPage() {
     const [selectedAvailable, setSelectedAvailable] = React.useState<Set<string>>(new Set());
     const [selectedAssigned, setSelectedAssigned] = React.useState<Set<string>>(new Set());
     const [sensorSearch, setSensorSearch] = React.useState("");
-    const [shippingMethod, setShippingMethod] = React.useState<string>("");
-    const [selectedCarrierId, setSelectedCarrierId] = React.useState<number | null>(null);
-    const [orderStatus, setOrderStatus] = React.useState("Created");
-    const [selectedStatusId, setSelectedStatusId] = React.useState<number | null>(null);
+    const [shippingMethod, setShippingMethod] = React.useState("FedEx Ground");
+    const [orderStatus, setOrderStatus] = React.useState("Processing");
     const [orderPriority, setOrderPriority] = React.useState("");
-    const [selectedPriorityId, setSelectedPriorityId] = React.useState<number | null>(null);
     const [certificateType, setCertificateType] = React.useState("");
-    const [selectedCertificateTypeId, setSelectedCertificateTypeId] = React.useState<number | null>(null);
     const [specialConditions, setSpecialConditions] = React.useState("");
     const [orderCategory, setOrderCategory] = React.useState("");
-    const [selectedTypeId, setSelectedTypeId] = React.useState<number | null>(null);
-    const [shipmentStatus, setShipmentStatus] = React.useState("Created");
-    const [shipmentAccount, setShipmentAccount] = React.useState("");
-    const [poNumber, setPoNumber] = React.useState("");
-    const [dueDate, setDueDate] = React.useState("");
-    const [selectedQuote, setSelectedQuote] = React.useState<QuoteOption | null>(null);
+    const [shipmentStatus, setShipmentStatus] = React.useState("Approved");
+    const [shipmentAccount, setShipmentAccount] = React.useState("Account 1");
     const [showWifiPassword, setShowWifiPassword] = React.useState(false);
     const [customerPhone, setCustomerPhone] = React.useState("");
     const [customerEmail, setCustomerEmail] = React.useState("");
@@ -403,15 +382,9 @@ export default function CreateOrderPage() {
         if (lookupsData?.certificate_types) {
             const types = lookupsData.certificate_types;
             if (Array.isArray(types)) {
-                return types.map((item: any) => {
-                    if (typeof item === "string") {
-                        return { id: null, name: item };
-                    }
-                    return {
-                        id: item?.id ?? item?.certificate_type_id ?? item?.certificateTypeId ?? null,
-                        name: item?.name ?? item?.label ?? item?.value ?? String(item)
-                    };
-                });
+                return types.map((item: any) => 
+                    typeof item === "string" ? item : (item?.name ?? item?.label ?? item?.value ?? String(item))
+                );
             }
         }
         return [];
@@ -423,15 +396,9 @@ export default function CreateOrderPage() {
         if (lookupsData?.salesorder_priorities) {
             const priorities = lookupsData.salesorder_priorities;
             if (Array.isArray(priorities)) {
-                return priorities.map((item: any) => {
-                    if (typeof item === "string") {
-                        return { id: null, name: item };
-                    }
-                    return {
-                        id: item?.id ?? item?.salesorder_priority_id ?? item?.salesorderPriorityId ?? null,
-                        name: item?.name ?? item?.label ?? item?.value ?? String(item)
-                    };
-                });
+                return priorities.map((item: any) => 
+                    typeof item === "string" ? item : (item?.name ?? item?.label ?? item?.value ?? String(item))
+                );
             }
         }
         return [];
@@ -443,15 +410,9 @@ export default function CreateOrderPage() {
         if (lookupsData?.salesorder_statuses) {
             const statuses = lookupsData.salesorder_statuses;
             if (Array.isArray(statuses)) {
-                return statuses.map((item: any) => {
-                    if (typeof item === "string") {
-                        return { id: null, name: item };
-                    }
-                    return {
-                        id: item?.id ?? item?.salesorder_status_id ?? item?.salesorderStatusId ?? null,
-                        name: item?.name ?? item?.label ?? item?.value ?? String(item)
-                    };
-                });
+                return statuses.map((item: any) => 
+                    typeof item === "string" ? item : (item?.name ?? item?.label ?? item?.value ?? String(item))
+                );
             }
         }
         return [];
@@ -463,15 +424,9 @@ export default function CreateOrderPage() {
         if (lookupsData?.salesorder_types) {
             const types = lookupsData.salesorder_types;
             if (Array.isArray(types)) {
-                return types.map((item: any) => {
-                    if (typeof item === "string") {
-                        return { id: null, name: item };
-                    }
-                    return {
-                        id: item?.id ?? item?.salesorder_type_id ?? item?.salesorderTypeId ?? null,
-                        name: item?.name ?? item?.label ?? item?.value ?? String(item)
-                    };
-                });
+                return types.map((item: any) => 
+                    typeof item === "string" ? item : (item?.name ?? item?.label ?? item?.value ?? String(item))
+                );
             }
         }
         return [];
@@ -480,138 +435,38 @@ export default function CreateOrderPage() {
     const shippingMethodOptions = React.useMemo(() => {
         if (!lookupsData) return [];
         // Handle different possible response structures
-        // Try carriers first (most likely structure)
-        if (lookupsData?.carriers || lookupsData?.carrier || lookupsData?.shippingMethods || lookupsData?.shipping_method || lookupsData?.shippingMethod) {
-            const carriers = lookupsData.carriers || lookupsData.carrier || lookupsData.shippingMethods || lookupsData.shipping_method || lookupsData.shippingMethod;
-            if (Array.isArray(carriers)) {
-                return carriers.map((item: any) => {
-                    if (typeof item === "string") {
-                        return { id: null, name: item };
-                    }
-                    return {
-                        id: item?.id ?? item?.carrier_id ?? item?.carrierId ?? null,
-                        name: item?.name ?? item?.label ?? item?.value ?? String(item)
-                    };
-                });
+        if (Array.isArray(lookupsData)) {
+            return lookupsData.map((item: any) => 
+                typeof item === "string" ? item : (item?.name ?? item?.label ?? item?.value ?? String(item))
+            );
+        }
+        if (lookupsData?.shippingMethods || lookupsData?.shipping_method || lookupsData?.shippingMethod) {
+            const methods = lookupsData.shippingMethods || lookupsData.shipping_method || lookupsData.shippingMethod;
+            if (Array.isArray(methods)) {
+                return methods.map((item: any) => 
+                    typeof item === "string" ? item : (item?.name ?? item?.label ?? item?.value ?? String(item))
+                );
             }
         }
-        // Handle array response
-        if (Array.isArray(lookupsData)) {
-            return lookupsData.map((item: any) => {
-                if (typeof item === "string") {
-                    return { id: null, name: item };
-                }
-                return {
-                    id: item?.id ?? item?.carrier_id ?? item?.carrierId ?? null,
-                    name: item?.name ?? item?.label ?? item?.value ?? String(item)
-                };
-            });
-        }
-        // If it's an object, try to extract values
+        // If it's an object, try to extract values (fallback to certificate types if shipping methods not found)
         if (typeof lookupsData === "object") {
+            // First try shipping methods
+            const shippingMethods = lookupsData.shippingMethods || lookupsData.shipping_method || lookupsData.shippingMethod;
+            if (Array.isArray(shippingMethods)) {
+                return shippingMethods.map((item: any) => 
+                    typeof item === "string" ? item : (item?.name ?? item?.label ?? item?.value ?? String(item))
+                );
+            }
+            // Fallback: use certificate types if shipping methods not available
             const values = Object.values(lookupsData);
             if (values.length > 0 && Array.isArray(values[0])) {
-                return values[0].map((item: any) => {
-                    if (typeof item === "string") {
-                        return { id: null, name: item };
-                    }
-                    return {
-                        id: item?.id ?? item?.carrier_id ?? item?.carrierId ?? null,
-                        name: item?.name ?? item?.label ?? item?.value ?? String(item)
-                    };
-                });
+                return values[0].map((item: any) => 
+                    typeof item === "string" ? item : (item?.name ?? item?.label ?? item?.value ?? String(item))
+                );
             }
         }
         return [];
     }, [lookupsData]);
-
-    // Sync carrier ID when shipping method or options change
-    React.useEffect(() => {
-        if (shippingMethod && shippingMethodOptions.length > 0) {
-            const selectedOption = shippingMethodOptions.find((opt) => opt.name === shippingMethod);
-            if (selectedOption) {
-                setSelectedCarrierId(selectedOption.id);
-            }
-        }
-    }, [shippingMethod, shippingMethodOptions]);
-
-    // Sync status ID when order status or options change
-    React.useEffect(() => {
-        if (orderStatus && orderStatusOptions.length > 0) {
-            const selectedOption = orderStatusOptions.find((opt) => opt.name === orderStatus);
-            if (selectedOption) {
-                setSelectedStatusId(selectedOption.id);
-            }
-        }
-    }, [orderStatus, orderStatusOptions]);
-
-    // Sync priority ID when order priority or options change
-    React.useEffect(() => {
-        if (orderPriority && orderPriorityOptions.length > 0) {
-            const selectedOption = orderPriorityOptions.find((opt) => opt.name === orderPriority);
-            if (selectedOption) {
-                setSelectedPriorityId(selectedOption.id);
-            }
-        }
-    }, [orderPriority, orderPriorityOptions]);
-
-    // Sync certificate type ID when certificate type or options change
-    React.useEffect(() => {
-        if (certificateType && certificateTypeOptions.length > 0) {
-            const selectedOption = certificateTypeOptions.find((opt) => opt.name === certificateType);
-            if (selectedOption) {
-                setSelectedCertificateTypeId(selectedOption.id);
-            }
-        }
-    }, [certificateType, certificateTypeOptions]);
-
-    // Sync type ID when order category or options change
-    React.useEffect(() => {
-        if (orderCategory && orderCategoryOptions.length > 0) {
-            const selectedOption = orderCategoryOptions.find((opt) => opt.name === orderCategory);
-            if (selectedOption) {
-                setSelectedTypeId(selectedOption.id);
-            }
-        }
-    }, [orderCategory, orderCategoryOptions]);
-
-    const quoteOptions = React.useMemo(() => {
-        if (!quotesData) return [];
-        const seenIds = new Set<string>();
-        const options: QuoteOption[] = [];
-
-        const pushQuote = (q: any) => {
-            if (!q) return;
-            const id = String(q.quote_id ?? q.id ?? q.quoteId ?? "");
-            const name = q.name ?? q.quote_name ?? q.subject ?? q.title ?? "";
-
-            // Skip if no id or name, or if we've already seen this id
-            if (!id || !name || seenIds.has(id)) return;
-
-            seenIds.add(id);
-            options.push({
-                id,
-                name,
-                raw: q,
-            });
-        };
-
-        // Handle different possible response structures
-        // Shape A: { quotes: [...] }
-        if (quotesData.quotes && Array.isArray(quotesData.quotes)) {
-            quotesData.quotes.forEach(pushQuote);
-        }
-        // Shape B: { data: [...] }
-        else if (quotesData.data && Array.isArray(quotesData.data)) {
-            quotesData.data.forEach(pushQuote);
-        }
-        // Shape C: direct array
-        else if (Array.isArray(quotesData)) {
-            quotesData.forEach(pushQuote);
-        }
-
-        return options;
-    }, [quotesData]);
 
     const customerOptions = React.useMemo(() => {
         if (!customersData?.data) return [];
@@ -673,6 +528,11 @@ export default function CreateOrderPage() {
             const name = p.internal_name ?? p.product_name ?? p.name ?? "";
             const productNumber = p.product_number ?? p.productNumber ?? "";
             const description = p.description ?? "";
+            const listPrice = typeof p.list_price === "number" ? p.list_price : typeof p.listPrice === "number" ? p.listPrice : undefined;
+            const oemPrice = typeof p.oem_price === "number" ? p.oem_price : typeof p.oemPrice === "number" ? p.oemPrice : undefined;
+            const resellerPrice = typeof p.reseller_price === "number" ? p.reseller_price : typeof p.resellerPrice === "number" ? p.resellerPrice : undefined;
+            const hostingPrice = typeof p.hosting_price === "number" ? p.hosting_price : typeof p.hostingPrice === "number" ? p.hostingPrice : undefined;
+
             // Skip if no id or name, or if we've already seen this id
             if (!id || !name || seenIds.has(id)) return;
 
@@ -682,6 +542,10 @@ export default function CreateOrderPage() {
                 name,
                 productNumber,
                 description,
+                listPrice,
+                oemPrice,
+                resellerPrice,
+                hostingPrice,
                 raw: p,
             });
         };
@@ -705,6 +569,41 @@ export default function CreateOrderPage() {
 
         return options;
     }, [productsData]);
+
+    // Helper function to get price from product
+    const getProductPrice = React.useCallback((product: ProductOption, type: PriceType): number | undefined => {
+        let price: number | undefined = undefined;
+        
+        // Try from productOption first
+        price = product[type];
+        
+        // If not found, try from raw data
+        if ((price === undefined || price === null) && product.raw) {
+            const raw = product.raw;
+            switch (type) {
+                case "listPrice":
+                    price = raw.list_price ?? raw.listPrice ?? raw.listPrice_value ?? raw.price ?? undefined;
+                    break;
+                case "oemPrice":
+                    price = raw.oem_price ?? raw.oemPrice ?? raw.oemPrice_value ?? undefined;
+                    break;
+                case "resellerPrice":
+                    price = raw.reseller_price ?? raw.resellerPrice ?? raw.resellerPrice_value ?? undefined;
+                    break;
+                case "hostingPrice":
+                    price = raw.hosting_price ?? raw.hostingPrice ?? raw.hostingPrice_value ?? undefined;
+                    break;
+            }
+        }
+        
+        // Convert string prices to numbers if needed
+        if (typeof price === "string") {
+            const parsed = parseFloat(price);
+            price = isNaN(parsed) ? undefined : parsed;
+        }
+        
+        return price !== undefined && price !== null && typeof price === "number" && !isNaN(price) ? price : undefined;
+    }, []);
 
     // Helper function to calculate total
     const calculateRowTotal = React.useCallback((price: string, quantity: string): string => {
@@ -742,12 +641,13 @@ export default function CreateOrderPage() {
                 productCode: "",
                 productDescription: "",
                 productNotes: "",
+                priceType: globalPriceType,
                 productPrice: "",
                 productQuantity: "",
                 productTotal: "",
             },
         ]);
-    }, []);
+    }, [globalPriceType]);
 
     // Remove a product row
     const handleRemoveProductRow = React.useCallback((rowId: string) => {
@@ -758,10 +658,16 @@ export default function CreateOrderPage() {
     const handleProductSelect = React.useCallback(
         (rowId: string, _event: React.SyntheticEvent, newValue: ProductOption | null) => {
             if (newValue) {
+                // Get price based on current price type for the row
+                const row = productRows.find((r) => r.id === rowId);
+                const priceType = row?.priceType ?? globalPriceType;
+                const price = getProductPrice(newValue, priceType);
+                
                 updateProductRow(rowId, {
                     product: newValue,
                     productCode: newValue.productNumber ?? "",
                     productDescription: newValue.description ?? "",
+                    productPrice: price !== undefined ? price.toFixed(2) : "",
                 });
             } else {
                 updateProductRow(rowId, {
@@ -774,8 +680,51 @@ export default function CreateOrderPage() {
                 });
             }
         },
-        [updateProductRow]
+        [productRows, globalPriceType, getProductPrice, updateProductRow]
     );
+
+    // Handle price type change for a specific row
+    const handlePriceTypeChange = React.useCallback(
+        (rowId: string, event: SelectChangeEvent<PriceType>) => {
+            const newPriceType = event.target.value as PriceType;
+            const row = productRows.find((r) => r.id === rowId);
+            if (row?.product) {
+                const price = getProductPrice(row.product, newPriceType);
+                updateProductRow(rowId, {
+                    priceType: newPriceType,
+                    productPrice: price !== undefined ? price.toFixed(2) : "",
+                });
+            } else {
+                updateProductRow(rowId, { priceType: newPriceType });
+            }
+        },
+        [productRows, getProductPrice, updateProductRow]
+    );
+
+    // Handle global price type change
+    const handleGlobalPriceTypeChange = React.useCallback((event: SelectChangeEvent<PriceType>) => {
+        const newPriceType = event.target.value as PriceType;
+        setGlobalPriceType(newPriceType);
+        
+        // Update all rows that have a product selected
+        setProductRows((prevRows) =>
+            prevRows.map((row) => {
+                if (row.product) {
+                    const price = getProductPrice(row.product, newPriceType);
+                    return {
+                        ...row,
+                        priceType: newPriceType,
+                        productPrice: price !== undefined ? price.toFixed(2) : "",
+                        productTotal: calculateRowTotal(
+                            price !== undefined ? price.toFixed(2) : "",
+                            row.productQuantity
+                        ),
+                    };
+                }
+                return { ...row, priceType: newPriceType };
+            })
+        );
+    }, [getProductPrice, calculateRowTotal]);
 
     // Handle quantity change for a specific row
     const handleQuantityChange = React.useCallback(
@@ -827,10 +776,26 @@ export default function CreateOrderPage() {
         }, 0);
     }, [productRows]);
 
+    // Calculate discount amount based on discount type
+    const discountAmount = React.useMemo(() => {
+        if (discountType === "zero" || !discount) return 0;
+        const discountValue = parseFloat(discount) || 0;
+        if (discountValue <= 0) return 0;
+        
+        if (discountType === "percentage") {
+            // Percentage of price
+            return (netTotal * discountValue) / 100;
+        } else if (discountType === "direct") {
+            // Direct price reduction (absolute amount)
+            return discountValue;
+        }
+        return 0;
+    }, [discountType, discount, netTotal]);
+
     // Calculate grand total
     const grandTotal = React.useMemo(() => {
-        return netTotal;
-    }, [netTotal]);
+        return netTotal - discountAmount;
+    }, [netTotal, discountAmount]);
 
     const handleCustomerSelect = React.useCallback(
         (_event: React.SyntheticEvent, newValue: CustomerOption | null) => {
@@ -993,79 +958,79 @@ export default function CreateOrderPage() {
             hasErrors = true;
         }
 
-        // Validate product rows - check if any row has empty product name
-        const hasEmptyProduct = productRows.some((row) => !row.product || !row.product.name || !row.product.name.trim());
-        if (hasEmptyProduct) {
-            alert("Please select a product name for all product rows before saving.");
-            hasErrors = true;
-        }
-
         if (hasErrors) {
             return;
         }
 
-        // Convert string IDs to numbers where needed
-        const accountId = selectedCustomer?.id ? parseInt(selectedCustomer.id, 10) : null;
-        const contactId = selectedContact?.id ? parseInt(selectedContact.id, 10) : null;
-        const companyId = effectiveCompanyId ? parseInt(String(effectiveCompanyId), 10) : null;
-        const quoteId = selectedQuote?.id ? parseInt(selectedQuote.id, 10) : null;
-
         const payload = {
-            company_id: companyId,
-            subject: orderSubject,
-            account_id: accountId,
-            contact_id: contactId,
-            quote_id: quoteId,
-            due_date: dueDate || null,
-            customer_no: null,
-            po_number: poNumber || null,
-            carrier_id: selectedCarrierId,
-            salesorder_type_id: selectedTypeId,
-            salesorder_status_id: selectedStatusId,
-            salesorder_priority_id: selectedPriorityId,
-            certificate_type_id: selectedCertificateTypeId,
-            special_conditions: specialConditions || null,
-            terms_conditions: null,
-            subtotal: netTotal || 0,
-            discount_percent: 0,
-            discount_amount: 0,
-            adjustment: 0,
-            shipping_handling_amount: 0,
-            total: grandTotal || 0,
-            billing_address: {
-                street: billingAddress || "",
-                city: billingCity || "",
-                state: billingState || "",
-                postal_code: billingCode || "",
-                country: billingCountry || "",
-                po_box: billingPOBox || "",
+            orderSubject,
+            shippingMethod,
+            orderStatus,
+            orderPriority,
+            certificateType,
+            specialConditions,
+            orderCategory,
+            shipmentStatus,
+            shipmentAccount,
+            assignedSensors,
+            netTotal,
+            discount: {
+                type: discountType,
+                value: discount,
+                amount: discountAmount,
             },
-            shipping_address: {
-                street: shippingAddress || "",
-                city: shippingCity || "",
-                state: shippingState || "",
-                postal_code: shippingCode || "",
-                country: shippingCountry || "",
-                po_box: shippingPOBox || "",
+            grandTotal,
+            customer: {
+                id: selectedCustomer?.id ?? null,
+                name: selectedCustomer?.name ?? "",
+                phone: customerPhone,
+                email: customerEmail,
+                billingAddress: {
+                    street: billingAddress,
+                    poBox: billingPOBox,
+                    city: billingCity,
+                    state: billingState,
+                    code: billingCode,
+                    country: billingCountry,
+                },
+                shippingAddress: {
+                    street: shippingAddress,
+                    poBox: shippingPOBox,
+                    city: shippingCity,
+                    state: shippingState,
+                    code: shippingCode,
+                    country: shippingCountry,
+                },
+                contact: selectedContact
+                    ? {
+                          id: selectedContact.id,
+                          name: selectedContact.name,
+                          phone: selectedContact.phone ?? "",
+                          email: selectedContact.email ?? "",
+                      }
+                    : null,
             },
-            line_items: productRows.map((row, index) => ({
-                sequence_no: index + 1,
-                item_id: row.product?.id ? parseInt(row.product.id, 10) : null,
+            notes: {
+                shippingComments,
+                processingComments,
+            },
+            productDetails: productRows.map((row) => ({
+                id: row.id,
+                productId: row.product?.id ?? null,
+                productName: row.product?.name ?? "",
+                productCode: row.productCode,
+                productDescription: row.productDescription,
+                productNotes: row.productNotes,
+                priceType: row.priceType,
+                price: row.productPrice ? parseFloat(row.productPrice) : 0,
                 quantity: row.productQuantity ? parseFloat(row.productQuantity) : 0,
-                list_price: row.productPrice ? parseFloat(row.productPrice) : 0,
-                discount_percent: 0,
-                discount_amount: 0,
-                adjustment: 0,
-                comment: row.productNotes || null,
-                description: row.productDescription || null,
-                pricetype_id: null,
+                total: row.productTotal ? parseFloat(row.productTotal) : 0,
             })),
         };
         console.log("Saving order draft:", payload);
     //    alert("Order saved successfully.");
       //  router.push("/dashboard/orders");
     }, [
-        effectiveCompanyId,
         assignedSensors,
         billingAddress,
         billingPOBox,
@@ -1095,17 +1060,12 @@ export default function CreateOrderPage() {
         shippingMethod,
         specialConditions,
         orderCategory,
+        discount,
+        discountType,
+        discountAmount,
         netTotal,
         grandTotal,
         productRows,
-        selectedCarrierId,
-        selectedTypeId,
-        selectedStatusId,
-        selectedPriorityId,
-        selectedCertificateTypeId,
-        poNumber,
-        dueDate,
-        selectedQuote,
     ]);
 
     const toggleSelect = React.useCallback(
@@ -1532,50 +1492,8 @@ export default function CreateOrderPage() {
                                             gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
                                         }}
                                     >
-                                        <TextField 
-                                            fullWidth 
-                                            size="small" 
-                                            label="Purchase Order"
-                                            value={poNumber}
-                                            onChange={(event) => setPoNumber(event.target.value)}
-                                        />
-                                        <Autocomplete
-                                            size="small"
-                                            fullWidth
-                                            options={quoteOptions}
-                                            value={selectedQuote}
-                                            onChange={(event, newValue) => setSelectedQuote(newValue)}
-                                            loading={quotesLoading}
-                                            disableClearable={false}
-                                            isOptionEqualToValue={(option, value) => option.id === value.id}
-                                            getOptionLabel={(option) => (typeof option === "string" ? option : option?.name ?? "")}
-                                            renderOption={(props, option) => (
-                                                <li {...props} key={option.id}>
-                                                    {option.name}
-                                                </li>
-                                            )}
-                                            renderInput={(params) => (
-                                                <TextField
-                                                    {...params}
-                                                    size="small"
-                                                    fullWidth
-                                                    label="Quote Name"
-                                                    placeholder="Select Quote"
-                                                    error={!!quotesError}
-                                                    helperText={quotesError ? (quotesError instanceof Error ? quotesError.message : "Failed to load quotes") : undefined}
-                                                    InputProps={{
-                                                        ...params.InputProps,
-                                                        endAdornment: (
-                                                            <>
-                                                                {quotesLoading ? <CircularProgress color="inherit" size={16} /> : null}
-                                                                {params.InputProps.endAdornment}
-                                                            </>
-                                                        ),
-                                                    }}
-                                                />
-                                            )}
-                                            noOptionsText={quotesLoading ? "Loading..." : quotesError ? "Error loading quotes" : "No quotes found"}
-                                        />
+                                        <TextField fullWidth size="small" label="Purchase Order" />
+                                        <TextField fullWidth size="small" label="Quote Name" />
                                         <TextField
                                             fullWidth
                                             size="small"
@@ -1589,21 +1507,13 @@ export default function CreateOrderPage() {
                                                 labelId="order-category-label"
                                                 label="Order Category"
                                                 value={orderCategory || ""}
-                                                onChange={(event) => {
-                                                    const selectedName = event.target.value as string;
-                                                    setOrderCategory(selectedName);
-                                                    // Find the type ID for the selected name
-                                                    const selectedOption = orderCategoryOptions.find(
-                                                        (opt) => opt.name === selectedName
-                                                    );
-                                                    setSelectedTypeId(selectedOption?.id ?? null);
-                                                }}
+                                                onChange={(event) => setOrderCategory(event.target.value as string)}
                                                 disabled={lookupsLoading}
                                             >
                                                 {orderCategoryOptions.length > 0 ? (
                                                     orderCategoryOptions.map((option) => (
-                                                        <MenuItem key={option.name} value={option.name}>
-                                                            {option.name}
+                                                        <MenuItem key={option} value={option}>
+                                                            {option}
                                                         </MenuItem>
                                                     ))
                                                 ) : (
@@ -1613,36 +1523,20 @@ export default function CreateOrderPage() {
                                                 )}
                                             </Select>
                                         </FormControl>
-                                        <TextField 
-                                            fullWidth 
-                                            size="small" 
-                                            label="Due Date" 
-                                            type="date" 
-                                            value={dueDate}
-                                            onChange={(event) => setDueDate(event.target.value)}
-                                            InputLabelProps={{ shrink: true }} 
-                                        />
+                                        <TextField fullWidth size="small" label="Due Date" type="date" InputLabelProps={{ shrink: true }} />
                                         <FormControl fullWidth size="small">
                                             <InputLabel id="shipping-method-label">Shipping Method</InputLabel>
                                             <Select
                                                 labelId="shipping-method-label"
                                                 label="Shipping Method"
                                                 value={shippingMethod || ""}
-                                                onChange={(event) => {
-                                                    const selectedName = event.target.value as string;
-                                                    setShippingMethod(selectedName);
-                                                    // Find the carrier ID for the selected name
-                                                    const selectedOption = shippingMethodOptions.find(
-                                                        (opt) => opt.name === selectedName
-                                                    );
-                                                    setSelectedCarrierId(selectedOption?.id ?? null);
-                                                }}
+                                                onChange={(event) => setShippingMethod(event.target.value as string)}
                                                 disabled={lookupsLoading}
                                             >
                                                 {shippingMethodOptions.length > 0 ? (
                                                     shippingMethodOptions.map((option) => (
-                                                        <MenuItem key={option.name} value={option.name}>
-                                                            {option.name}
+                                                        <MenuItem key={option} value={option}>
+                                                            {option}
                                                         </MenuItem>
                                                     ))
                                                 ) : (
@@ -1658,21 +1552,13 @@ export default function CreateOrderPage() {
                                                 labelId="order-status-label"
                                                 label="Status"
                                                 value={orderStatus || ""}
-                                                onChange={(event) => {
-                                                    const selectedName = event.target.value as string;
-                                                    setOrderStatus(selectedName);
-                                                    // Find the status ID for the selected name
-                                                    const selectedOption = orderStatusOptions.find(
-                                                        (opt) => opt.name === selectedName
-                                                    );
-                                                    setSelectedStatusId(selectedOption?.id ?? null);
-                                                }}
+                                                onChange={(event) => setOrderStatus(event.target.value as string)}
                                                 disabled={lookupsLoading}
                                             >
                                                 {orderStatusOptions.length > 0 ? (
                                                     orderStatusOptions.map((option) => (
-                                                        <MenuItem key={option.name} value={option.name}>
-                                                            {option.name}
+                                                        <MenuItem key={option} value={option}>
+                                                            {option}
                                                         </MenuItem>
                                                     ))
                                                 ) : (
@@ -1688,21 +1574,13 @@ export default function CreateOrderPage() {
                                                 labelId="order-priority-label"
                                                 label="Priority"
                                                 value={orderPriority || ""}
-                                                onChange={(event) => {
-                                                    const selectedName = event.target.value as string;
-                                                    setOrderPriority(selectedName);
-                                                    // Find the priority ID for the selected name
-                                                    const selectedOption = orderPriorityOptions.find(
-                                                        (opt) => opt.name === selectedName
-                                                    );
-                                                    setSelectedPriorityId(selectedOption?.id ?? null);
-                                                }}
+                                                onChange={(event) => setOrderPriority(event.target.value as string)}
                                                 disabled={lookupsLoading}
                                             >
                                                 {orderPriorityOptions.length > 0 ? (
                                                     orderPriorityOptions.map((option) => (
-                                                        <MenuItem key={option.name} value={option.name}>
-                                                            {option.name}
+                                                        <MenuItem key={option} value={option}>
+                                                            {option}
                                                         </MenuItem>
                                                     ))
                                                 ) : (
@@ -1718,21 +1596,13 @@ export default function CreateOrderPage() {
                                                 labelId="certificate-type-label"
                                                 label="Certificate Type"
                                                 value={certificateType || ""}
-                                                onChange={(event) => {
-                                                    const selectedName = event.target.value as string;
-                                                    setCertificateType(selectedName);
-                                                    // Find the certificate type ID for the selected name
-                                                    const selectedOption = certificateTypeOptions.find(
-                                                        (opt) => opt.name === selectedName
-                                                    );
-                                                    setSelectedCertificateTypeId(selectedOption?.id ?? null);
-                                                }}
+                                                onChange={(event) => setCertificateType(event.target.value as string)}
                                                 disabled={lookupsLoading}
                                             >
                                                 {certificateTypeOptions.length > 0 ? (
                                                     certificateTypeOptions.map((option) => (
-                                                        <MenuItem key={option.name} value={option.name}>
-                                                            {option.name}
+                                                        <MenuItem key={option} value={option}>
+                                                            {option}
                                                         </MenuItem>
                                                     ))
                                                 ) : (
@@ -1873,9 +1743,27 @@ export default function CreateOrderPage() {
                             <Typography variant="caption" fontWeight={600}>
                                 Quantity
                             </Typography>
+                            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
                             <Typography variant="caption" fontWeight={600}>
                                 Price
                             </Typography>
+                                <FormControl size="small" fullWidth>
+                                    <Select
+                                        value={globalPriceType}
+                                        onChange={handleGlobalPriceTypeChange}
+                                        sx={{ 
+                                            fontSize: "11px",
+                                            height: "28px",
+                                            "& .MuiSelect-select": { py: 0.5 }
+                                        }}
+                                    >
+                                        <MenuItem value="listPrice" sx={{ fontSize: "11px" }}>List Price</MenuItem>
+                                        <MenuItem value="oemPrice" sx={{ fontSize: "11px" }}>OEM Price</MenuItem>
+                                        <MenuItem value="resellerPrice" sx={{ fontSize: "11px" }}>Reseller Price</MenuItem>
+                                        <MenuItem value="hostingPrice" sx={{ fontSize: "11px" }}>Hosting Price</MenuItem>
+                                    </Select>
+                                </FormControl>
+                            </Box>
                             <Typography variant="caption" fontWeight={600}>
                                 Total
                             </Typography>
@@ -2037,7 +1925,7 @@ export default function CreateOrderPage() {
                             </Tooltip>
                         </Paper>
                         ))}
-                        {/* Net Total and Grand Total Rows */}
+                        {/* Net Total, Discount, and Grand Total Rows */}
                         <Paper
                             variant="outlined"
                             sx={{
@@ -2063,6 +1951,124 @@ export default function CreateOrderPage() {
                                 fullWidth
                             />
                         </Paper>
+                        <Paper
+                            variant="outlined"
+                            sx={{
+                                display: "grid",
+                                gridTemplateColumns: "0.35fr 2.5fr 0.9fr 0.6fr 0.6fr 0.6fr 0.9fr",
+                                alignItems: "stretch",
+                                px: 2,
+                                py: 1.5,
+                                gap: 1,
+                                mb: 1,
+                            }}
+                        >
+                            <Box sx={{ gridColumn: "span 5" }} />
+                            <Typography variant="caption" fontWeight={600} sx={{ alignSelf: "center", textAlign: "right", pr: 1 }}>
+                                Discount:
+                            </Typography>
+                            <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => setDiscountDialogOpen(true)}
+                                sx={{ 
+                                    fontSize: "11px",
+                                    textTransform: "none",
+                                    minWidth: "60px",
+                                    alignSelf: "center",
+                                }}
+                            >
+                                {discountType === "zero" 
+                                    ? "Zero Discount" 
+                                    : discountType === "percentage" 
+                                    ? `${discount || "0"}%` 
+                                    : discountAmount > 0 
+                                    ? discountAmount.toFixed(2) 
+                                    : "Set Discount"}
+                            </Button>
+                        </Paper>
+                        {/* Discount Dialog */}
+                        <Dialog
+                            open={discountDialogOpen}
+                            onClose={() => setDiscountDialogOpen(false)}
+                            maxWidth="sm"
+                            fullWidth
+                        >
+                            <DialogTitle sx={{ fontSize: "14px", pb: 1 }}>Discount Details</DialogTitle>
+                            <DialogContent>
+                                <Box sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+                                    <RadioGroup
+                                        value={discountType}
+                                        onChange={(event) => {
+                                            const newType = event.target.value as "zero" | "percentage" | "direct";
+                                            setDiscountType(newType);
+                                            if (newType === "zero") {
+                                                setDiscount("");
+                                            }
+                                        }}
+                                    >
+                                        <FormControlLabel
+                                            value="zero"
+                                            control={<Radio size="small" />}
+                                            label="Zero Discount"
+                                            sx={{ "& .MuiFormControlLabel-label": { fontSize: "12px" } }}
+                                        />
+                                        <FormControlLabel
+                                            value="percentage"
+                                            control={<Radio size="small" />}
+                                            label="% of Price"
+                                            sx={{ "& .MuiFormControlLabel-label": { fontSize: "12px" } }}
+                                        />
+                                        <FormControlLabel
+                                            value="direct"
+                                            control={<Radio size="small" />}
+                                            label="Direct Price Reduction"
+                                            sx={{ "& .MuiFormControlLabel-label": { fontSize: "12px" } }}
+                                        />
+                                    </RadioGroup>
+                                    {(discountType === "percentage" || discountType === "direct") && (
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            type="number"
+                                            label={discountType === "percentage" ? "Discount Percentage (%)" : "Discount Amount"}
+                                            value={discount}
+                                            onChange={(event) => setDiscount(event.target.value)}
+                                            placeholder={discountType === "percentage" ? "Enter %" : "Enter amount"}
+                                            inputProps={{
+                                                step: "0.01",
+                                                min: "0",
+                                                max: discountType === "percentage" ? "100" : undefined,
+                                                style: { MozAppearance: "textfield" },
+                                            }}
+                                            sx={{
+                                                "& input[type=number]": {
+                                                    MozAppearance: "textfield",
+                                                },
+                                                "& input[type=number]::-webkit-outer-spin-button": {
+                                                    WebkitAppearance: "none",
+                                                    margin: 0,
+                                                },
+                                                "& input[type=number]::-webkit-inner-spin-button": {
+                                                    WebkitAppearance: "none",
+                                                    margin: 0,
+                                                },
+                                            }}
+                                        />
+                                    )}
+                                    {discountType !== "zero" && discountAmount > 0 && (
+                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: "12px", mt: 1 }}>
+                                            Discount Amount: {discountAmount.toFixed(2)}
+                                        </Typography>
+                                    )}
+                                </Box>
+                            </DialogContent>
+                            <DialogActions sx={{ px: 2, pb: 2 }}>
+                                <Button size="small" onClick={() => setDiscountDialogOpen(false)}>
+                                    Close
+                                </Button>
+                            </DialogActions>
+                        </Dialog>
                         <Paper
                             variant="outlined"
                             sx={{
