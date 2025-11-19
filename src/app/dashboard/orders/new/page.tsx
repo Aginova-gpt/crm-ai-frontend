@@ -77,8 +77,9 @@ type ProductOption = {
 };
 
 type QuoteOption = {
-    id: string;
-    name: string;
+    id: string; // Unique identifier for React keys and comparison
+    name: string; // Display name (subject)
+    subject: string; // Subject field to use as quote_id in payload
     raw?: any;
 };
 
@@ -207,6 +208,29 @@ function useQuotes() {
     });
 }
 
+function useAccountQuotes(accountId: string | null, companyId: string | null) {
+    const { token, isLoggedIn } = useAuth();
+
+    return useQuery({
+        queryKey: ["account-quotes", accountId, companyId],
+        queryFn: async () => {
+            if (!accountId || !companyId) return null;
+            const url = `http://34.58.37.44/api/get-account-quotes?account_id=${accountId}&company_id=${companyId}`;
+            const res = await fetch(url, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            });
+            if (!res.ok) {
+                if (res.status === 401) throw new Error("Unauthorized – please log in again");
+                throw new Error(`Failed to fetch account quotes: ${res.status}`);
+            }
+            return res.json();
+        },
+        enabled: isLoggedIn && !!token && !!accountId && !!companyId,
+        staleTime: 0,
+        refetchOnWindowFocus: false,
+    });
+}
+
 function formatAddress(address: any): string {
     if (!address) return "";
     if (typeof address === "string") return address;
@@ -318,6 +342,7 @@ export default function CreateOrderPage() {
     const showAdvancedSections = Boolean(orderIdFromUrl);
     const { selectedCompanyId, userCompanyId } = useCompany();
     const { isAdmin } = useProfile();
+    const { token, isLoggedIn } = useAuth();
     const effectiveCompanyId = React.useMemo(() => (isAdmin ? selectedCompanyId : userCompanyId), [
         isAdmin,
         selectedCompanyId,
@@ -326,11 +351,15 @@ export default function CreateOrderPage() {
     const { data: customersData, isLoading: customersLoading } = useCustomerDirectory();
     const { data: productsData, isLoading: productsLoading, error: productsError } = useProductDirectory(effectiveCompanyId);
     const { data: lookupsData, isLoading: lookupsLoading } = useSalesOrderLookups();
-    const { data: quotesData, isLoading: quotesLoading, error: quotesError } = useQuotes();
     const [orderSubject, setOrderSubject] = React.useState("");
     const [orderSubjectError, setOrderSubjectError] = React.useState("");
     const [customerNameError, setCustomerNameError] = React.useState("");
     const [selectedCustomer, setSelectedCustomer] = React.useState<CustomerOption | null>(null);
+    const selectedCustomerId = selectedCustomer?.id ?? null;
+    const { data: accountQuotesData, isLoading: accountQuotesLoading, error: accountQuotesError } = useAccountQuotes(
+        selectedCustomerId,
+        effectiveCompanyId ? String(effectiveCompanyId) : null
+    );
     const [productRows, setProductRows] = React.useState<ProductRow[]>([
         {
             id: "1",
@@ -344,7 +373,6 @@ export default function CreateOrderPage() {
         },
     ]);
     const [expandedNotes, setExpandedNotes] = React.useState<Record<string, boolean>>({});
-    const selectedCustomerId = selectedCustomer?.id ?? null;
     const {
         data: customerDetail,
         isFetching: customerDetailLoading,
@@ -372,6 +400,7 @@ export default function CreateOrderPage() {
     const [poNumber, setPoNumber] = React.useState("");
     const [dueDate, setDueDate] = React.useState("");
     const [selectedQuote, setSelectedQuote] = React.useState<QuoteOption | null>(null);
+    const [isSaving, setIsSaving] = React.useState(false);
     const [showWifiPassword, setShowWifiPassword] = React.useState(false);
     const [customerPhone, setCustomerPhone] = React.useState("");
     const [customerEmail, setCustomerEmail] = React.useState("");
@@ -576,42 +605,45 @@ export default function CreateOrderPage() {
     }, [orderCategory, orderCategoryOptions]);
 
     const quoteOptions = React.useMemo(() => {
-        if (!quotesData) return [];
+        if (!accountQuotesData) return [];
         const seenIds = new Set<string>();
         const options: QuoteOption[] = [];
 
-        const pushQuote = (q: any) => {
+        const pushQuote = (q: any, index: number) => {
             if (!q) return;
-            const id = String(q.quote_id ?? q.id ?? q.quoteId ?? "");
-            const name = q.name ?? q.quote_name ?? q.subject ?? q.title ?? "";
+            // Extract subject field as the quote name
+            const subject = q.subject ?? q.name ?? q.quote_name ?? q.title ?? "";
+            // Use a unique identifier (quote_id, id, quoteId, or fallback to index)
+            const uniqueId = String(q.quote_id ?? q.id ?? q.quoteId ?? `quote-${index}`);
 
-            // Skip if no id or name, or if we've already seen this id
-            if (!id || !name || seenIds.has(id)) return;
+            // Skip if no subject or if we've already seen this unique id
+            if (!subject || seenIds.has(uniqueId)) return;
 
-            seenIds.add(id);
+            seenIds.add(uniqueId);
             options.push({
-                id,
-                name,
+                id: uniqueId, // Unique identifier for React keys
+                name: subject, // Display subject as the name
+                subject: subject, // Store subject separately for quote_id in payload
                 raw: q,
             });
         };
 
         // Handle different possible response structures
         // Shape A: { quotes: [...] }
-        if (quotesData.quotes && Array.isArray(quotesData.quotes)) {
-            quotesData.quotes.forEach(pushQuote);
+        if (accountQuotesData.quotes && Array.isArray(accountQuotesData.quotes)) {
+            accountQuotesData.quotes.forEach((q: any, index: number) => pushQuote(q, index));
         }
         // Shape B: { data: [...] }
-        else if (quotesData.data && Array.isArray(quotesData.data)) {
-            quotesData.data.forEach(pushQuote);
+        else if (accountQuotesData.data && Array.isArray(accountQuotesData.data)) {
+            accountQuotesData.data.forEach((q: any, index: number) => pushQuote(q, index));
         }
         // Shape C: direct array
-        else if (Array.isArray(quotesData)) {
-            quotesData.forEach(pushQuote);
+        else if (Array.isArray(accountQuotesData)) {
+            accountQuotesData.forEach((q: any, index: number) => pushQuote(q, index));
         }
 
         return options;
-    }, [quotesData]);
+    }, [accountQuotesData]);
 
     const customerOptions = React.useMemo(() => {
         if (!customersData?.data) return [];
@@ -835,6 +867,7 @@ export default function CreateOrderPage() {
     const handleCustomerSelect = React.useCallback(
         (_event: React.SyntheticEvent, newValue: CustomerOption | null) => {
             setSelectedCustomer(newValue);
+            setSelectedQuote(null); // Clear quote when customer changes
             const initialContacts = newValue?.contacts ?? [];
             setCustomerContacts(initialContacts);
             if (newValue) {
@@ -896,6 +929,7 @@ export default function CreateOrderPage() {
         const stillExists = filteredCustomerOptions.some((option) => option.id === selectedCustomer.id);
         if (!stillExists) {
             setSelectedCustomer(null);
+            setSelectedQuote(null);
             setCustomerPhone("");
             setCustomerEmail("");
             setBillingAddress("");
@@ -977,7 +1011,7 @@ export default function CreateOrderPage() {
         router.push("/dashboard/orders");
     }, [router]);
 
-    const handleSave = React.useCallback(() => {
+    const handleSave = React.useCallback(async () => {
         // Validate required fields
         let hasErrors = false;
         setOrderSubjectError("");
@@ -1004,66 +1038,103 @@ export default function CreateOrderPage() {
             return;
         }
 
-        // Convert string IDs to numbers where needed
-        const accountId = selectedCustomer?.id ? parseInt(selectedCustomer.id, 10) : null;
-        const contactId = selectedContact?.id ? parseInt(selectedContact.id, 10) : null;
-        const companyId = effectiveCompanyId ? parseInt(String(effectiveCompanyId), 10) : null;
-        const quoteId = selectedQuote?.id ? parseInt(selectedQuote.id, 10) : null;
+        if (!isLoggedIn || !token) {
+            alert("You must be logged in to save an order.");
+            return;
+        }
 
-        const payload = {
-            company_id: companyId,
-            subject: orderSubject,
-            account_id: accountId,
-            contact_id: contactId,
-            quote_id: quoteId,
-            due_date: dueDate || null,
-            customer_no: null,
-            po_number: poNumber || null,
-            carrier_id: selectedCarrierId,
-            salesorder_type_id: selectedTypeId,
-            salesorder_status_id: selectedStatusId,
-            salesorder_priority_id: selectedPriorityId,
-            certificate_type_id: selectedCertificateTypeId,
-            special_conditions: specialConditions || null,
-            terms_conditions: null,
-            subtotal: netTotal || 0,
-            discount_percent: 0,
-            discount_amount: 0,
-            adjustment: 0,
-            shipping_handling_amount: 0,
-            total: grandTotal || 0,
-            billing_address: {
-                street: billingAddress || "",
-                city: billingCity || "",
-                state: billingState || "",
-                postal_code: billingCode || "",
-                country: billingCountry || "",
-                po_box: billingPOBox || "",
-            },
-            shipping_address: {
-                street: shippingAddress || "",
-                city: shippingCity || "",
-                state: shippingState || "",
-                postal_code: shippingCode || "",
-                country: shippingCountry || "",
-                po_box: shippingPOBox || "",
-            },
-            line_items: productRows.map((row, index) => ({
-                sequence_no: index + 1,
-                item_id: row.product?.id ? parseInt(row.product.id, 10) : null,
-                quantity: row.productQuantity ? parseFloat(row.productQuantity) : 0,
-                list_price: row.productPrice ? parseFloat(row.productPrice) : 0,
+        setIsSaving(true);
+
+        try {
+            // Convert string IDs to numbers where needed
+            const accountId = selectedCustomer?.id ? parseInt(selectedCustomer.id, 10) : null;
+            const contactId = selectedContact?.id ? parseInt(selectedContact.id, 10) : null;
+            const companyId = effectiveCompanyId ? parseInt(String(effectiveCompanyId), 10) : null;
+            const quoteId = selectedQuote?.subject || selectedQuote?.name || null; // Use quote subject as quote_id
+
+            const payload = {
+                company_id: companyId,
+                subject: orderSubject,
+                account_id: accountId,
+                contact_id: contactId,
+                quote_id: quoteId,
+                due_date: dueDate || null,
+                customer_no: null,
+                po_number: poNumber || null,
+                carrier_id: selectedCarrierId,
+                salesorder_type_id: selectedTypeId,
+                salesorder_status_id: selectedStatusId,
+                salesorder_priority_id: selectedPriorityId,
+                certificate_type_id: selectedCertificateTypeId,
+                special_conditions: specialConditions || null,
+                terms_conditions: null,
+                shipping_comments: shippingComments || null,
+                processing_comments: processingComments || null,
+                subtotal: netTotal || 0,
                 discount_percent: 0,
                 discount_amount: 0,
                 adjustment: 0,
-                comment: row.productNotes || null,
-                description: row.productDescription || null,
-                pricetype_id: null,
-            })),
-        };
-        console.log("Saving order draft:", payload);
-    //    alert("Order saved successfully.");
-      //  router.push("/dashboard/orders");
+                shipping_handling_amount: 0,
+                total: grandTotal || 0,
+                billing_address: {
+                    street: billingAddress || "",
+                    city: billingCity || "",
+                    state: billingState || "",
+                    postal_code: billingCode || "",
+                    country: billingCountry || "",
+                    po_box: billingPOBox || "",
+                },
+                shipping_address: {
+                    street: shippingAddress || "",
+                    city: shippingCity || "",
+                    state: shippingState || "",
+                    postal_code: shippingCode || "",
+                    country: shippingCountry || "",
+                    po_box: shippingPOBox || "",
+                },
+                line_items: productRows.map((row, index) => ({
+                    sequence_no: index + 1,
+                    item_id: row.product?.id ? parseInt(row.product.id, 10) : null,
+                    quantity: row.productQuantity ? parseFloat(row.productQuantity) : 0,
+                    list_price: row.productPrice ? parseFloat(row.productPrice) : 0,
+                    discount_percent: 0,
+                    discount_amount: 0,
+                    adjustment: 0,
+                    comment: row.productNotes || null,
+                    description: row.productDescription || null,
+                    pricetype_id: null,
+                })),
+            };
+            console.log("Saving order:", payload);
+
+            const res = await fetch("http://34.58.37.44/api/add-salesorder", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify(payload),
+            });
+
+            if (!res.ok) {
+                if (res.status === 401) {
+                    alert("Unauthorized – please log in again");
+                    return;
+                }
+                const errorText = await res.text();
+                throw new Error(`Failed to save order: ${res.status} ${errorText}`);
+            }
+
+            const responseData = await res.json();
+            console.log("Order saved successfully:", responseData);
+            alert("Order saved successfully.");
+            router.push("/dashboard/orders");
+        } catch (error) {
+            console.error("Error saving order:", error);
+            alert(error instanceof Error ? error.message : "Failed to save order. Please try again.");
+        } finally {
+            setIsSaving(false);
+        }
     }, [
         effectiveCompanyId,
         assignedSensors,
@@ -1106,6 +1177,9 @@ export default function CreateOrderPage() {
         poNumber,
         dueDate,
         selectedQuote,
+        isLoggedIn,
+        token,
+        router,
     ]);
 
     const toggleSelect = React.useCallback(
@@ -1190,8 +1264,10 @@ export default function CreateOrderPage() {
                     Create Order
                 </Typography>
                 <Box sx={{ display: "flex", gap: 1 }}>
-                    <Button variant="outlined" onClick={handleCancel}>Cancel</Button>
-                    <Button variant="contained" onClick={handleSave}>Save Order</Button>
+                    <Button variant="outlined" onClick={handleCancel} disabled={isSaving}>Cancel</Button>
+                    <Button variant="contained" onClick={handleSave} disabled={isSaving}>
+                        {isSaving ? "Saving..." : "Save Order"}
+                    </Button>
                 </Box>
             </Box>
 
@@ -1545,7 +1621,7 @@ export default function CreateOrderPage() {
                                             options={quoteOptions}
                                             value={selectedQuote}
                                             onChange={(event, newValue) => setSelectedQuote(newValue)}
-                                            loading={quotesLoading}
+                                            loading={accountQuotesLoading}
                                             disableClearable={false}
                                             isOptionEqualToValue={(option, value) => option.id === value.id}
                                             getOptionLabel={(option) => (typeof option === "string" ? option : option?.name ?? "")}
@@ -1561,20 +1637,21 @@ export default function CreateOrderPage() {
                                                     fullWidth
                                                     label="Quote Name"
                                                     placeholder="Select Quote"
-                                                    error={!!quotesError}
-                                                    helperText={quotesError ? (quotesError instanceof Error ? quotesError.message : "Failed to load quotes") : undefined}
+                                                    error={!!accountQuotesError}
+                                                    helperText={accountQuotesError ? (accountQuotesError instanceof Error ? accountQuotesError.message : "Failed to load quotes") : undefined}
                                                     InputProps={{
                                                         ...params.InputProps,
                                                         endAdornment: (
                                                             <>
-                                                                {quotesLoading ? <CircularProgress color="inherit" size={16} /> : null}
+                                                                {accountQuotesLoading ? <CircularProgress color="inherit" size={16} /> : null}
                                                                 {params.InputProps.endAdornment}
                                                             </>
                                                         ),
                                                     }}
                                                 />
                                             )}
-                                            noOptionsText={quotesLoading ? "Loading..." : quotesError ? "Error loading quotes" : "No quotes found"}
+                                            noOptionsText={accountQuotesLoading ? "Loading..." : accountQuotesError ? "Error loading quotes" : !selectedCustomerId ? "Select a customer first" : "No quotes found"}
+                                            disabled={!selectedCustomerId || !effectiveCompanyId}
                                         />
                                         <TextField
                                             fullWidth
@@ -2506,8 +2583,8 @@ export default function CreateOrderPage() {
                                         </Paper>
                                     </Box>
                                     <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
-                                        <Button variant="contained" size="small" onClick={handleSave}>
-                                            Submit
+                                        <Button variant="contained" size="small" onClick={handleSave} disabled={isSaving}>
+                                            {isSaving ? "Saving..." : "Submit"}
                                         </Button>
                                     </Box>
                                 </CardContent>
