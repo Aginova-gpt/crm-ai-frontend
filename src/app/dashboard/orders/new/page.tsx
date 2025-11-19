@@ -231,6 +231,30 @@ function useAccountQuotes(accountId: string | null, companyId: string | null) {
     });
 }
 
+function useSalesOrderForEditing(salesorderId: string | null, companyId: string | null) {
+    const { token, isLoggedIn } = useAuth();
+
+    return useQuery({
+        queryKey: ["salesorder-for-editing", salesorderId, companyId],
+        queryFn: async () => {
+            if (!salesorderId || !companyId) return null;
+            const url = `http://34.58.37.44/api/get-salesorder-for-editing?salesorder_id=${encodeURIComponent(salesorderId)}&company_id=${encodeURIComponent(companyId)}`;
+            const res = await fetch(url, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            });
+            if (!res.ok) {
+                if (res.status === 401) throw new Error("Unauthorized – please log in again");
+                throw new Error(`Failed to fetch sales order: ${res.status}`);
+            }
+            const data = await res.json();
+            return data?.salesorder || null;
+        },
+        enabled: isLoggedIn && !!token && !!salesorderId && !!companyId,
+        staleTime: 0,
+        refetchOnWindowFocus: false,
+    });
+}
+
 function formatAddress(address: any): string {
     if (!address) return "";
     if (typeof address === "string") return address;
@@ -351,6 +375,10 @@ export default function CreateOrderPage() {
     const { data: customersData, isLoading: customersLoading } = useCustomerDirectory();
     const { data: productsData, isLoading: productsLoading, error: productsError } = useProductDirectory(effectiveCompanyId);
     const { data: lookupsData, isLoading: lookupsLoading } = useSalesOrderLookups();
+    const { data: orderData, isLoading: orderLoading } = useSalesOrderForEditing(
+        orderIdFromUrl,
+        effectiveCompanyId ? String(effectiveCompanyId) : null
+    );
     const [orderSubject, setOrderSubject] = React.useState("");
     const [orderSubjectError, setOrderSubjectError] = React.useState("");
     const [customerNameError, setCustomerNameError] = React.useState("");
@@ -874,6 +902,9 @@ export default function CreateOrderPage() {
                 setCustomerPhone(newValue.phone ?? "");
                 setCustomerEmail(newValue.email ?? "");
                 
+                // Only set addresses from customer if not in edit mode (orderIdFromUrl not present)
+                // In edit mode, addresses should always come from orderData
+                if (!orderIdFromUrl) {
                 // Parse billing address
                 const billingAddr = newValue.billingAddress 
                     ? (typeof newValue.billingAddress === "string" 
@@ -899,12 +930,15 @@ export default function CreateOrderPage() {
                 setShippingState(shippingAddr.state);
                 setShippingCode(shippingAddr.code);
                 setShippingCountry(shippingAddr.country);
+                }
                 
                 const firstContact = initialContacts[0];
                 setSelectedContact(firstContact ?? null);
             } else {
                 setCustomerPhone("");
                 setCustomerEmail("");
+                // Only clear addresses if not in edit mode
+                if (!orderIdFromUrl) {
                 setBillingAddress("");
                 setBillingPOBox("");
                 setBillingCity("");
@@ -917,11 +951,12 @@ export default function CreateOrderPage() {
                 setShippingState("");
                 setShippingCode("");
                 setShippingCountry("");
+                }
                 setSelectedContact(null);
                 setCustomerContacts([]);
             }
         },
-        []
+        [orderIdFromUrl]
     );
 
     React.useEffect(() => {
@@ -979,6 +1014,9 @@ export default function CreateOrderPage() {
         setCustomerPhone(phone ?? "");
         setCustomerEmail(email ?? "");
         
+        // Only set addresses from customer detail if not in edit mode
+        // In edit mode, addresses should always come from orderData
+        if (!orderIdFromUrl) {
         // Parse billing address fields
         const billingAddr = parseAddress(billingAddressData);
         setBillingAddress(billingAddr.street);
@@ -996,6 +1034,7 @@ export default function CreateOrderPage() {
         setShippingState(shippingAddr.state);
         setShippingCode(shippingAddr.code);
         setShippingCountry(shippingAddr.country);
+        }
 
         const detailContacts = mapContacts(customerDetail.contacts ?? []);
         setCustomerContacts(detailContacts);
@@ -1005,7 +1044,210 @@ export default function CreateOrderPage() {
             const existing = detailContacts.find((contact) => contact.id === prev.id);
             return existing ?? detailContacts[0];
         });
-    }, [customerDetail]);
+    }, [customerDetail, orderIdFromUrl]);
+
+    // Load billing and shipping addresses immediately when orderData is available (edit mode)
+    React.useEffect(() => {
+        if (!orderData) return;
+
+        // Set billing address - always load from orderData in edit mode
+        if (orderData.billing_address) {
+            const billingAddr = parseAddress(orderData.billing_address);
+            setBillingAddress(billingAddr.street);
+            setBillingPOBox(billingAddr.poBox);
+            setBillingCity(billingAddr.city);
+            setBillingState(billingAddr.state);
+            setBillingCode(billingAddr.code);
+            setBillingCountry(billingAddr.country);
+        }
+
+        // Set shipping address - always load from orderData in edit mode
+        if (orderData.shipping_address) {
+            const shippingAddr = parseAddress(orderData.shipping_address);
+            setShippingAddress(shippingAddr.street);
+            setShippingPOBox(shippingAddr.poBox);
+            setShippingCity(shippingAddr.city);
+            setShippingState(shippingAddr.state);
+            setShippingCode(shippingAddr.code);
+            setShippingCountry(shippingAddr.country);
+        }
+    }, [orderData]);
+
+    // Populate form fields when order data is loaded for editing
+    React.useEffect(() => {
+        if (!orderData || !customersData || !lookupsData || !productsData || !customerOptions.length) return;
+
+        // Set order subject
+        if (orderData.subject) {
+            setOrderSubject(orderData.subject);
+        }
+
+        // Set customer
+        const accountId = orderData.account_id ? String(orderData.account_id) : null;
+        if (accountId && customerOptions.length > 0) {
+            const foundCustomer = customerOptions.find((c) => c.id === accountId || c.raw?.id === orderData.account_id || c.raw?.account_id === orderData.account_id);
+            if (foundCustomer) {
+                setSelectedCustomer(foundCustomer);
+                if (foundCustomer.contacts) {
+                    setCustomerContacts(foundCustomer.contacts);
+                }
+            }
+        }
+
+        // Set contact (will be set after customer contacts load)
+        const contactId = orderData.contact_id ? String(orderData.contact_id) : null;
+
+        // Set IDs and related fields
+        if (orderData.carrier_id) {
+            setSelectedCarrierId(orderData.carrier_id);
+            // Find carrier name from lookups
+            const carriers = lookupsData.carriers || lookupsData.carrier || [];
+            const carrier = Array.isArray(carriers) ? carriers.find((c: any) => (c?.id ?? c?.carrier_id) === orderData.carrier_id) : null;
+            if (carrier) {
+                setShippingMethod(carrier?.name ?? carrier?.label ?? "");
+            }
+        }
+
+        if (orderData.salesorder_status_id) {
+            setSelectedStatusId(orderData.salesorder_status_id);
+            const statuses = lookupsData.salesorder_statuses || [];
+            const status = Array.isArray(statuses) ? statuses.find((s: any) => (s?.id ?? s?.salesorder_status_id) === orderData.salesorder_status_id) : null;
+            if (status) {
+                setOrderStatus(status?.name ?? status?.label ?? "");
+            }
+        }
+
+        if (orderData.salesorder_priority_id) {
+            setSelectedPriorityId(orderData.salesorder_priority_id);
+            const priorities = lookupsData.salesorder_priorities || [];
+            const priority = Array.isArray(priorities) ? priorities.find((p: any) => (p?.id ?? p?.salesorder_priority_id) === orderData.salesorder_priority_id) : null;
+            if (priority) {
+                setOrderPriority(priority?.name ?? priority?.label ?? "");
+            }
+        }
+
+        if (orderData.certificate_type_id) {
+            setSelectedCertificateTypeId(orderData.certificate_type_id);
+            const certTypes = lookupsData.certificate_types || [];
+            const certType = Array.isArray(certTypes) ? certTypes.find((ct: any) => (ct?.id ?? ct?.certificate_type_id) === orderData.certificate_type_id) : null;
+            if (certType) {
+                setCertificateType(certType?.name ?? certType?.label ?? "");
+            }
+        }
+
+        if (orderData.salesorder_type_id) {
+            setSelectedTypeId(orderData.salesorder_type_id);
+            const types = lookupsData.salesorder_types || [];
+            const type = Array.isArray(types) ? types.find((t: any) => (t?.id ?? t?.salesorder_type_id) === orderData.salesorder_type_id) : null;
+            if (type) {
+                setOrderCategory(type?.name ?? type?.label ?? "");
+            }
+        }
+
+        // Set dates and text fields
+        if (orderData.due_date) {
+            const dueDateStr = orderData.due_date;
+            // Format date to YYYY-MM-DD for input
+            const date = new Date(dueDateStr);
+            if (!isNaN(date.getTime())) {
+                setDueDate(date.toISOString().split('T')[0]);
+            } else {
+                setDueDate(dueDateStr);
+            }
+        }
+
+        if (orderData.po_number) {
+            setPoNumber(orderData.po_number);
+        }
+
+        // Quote will be set after accountQuotesData loads
+
+        // Set comments
+        if (orderData.processing_comments !== null && orderData.processing_comments !== undefined) {
+            setProcessingComments(orderData.processing_comments || "");
+        }
+
+        if (orderData.shipping_comments !== null && orderData.shipping_comments !== undefined) {
+            setShippingComments(orderData.shipping_comments || "");
+        }
+
+        if (orderData.special_conditions !== null && orderData.special_conditions !== undefined) {
+            setSpecialConditions(orderData.special_conditions || "");
+        }
+
+        // Set product rows from line_items
+        if (orderData.line_items && Array.isArray(orderData.line_items) && productOptions.length > 0) {
+            const rows: ProductRow[] = orderData.line_items.map((item: any, index: number) => {
+                const productId = item.item_id ? String(item.item_id) : null;
+                // Find product by matching id from productOptions
+                const foundProduct = productId ? productOptions.find((p) => p.id === productId) : null;
+
+                return {
+                    id: String(index + 1),
+                    product: foundProduct ?? null,
+                    productCode: foundProduct?.productNumber ?? item.product_number ?? "",
+                    productDescription: item.description ?? foundProduct?.description ?? "",
+                    productNotes: item.comment ?? "",
+                    productPrice: item.list_price ? String(item.list_price) : "",
+                    productQuantity: item.quantity ? String(item.quantity) : "",
+                    productTotal: item.list_price && item.quantity ? String(item.list_price * item.quantity) : "",
+                };
+            });
+
+            if (rows.length > 0) {
+                setProductRows(rows);
+            }
+        }
+    }, [orderData, customersData, lookupsData, productsData, customerOptions, productOptions]);
+
+    React.useEffect(() => {
+        if (orderData?.contact_id && customerContacts.length > 0) {
+            const contactId = String(orderData.contact_id);
+            const foundContact = customerContacts.find((c) => c.id === contactId);
+            if (foundContact) {
+                setSelectedContact(foundContact);
+            } else if (customerContacts.length > 0) {
+                setSelectedContact(customerContacts[0]);
+            }
+        }
+    }, [orderData?.contact_id, customerContacts]);
+
+    // Set quote from quote_id when order data and quotes are loaded
+    React.useEffect(() => {
+        if (!orderData?.quote_id || !accountQuotesData) return;
+
+        const quoteId = String(orderData.quote_id);
+
+        // Find quote in accountQuotesData by quote_id
+        const findQuote = (data: any): any | null => {
+            if (!data) return null;
+
+            // Handle different response structures
+            const quotes = data.quotes || data.data || (Array.isArray(data) ? data : []);
+            
+            for (const quote of quotes) {
+                const qId = String(quote?.quote_id ?? quote?.id ?? quote?.quoteId ?? "");
+                if (qId === quoteId) {
+                    return quote;
+                }
+            }
+            return null;
+        };
+
+        const foundQuote = findQuote(accountQuotesData);
+        if (foundQuote) {
+            const subject = foundQuote.subject ?? foundQuote.name ?? foundQuote.quote_name ?? foundQuote.title ?? "";
+            if (subject) {
+                const uniqueId = String(foundQuote.quote_id ?? foundQuote.id ?? foundQuote.quoteId ?? quoteId);
+                setSelectedQuote({
+                    id: uniqueId,
+                    name: subject,
+                    subject: subject,
+                    raw: foundQuote,
+                });
+            }
+        }
+    }, [orderData?.quote_id, accountQuotesData]);
 
     const handleCancel = React.useCallback(() => {
         router.push("/dashboard/orders");
@@ -1046,65 +1288,65 @@ export default function CreateOrderPage() {
         setIsSaving(true);
 
         try {
-            // Convert string IDs to numbers where needed
-            const accountId = selectedCustomer?.id ? parseInt(selectedCustomer.id, 10) : null;
-            const contactId = selectedContact?.id ? parseInt(selectedContact.id, 10) : null;
-            const companyId = effectiveCompanyId ? parseInt(String(effectiveCompanyId), 10) : null;
+        // Convert string IDs to numbers where needed
+        const accountId = selectedCustomer?.id ? parseInt(selectedCustomer.id, 10) : null;
+        const contactId = selectedContact?.id ? parseInt(selectedContact.id, 10) : null;
+        const companyId = effectiveCompanyId ? parseInt(String(effectiveCompanyId), 10) : null;
             const quoteId = selectedQuote?.subject || selectedQuote?.name || null; // Use quote subject as quote_id
 
-            const payload = {
-                company_id: companyId,
-                subject: orderSubject,
-                account_id: accountId,
-                contact_id: contactId,
-                quote_id: quoteId,
-                due_date: dueDate || null,
-                customer_no: null,
-                po_number: poNumber || null,
-                carrier_id: selectedCarrierId,
-                salesorder_type_id: selectedTypeId,
-                salesorder_status_id: selectedStatusId,
-                salesorder_priority_id: selectedPriorityId,
-                certificate_type_id: selectedCertificateTypeId,
-                special_conditions: specialConditions || null,
-                terms_conditions: null,
+        const payload = {
+            company_id: companyId,
+            subject: orderSubject,
+            account_id: accountId,
+            contact_id: contactId,
+            quote_id: quoteId,
+            due_date: dueDate || null,
+            customer_no: null,
+            po_number: poNumber || null,
+            carrier_id: selectedCarrierId,
+            salesorder_type_id: selectedTypeId,
+            salesorder_status_id: selectedStatusId,
+            salesorder_priority_id: selectedPriorityId,
+            certificate_type_id: selectedCertificateTypeId,
+            special_conditions: specialConditions || null,
+            terms_conditions: null,
                 shipping_comments: shippingComments || null,
                 processing_comments: processingComments || null,
-                subtotal: netTotal || 0,
+            subtotal: netTotal || 0,
+            discount_percent: 0,
+            discount_amount: 0,
+            adjustment: 0,
+            shipping_handling_amount: 0,
+            total: grandTotal || 0,
+            billing_address: {
+                street: billingAddress || "",
+                city: billingCity || "",
+                state: billingState || "",
+                postal_code: billingCode || "",
+                country: billingCountry || "",
+                po_box: billingPOBox || "",
+            },
+            shipping_address: {
+                street: shippingAddress || "",
+                city: shippingCity || "",
+                state: shippingState || "",
+                postal_code: shippingCode || "",
+                country: shippingCountry || "",
+                po_box: shippingPOBox || "",
+            },
+            line_items: productRows.map((row, index) => ({
+                sequence_no: index + 1,
+                item_id: row.product?.id ? parseInt(row.product.id, 10) : null,
+                quantity: row.productQuantity ? parseFloat(row.productQuantity) : 0,
+                list_price: row.productPrice ? parseFloat(row.productPrice) : 0,
                 discount_percent: 0,
                 discount_amount: 0,
                 adjustment: 0,
-                shipping_handling_amount: 0,
-                total: grandTotal || 0,
-                billing_address: {
-                    street: billingAddress || "",
-                    city: billingCity || "",
-                    state: billingState || "",
-                    postal_code: billingCode || "",
-                    country: billingCountry || "",
-                    po_box: billingPOBox || "",
-                },
-                shipping_address: {
-                    street: shippingAddress || "",
-                    city: shippingCity || "",
-                    state: shippingState || "",
-                    postal_code: shippingCode || "",
-                    country: shippingCountry || "",
-                    po_box: shippingPOBox || "",
-                },
-                line_items: productRows.map((row, index) => ({
-                    sequence_no: index + 1,
-                    item_id: row.product?.id ? parseInt(row.product.id, 10) : null,
-                    quantity: row.productQuantity ? parseFloat(row.productQuantity) : 0,
-                    list_price: row.productPrice ? parseFloat(row.productPrice) : 0,
-                    discount_percent: 0,
-                    discount_amount: 0,
-                    adjustment: 0,
-                    comment: row.productNotes || null,
-                    description: row.productDescription || null,
-                    pricetype_id: null,
-                })),
-            };
+                comment: row.productNotes || null,
+                description: row.productDescription || null,
+                pricetype_id: null,
+            })),
+        };
             console.log("Saving order:", payload);
 
             const res = await fetch("http://34.58.37.44/api/add-salesorder", {
@@ -1261,7 +1503,7 @@ export default function CreateOrderPage() {
                 }}
             >
                 <Typography variant="h5" fontWeight={600}>
-                    Create Order
+                    {orderIdFromUrl ? `Create / Edit Order - ${orderIdFromUrl}` : "Create / Edit Order"}
                 </Typography>
                 <Box sx={{ display: "flex", gap: 1 }}>
                     <Button variant="outlined" onClick={handleCancel} disabled={isSaving}>Cancel</Button>
@@ -2177,7 +2419,7 @@ export default function CreateOrderPage() {
                     </Box>
                 </Paper>
 
-                {showAdvancedSections && (
+                {false && (
                     <Paper
                         elevation={0}
                         sx={{
@@ -2321,7 +2563,7 @@ export default function CreateOrderPage() {
                     </Paper>
                 )}
 
-                {showAdvancedSections && (
+                {false && (
                     <Paper
                         elevation={0}
                         sx={{

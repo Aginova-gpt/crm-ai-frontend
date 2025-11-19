@@ -20,7 +20,7 @@ import {
     Select,
     MenuItem,
 } from "@mui/material";
-import { MdSearch } from "react-icons/md";
+import { MdSearch, MdEdit } from "react-icons/md";
 import StatusCard from "@/components/StatusCard/StatusCard";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
@@ -238,6 +238,10 @@ export default function OrdersPage() {
     const visibleRows = filterAndSort(orders);
     const pagedRows = visibleRows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
+    const handleEditOrder = (orderId: string) => {
+        router.push(`/dashboard/orders/new?orderId=${encodeURIComponent(orderId)}`);
+    };
+
     return (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1, p: 0 }}>
             {/* Header row */}
@@ -393,11 +397,28 @@ export default function OrdersPage() {
                                 "&:hover": { bgcolor: "#FAFAFD" },
                             }}
                         >
-                            {orderCols.map((col) => (
-                                <Typography key={col.key} noWrap sx={{ color: "text.secondary" }}>
-                                    {row[col.key] ?? ""}
-                                </Typography>
-                            ))}
+                            {orderCols.map((col) => {
+                                if (col.key === "actions") {
+                                    return (
+                                        <Box key="actions" sx={{ display: "flex", gap: 1 }}>
+                                            <Tooltip title="Edit Order">
+                                                <IconButton
+                                                    size="small"
+                                                    color="primary"
+                                                    onClick={() => handleEditOrder(row.orderId)}
+                                                >
+                                                    <MdEdit size={18} />
+                                                </IconButton>
+                                            </Tooltip>
+                                        </Box>
+                                    );
+                                }
+                                return (
+                                    <Typography key={col.key} noWrap sx={{ color: "text.secondary" }}>
+                                        {row[col.key] ?? ""}
+                                    </Typography>
+                                );
+                            })}
                         </Box>
                     ))}
 
