@@ -82,7 +82,8 @@ type ProductOption = {
 type QuoteOption = {
     id: string; // Unique identifier for React keys and comparison
     name: string; // Display name (subject)
-    subject: string; // Subject field to use as quote_id in payload
+    subject: string; // Subject field for display
+    quote_id: number | null; // Integer quote_id to use in payload
     raw?: any;
 };
 
@@ -95,6 +96,7 @@ type ProductRow = {
     productPrice: string;
     productQuantity: string;
     productTotal: string;
+    salesorder_item_id?: number | null; // For edit mode - ID of existing line item
 };
 
 function useCustomerDirectory() {
@@ -693,10 +695,18 @@ export default function CreateOrderPage() {
             if (!subject || seenIds.has(uniqueId)) return;
 
             seenIds.add(uniqueId);
+            // Extract integer quote_id from the quote object
+            const quoteIdInt = q.quote_id ?? q.id ?? q.quoteId ?? null;
+            let quoteIdNumber: number | null = null;
+            if (quoteIdInt !== null) {
+                const parsed = parseInt(String(quoteIdInt), 10);
+                quoteIdNumber = isNaN(parsed) ? null : parsed;
+            }
             options.push({
                 id: uniqueId, // Unique identifier for React keys
                 name: subject, // Display subject as the name
-                subject: subject, // Store subject separately for quote_id in payload
+                subject: subject, // Store subject for display
+                quote_id: quoteIdNumber, // Integer quote_id for payload
                 raw: q,
             });
         };
@@ -1296,6 +1306,7 @@ export default function CreateOrderPage() {
                     productPrice: item.list_price || item.listPrice || item.price ? String(item.list_price || item.listPrice || item.price) : "",
                     productQuantity: item.quantity ? String(item.quantity) : "",
                     productTotal: (item.list_price || item.listPrice || item.price) && item.quantity ? String((item.list_price || item.listPrice || item.price) * item.quantity) : "",
+                    salesorder_item_id: item.salesorder_item_id ?? item.salesorderItemId ?? null, // Preserve existing line item ID for edit mode
                 };
             });
 
@@ -1404,10 +1415,18 @@ export default function CreateOrderPage() {
             const subject = foundQuote.subject ?? foundQuote.name ?? foundQuote.quote_name ?? foundQuote.title ?? "";
             if (subject) {
                 const uniqueId = String(foundQuote.quote_id ?? foundQuote.id ?? foundQuote.quoteId ?? quoteId);
+                // Extract integer quote_id
+                const quoteIdInt = foundQuote.quote_id ?? foundQuote.id ?? foundQuote.quoteId ?? null;
+                let quoteIdNumber: number | null = null;
+                if (quoteIdInt !== null) {
+                    const parsed = parseInt(String(quoteIdInt), 10);
+                    quoteIdNumber = isNaN(parsed) ? null : parsed;
+                }
                 setSelectedQuote({
                     id: uniqueId,
                     name: subject,
                     subject: subject,
+                    quote_id: quoteIdNumber,
                     raw: foundQuote,
                 });
             }
@@ -1457,22 +1476,28 @@ export default function CreateOrderPage() {
         const accountId = selectedCustomer?.id ? parseInt(selectedCustomer.id, 10) : null;
         const contactId = selectedContact?.id ? parseInt(selectedContact.id, 10) : null;
         const companyId = effectiveCompanyId ? parseInt(String(effectiveCompanyId), 10) : null;
-            const quoteId = selectedQuote?.subject || selectedQuote?.name || null; // Use quote subject as quote_id
+        // In edit mode, use orderData.quote_id if available, otherwise use selectedQuote.quote_id
+        const quoteId = orderIdFromUrl && orderData?.quote_id 
+            ? (typeof orderData.quote_id === 'number' ? orderData.quote_id : parseInt(String(orderData.quote_id), 10))
+            : (selectedQuote?.quote_id ?? null);
 
-        const payload = {
+        // Create base payload
+        const basePayload = {
             company_id: companyId,
             subject: orderSubject,
             account_id: accountId,
             contact_id: contactId,
             quote_id: quoteId,
             due_date: dueDate || null,
-            customer_no: null,
+            customer_no: orderData?.customer_no || null,
             po_number: poNumber || null,
             carrier_id: selectedCarrierId,
             salesorder_type_id: selectedTypeId,
             salesorder_status_id: selectedStatusId,
             salesorder_priority_id: selectedPriorityId,
             certificate_type_id: selectedCertificateTypeId,
+            hosting: orderData?.hosting ?? false,
+            emailed: orderData?.emailed ?? false,
             special_conditions: specialConditions || null,
             terms_conditions: null,
                 shipping_comments: shippingComments || null,
@@ -1499,23 +1524,51 @@ export default function CreateOrderPage() {
                 country: shippingCountry || "",
                 po_box: shippingPOBox || "",
             },
-            line_items: productRows.map((row, index) => ({
-                sequence_no: index + 1,
-                item_id: row.product?.id ? parseInt(row.product.id, 10) : null,
-                quantity: row.productQuantity ? parseFloat(row.productQuantity) : 0,
-                list_price: row.productPrice ? parseFloat(row.productPrice) : 0,
-                discount_percent: 0,
-                discount_amount: 0,
-                adjustment: 0,
-                comment: row.productNotes || null,
-                description: row.productDescription || null,
-                pricetype_id: null,
-            })),
+            line_items: productRows.map((row, index) => {
+                const lineItem: any = {
+                    sequence_no: index + 1,
+                    item_id: row.product?.id ? parseInt(row.product.id, 10) : null,
+                    quantity: row.productQuantity ? parseFloat(row.productQuantity) : 0,
+                    list_price: row.productPrice ? parseFloat(row.productPrice) : 0,
+                    discount_percent: 0,
+                    discount_amount: 0,
+                    adjustment: 0,
+                    comment: row.productNotes || null,
+                    description: row.productDescription || null,
+                    pricetype_id: 0, // 0 = no price type (NULL in DB)
+                };
+                // For edit mode, include salesorder_item_id (null for new items, ID for existing)
+                if (orderIdFromUrl) {
+                    lineItem.salesorder_item_id = row.salesorder_item_id ?? null;
+                }
+                return lineItem;
+            }),
         };
 
-            const url = apiURL("add-salesorder", "add-salesorder.json");
+        // For edit mode, wrap in "salesorder" object and add salesorder_id
+        const payload = orderIdFromUrl
+            ? {
+                  salesorder: {
+                      ...basePayload,
+                      salesorder_id: orderIdFromUrl ? parseInt(orderIdFromUrl, 10) : null,
+                  },
+              }
+            : basePayload;
+
+        // Use different endpoint and method for edit mode
+        const isEditMode = !!orderIdFromUrl;
+        const url = isEditMode
+            ? apiURL("edit-salesorder", "edit-salesorder.json")
+            : apiURL("add-salesorder", "add-salesorder.json");
+        const method = isEditMode ? "PUT" : "POST";
+
+        // Log payload to console for debugging
+        console.log(`[${isEditMode ? "EDIT" : "CREATE"} MODE] Order Save Payload:`, payload);
+        console.log(`[${isEditMode ? "EDIT" : "CREATE"} MODE] API URL:`, url);
+        console.log(`[${isEditMode ? "EDIT" : "CREATE"} MODE] HTTP Method:`, method);
+
             const res = await fetch(url, {
-                method: "POST",
+                method: method,
                 headers: {
                     "Content-Type": "application/json",
                     Authorization: `Bearer ${token}`,
@@ -1585,7 +1638,9 @@ export default function CreateOrderPage() {
         selectedQuote,
         isLoggedIn,
         token,
-        router,
+        orderIdFromUrl,
+        apiURL,
+        orderData,
     ]);
 
     const toggleSelect = React.useCallback(
