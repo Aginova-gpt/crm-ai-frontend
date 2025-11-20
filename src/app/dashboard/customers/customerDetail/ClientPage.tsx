@@ -37,12 +37,13 @@ type Contact = {
 function useCustomerDetail(customerId?: string) {
   const { token, isLoggedIn } = useAuth();
   const { fetchWithAuth } = useApi();
+  const { apiURL } = useBackend();
 
   return useQuery({
     queryKey: ["customer-detail", customerId],
     queryFn: async () => {
       if (!customerId) throw new Error("Missing customer id");
-      const url = `http://34.58.37.44/api/get-account/${customerId}`;
+      const url = apiURL(`get-account/${customerId}`, `get-account-${customerId}.json`);
       const res = await fetchWithAuth(url);
       if (!res.ok) {
         if (res.status === 401) throw new Error("Unauthorized – please log in again");
@@ -66,7 +67,7 @@ function useCustomers() {
   return useQuery({
     queryKey: ["customers"],
     queryFn: async () => {
-      const url = apiURL("get-account/${customerId}", "accounts.json");
+      const url = apiURL("accounts", "accounts.json");
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) {
         if (res.status === 401) throw new Error("Unauthorized – please log in again");
@@ -83,11 +84,12 @@ function useCustomers() {
 function useUsers(companyId: number | string) {
   const { token, isLoggedIn } = useAuth();
   const { fetchWithAuth } = useApi();
+  const { apiURL } = useBackend();
 
   return useQuery({
     queryKey: ["users", companyId],
     queryFn: async () => {
-      const url = `http://34.58.37.44/api/users?company_id=${companyId}`;
+      const url = apiURL(`users?company_id=${companyId}`, `users-${companyId}.json`);
       const res = await fetchWithAuth(url);
       if (!res.ok) {
         if (res.status === 401) throw new Error("Unauthorized – please log in again");
@@ -104,11 +106,12 @@ function useUsers(companyId: number | string) {
 function useAccountTypes() {
   const { token, isLoggedIn } = useAuth();
   const { fetchWithAuth } = useApi();
+  const { apiURL } = useBackend();
 
   return useQuery({
     queryKey: ["account-types"],
     queryFn: async () => {
-      const url = "http://34.58.37.44/api/account-types";
+      const url = apiURL("account-types", "account-types.json");
       const res = await fetchWithAuth(url);
       if (!res.ok) {
         if (res.status === 401) throw new Error("Unauthorized – please log in again");
