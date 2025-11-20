@@ -48,15 +48,16 @@ const tabBadges: Record<number, BadgeConfig[] | undefined> = {
   ],
   1: undefined,
   2: undefined,
-  3: [
+  3: undefined,
+  4: [
     { icon: <MdShoppingCart size={22} />, count: 5, toolTip: "Open orders" },
     { icon: <MdAssignment size={22} />, count: 2, toolTip: "Pending approvals" },
   ],
-  4: [{ icon: <MdAssignment size={22} />, count: 2, toolTip: "Pending invoices" }],
-  5: undefined,
-  6: [{ icon: <MdNotifications size={22} />, count: 7, toolTip: "Manufacturing alerts" }],
-  7: undefined,
+  5: [{ icon: <MdAssignment size={22} />, count: 2, toolTip: "Pending invoices" }],
+  6: undefined,
+  7: [{ icon: <MdNotifications size={22} />, count: 7, toolTip: "Manufacturing alerts" }],
   8: undefined,
+  9: undefined,
 };
 
 export default function CrmNavbar() {
@@ -72,12 +73,13 @@ export default function CrmNavbar() {
     if (pathname.includes("/dashboard/customers")) return 0;
     if (pathname.includes("/dashboard/products")) return 1;
     if (pathname.includes("/dashboard/assets")) return 2;
-    if (pathname.includes("/dashboard/orders")) return 3;
-    if (pathname.includes("/dashboard/invoices")) return 4;
-    if (pathname.includes("/dashboard/bills")) return 5;
-    if (pathname.includes("/dashboard/manufacturing")) return 6;
-    if (pathname.includes("/dashboard/reports")) return 7;
-    if (pathname.includes("/dashboard/items-correction")) return 8;
+    if (pathname.includes("/dashboard/quotes")) return 3;
+    if (pathname.includes("/dashboard/orders")) return 4;
+    if (pathname.includes("/dashboard/invoices")) return 5;
+    if (pathname.includes("/dashboard/bills")) return 6;
+    if (pathname.includes("/dashboard/manufacturing")) return 7;
+    if (pathname.includes("/dashboard/reports")) return 8;
+    if (pathname.includes("/dashboard/items-correction")) return 9;
     return 0; 
   }, [pathname]);
 
@@ -93,21 +95,24 @@ export default function CrmNavbar() {
         router.push("/dashboard/assets");
         break;
       case 3:
-        router.push("/dashboard/orders");
+        router.push("/dashboard/quotes");
         break;
       case 4:
-        router.push("/dashboard/invoices");
+        router.push("/dashboard/orders");
         break;
       case 5:
-        router.push("/dashboard/bills");
+        router.push("/dashboard/invoices");
         break;
       case 6:
-        router.push("/dashboard/manufacturing");
+        router.push("/dashboard/bills");
         break;
       case 7:
-        router.push("/dashboard/reports");
+        router.push("/dashboard/manufacturing");
         break;
       case 8:
+        router.push("/dashboard/reports");
+        break;
+      case 9:
         router.push("/dashboard/items-correction");
         break;
     }
@@ -162,6 +167,7 @@ export default function CrmNavbar() {
           <Tab label="CUSTOMERS" />
           <Tab label="PRODUCTS" />
           <Tab label="ASSETS" />
+          <Tab label="QUOTES" />
           <Tab label="ORDERS" />
           <Tab label="INVOICES" />
           <Tab label="BILLS" />

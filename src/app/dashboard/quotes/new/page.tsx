@@ -7,10 +7,6 @@ import {
     TextField,
     Divider,
     Button,
-    Tabs,
-    Tab,
-    Card,
-    CardContent,
     IconButton,
     Tooltip,
     InputAdornment,
@@ -18,12 +14,7 @@ import {
     FormControlLabel,
     RadioGroup,
     Radio,
-    List,
-    ListItem,
-    ListItemIcon,
-    ListItemText,
     Paper,
-    Chip,
     Stack,
     CircularProgress,
     Dialog,
@@ -31,14 +22,13 @@ import {
     DialogContent,
     DialogActions,
 } from "@mui/material";
-import { MdSearch } from "react-icons/md";
-import { DeleteOutline, CloudUpload, Visibility, VisibilityOff, ExpandMore, ExpandLess } from "@mui/icons-material";
+import { DeleteOutline, ExpandMore, ExpandLess } from "@mui/icons-material";
 import FormControl from "@mui/material/FormControl";
 import InputLabel from "@mui/material/InputLabel";
 import Select from "@mui/material/Select";
 import type { SelectChangeEvent } from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Autocomplete from "@mui/material/Autocomplete";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../../../../contexts/AuthContext";
@@ -47,11 +37,6 @@ import { useCompany } from "../../../../contexts/CompanyContext";
 import { useProfile } from "../../../../contexts/ProfileContext";
 import { useProducts } from "../../products/hooks/useProducts";
 
-type Sensor = {
-    id: string;
-    name: string;
-    type: string;
-};
 
 type ContactOption = {
     id: string;
@@ -126,12 +111,14 @@ function useProductDirectory(effectiveCompanyId: string | null) {
 
 function useCustomerDetail(customerId: string | null) {
     const { token, isLoggedIn } = useAuth();
+    const { apiURL } = useBackend();
 
     return useQuery({
         queryKey: ["customer-detail", customerId],
         queryFn: async () => {
             if (!customerId) return null;
-            const res = await fetch(`http://34.58.37.44/api/get-account/${customerId}`, {
+            const url = apiURL(`get-account/${customerId}`, `get-account-${customerId}.json`);
+            const res = await fetch(url, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             });
             if (!res.ok) {
@@ -148,12 +135,14 @@ function useCustomerDetail(customerId: string | null) {
 
 function useProductDetail(productId: string | null) {
     const { token, isLoggedIn } = useAuth();
+    const { apiURL } = useBackend();
 
     return useQuery({
         queryKey: ["product-detail", productId],
         queryFn: async () => {
             if (!productId) return null;
-            const res = await fetch(`http://34.58.37.44/api/get-product/${productId}`, {
+            const url = apiURL(`get-product/${productId}`, `get-product-${productId}.json`);
+            const res = await fetch(url, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             });
             if (!res.ok) {
@@ -171,11 +160,13 @@ function useProductDetail(productId: string | null) {
 
 function useSalesOrderLookups() {
     const { token, isLoggedIn } = useAuth();
+    const { apiURL } = useBackend();
 
     return useQuery({
         queryKey: ["salesorder-lookups"],
         queryFn: async () => {
-            const res = await fetch(`http://34.58.37.44/api/salesorders/lookups`, {
+            const url = apiURL("salesorders/lookups", "salesorders-lookups.json");
+            const res = await fetch(url, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             });
             if (!res.ok) {
@@ -268,37 +259,9 @@ function mapContacts(rawContacts: any[]): ContactOption[] {
     );
 }
 
-const mockShipments = [
-    {
-        id: "shipment-001",
-        shippedOn: "20.01.2025",
-        account: "Account 1",
-        trackingId: "0093248771990000",
-        sensors: Array.from({ length: 7 }).map((_, idx) => `Sensor_00023${idx}`),
-    },
-    {
-        id: "shipment-002",
-        shippedOn: "20.01.2025",
-        account: "Account 1",
-        trackingId: "0093248771990001",
-        sensors: Array.from({ length: 6 }).map((_, idx) => `Sensor_00025${idx}`),
-    },
-];
-
-const initialSensors: Sensor[] = Array.from({ length: 20 }).map((_, index) => ({
-    id: `002305${index.toString().padStart(2, "0")}`,
-    name: `Sensor_0023${index.toString().padStart(2, "0")}`,
-    type: "Single Probe",
-}));
-const initialAssignedSensors = initialSensors.slice(0, 8);
-const initialAvailableSensors = initialSensors.slice(8);
 
 export default function CreateOrderPage() {
     const router = useRouter();
-    const searchParams = useSearchParams();
-    const orderIdFromUrl =
-        searchParams.get("orderId") ?? searchParams.get("orderID") ?? searchParams.get("orderid");
-    const showAdvancedSections = Boolean(orderIdFromUrl);
     const { selectedCompanyId, userCompanyId } = useCompany();
     const { isAdmin } = useProfile();
     const effectiveCompanyId = React.useMemo(() => (isAdmin ? selectedCompanyId : userCompanyId), [
@@ -337,21 +300,13 @@ export default function CreateOrderPage() {
         isFetching: customerDetailLoading,
         error: customerDetailError,
     } = useCustomerDetail(selectedCustomerId);
-    const [shipmentTab, setShipmentTab] = React.useState(0);
-    const [availableSensors, setAvailableSensors] = React.useState<Sensor[]>(initialAvailableSensors);
-    const [assignedSensors, setAssignedSensors] = React.useState<Sensor[]>(initialAssignedSensors);
-    const [selectedAvailable, setSelectedAvailable] = React.useState<Set<string>>(new Set());
-    const [selectedAssigned, setSelectedAssigned] = React.useState<Set<string>>(new Set());
-    const [sensorSearch, setSensorSearch] = React.useState("");
     const [shippingMethod, setShippingMethod] = React.useState("FedEx Ground");
     const [orderStatus, setOrderStatus] = React.useState("Processing");
     const [orderPriority, setOrderPriority] = React.useState("");
     const [certificateType, setCertificateType] = React.useState("");
     const [specialConditions, setSpecialConditions] = React.useState("");
     const [orderCategory, setOrderCategory] = React.useState("");
-    const [shipmentStatus, setShipmentStatus] = React.useState("Approved");
     const [shipmentAccount, setShipmentAccount] = React.useState("Account 1");
-    const [showWifiPassword, setShowWifiPassword] = React.useState(false);
     const [customerPhone, setCustomerPhone] = React.useState("");
     const [customerEmail, setCustomerEmail] = React.useState("");
     // Billing address fields
@@ -372,9 +327,6 @@ export default function CreateOrderPage() {
     const [selectedContact, setSelectedContact] = React.useState<ContactOption | null>(null);
     const [shippingComments, setShippingComments] = React.useState("");
     const [processingComments, setProcessingComments] = React.useState("");
-
-    const shipmentStatusOptions = ["Pending", "Approved", "In Transit", "Delivered", "Closed"];
-    const shippingAccountOptions = ["Account 1", "Account 2", "Account 3"];
 
     const certificateTypeOptions = React.useMemo(() => {
         if (!lookupsData) return [];
@@ -970,9 +922,7 @@ export default function CreateOrderPage() {
             certificateType,
             specialConditions,
             orderCategory,
-            shipmentStatus,
             shipmentAccount,
-            assignedSensors,
             netTotal,
             discount: {
                 type: discountType,
@@ -1031,7 +981,6 @@ export default function CreateOrderPage() {
     //    alert("Order saved successfully.");
       //  router.push("/dashboard/orders");
     }, [
-        assignedSensors,
         billingAddress,
         billingPOBox,
         billingCity,
@@ -1056,7 +1005,6 @@ export default function CreateOrderPage() {
         shipmentAccount,
         shippingComments,
         processingComments,
-        shipmentStatus,
         shippingMethod,
         specialConditions,
         orderCategory,
@@ -1067,61 +1015,6 @@ export default function CreateOrderPage() {
         grandTotal,
         productRows,
     ]);
-
-    const toggleSelect = React.useCallback(
-        (id: string, type: "available" | "assigned") => {
-            const setter = type === "available" ? setSelectedAvailable : setSelectedAssigned;
-            setter((prev) => {
-                const next = new Set(prev);
-                if (next.has(id)) next.delete(id);
-                else next.add(id);
-                return next;
-            });
-        },
-        []
-    );
-
-    const handleAssign = React.useCallback(() => {
-        if (selectedAvailable.size === 0) return;
-        setAssignedSensors((prev) => [
-            ...prev,
-            ...availableSensors.filter((sensor) => selectedAvailable.has(sensor.id) && !prev.find((item) => item.id === sensor.id)),
-        ]);
-        setAvailableSensors((prev) => prev.filter((sensor) => !selectedAvailable.has(sensor.id)));
-        setSelectedAvailable(new Set());
-    }, [availableSensors, selectedAvailable]);
-
-    const handleUnassign = React.useCallback(() => {
-        if (selectedAssigned.size === 0) return;
-        setAvailableSensors((prev) => [
-            ...prev,
-            ...assignedSensors.filter((sensor) => selectedAssigned.has(sensor.id) && !prev.find((item) => item.id === sensor.id)),
-        ]);
-        setAssignedSensors((prev) => prev.filter((sensor) => !selectedAssigned.has(sensor.id)));
-        setSelectedAssigned(new Set());
-    }, [assignedSensors, selectedAssigned]);
-
-    const filteredAvailableSensors = React.useMemo(() => {
-        if (!sensorSearch.trim()) return availableSensors;
-        const query = sensorSearch.trim().toLowerCase();
-        return availableSensors.filter(
-            (sensor) =>
-                sensor.name.toLowerCase().includes(query) ||
-                sensor.id.toLowerCase().includes(query) ||
-                sensor.type.toLowerCase().includes(query)
-        );
-    }, [availableSensors, sensorSearch]);
-
-    const filteredAssignedSensors = React.useMemo(() => {
-        if (!sensorSearch.trim()) return assignedSensors;
-        const query = sensorSearch.trim().toLowerCase();
-        return assignedSensors.filter(
-            (sensor) =>
-                sensor.name.toLowerCase().includes(query) ||
-                sensor.id.toLowerCase().includes(query) ||
-                sensor.type.toLowerCase().includes(query)
-        );
-    }, [assignedSensors, sensorSearch]);
 
     return (
         <Box
@@ -2105,427 +1998,6 @@ export default function CreateOrderPage() {
                         </Paper>
                     </Box>
                 </Paper>
-
-                {showAdvancedSections && (
-                    <Paper
-                        elevation={0}
-                        sx={{
-                            bgcolor: "#FFFFFF",
-                            borderRadius: 1,
-                            p: 3,
-                            border: "1px solid",
-                            borderColor: "divider",
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 3,
-                        }}
-                    >
-                    <Box
-                        sx={{
-                            "& .MuiInputBase-root": {
-                                fontSize: "0.75rem",
-                                height: "30px",
-                            },
-                            "& .MuiInputBase-input": {
-                                fontSize: "0.75rem",
-                                padding: "6px 12px",
-                            },
-                            "& .MuiInputLabel-root": {
-                                fontSize: "0.75rem",
-                            },
-                            "& .MuiTypography-root": {
-                                fontSize: "0.875rem",
-                            },
-                        }}
-                    >
-                        <Typography variant="h6" fontWeight={600} sx={{ fontSize: "1rem" }}>
-                        Setup Network Information
-                    </Typography>
-                        <Stack spacing={2.25}>
-                        <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
-                                1. SSID of the WiFi network
-                            </Typography>
-                                <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-                                <TextField fullWidth size="small" label="SSID 1" />
-                                <TextField fullWidth size="small" label="Channel" />
-                                <TextField fullWidth size="small" label="SSID 2" />
-                                <TextField fullWidth size="small" label="Channel" />
-                            </Box>
-                        </Box>
-                        <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
-                                2. Level of security used in the network
-                            </Typography>
-                            <RadioGroup row defaultValue="open">
-                                    <FormControlLabel value="open" control={<Radio size="small" />} label="Open (None)" sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.75rem" } }} />
-                                    <FormControlLabel value="wpa2" control={<Radio size="small" />} label="WPA2-802.1x" sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.75rem" } }} />
-                                    <FormControlLabel value="psk" control={<Radio size="small" />} label="WPA2-PSK" sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.75rem" } }} />
-                                    <FormControlLabel value="others" control={<Radio size="small" />} label="Others" sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.75rem" } }} />
-                            </RadioGroup>
-                            <Box
-                                sx={{
-                                    display: "grid",
-                                        gap: 1.5,
-                                    gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
-                                        mt: 0.75,
-                                }}
-                            >
-                                <TextField fullWidth size="small" label="Username" />
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Password"
-                                    type={showWifiPassword ? "text" : "password"}
-                                    autoComplete="new-password"
-                                    InputProps={{
-                                        endAdornment: (
-                                            <InputAdornment position="end">
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={() => setShowWifiPassword((prev) => !prev)}
-                                                    onMouseDown={(event) => event.preventDefault()}
-                                                >
-                                                    {showWifiPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                                                </IconButton>
-                                            </InputAdornment>
-                                        ),
-                                    }}
-                                />
-                            </Box>
-                        </Box>
-                        <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
-                                3. DHCP
-                            </Typography>
-                            <RadioGroup row defaultValue="yes">
-                                    <FormControlLabel value="yes" control={<Radio size="small" />} label="Yes (Recommended)" sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.75rem" } }} />
-                                    <FormControlLabel value="no" control={<Radio size="small" />} label="No" sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.75rem" } }} />
-                            </RadioGroup>
-                        </Box>
-                        <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
-                                4. Web Portal Server
-                            </Typography>
-                                <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-                                <TextField fullWidth size="small" label="IP Address" />
-                                <TextField fullWidth size="small" label="Netmask" />
-                            </Box>
-                        </Box>
-                        <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
-                                5. Sensor IP
-                            </Typography>
-                                <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-                                <TextField fullWidth size="small" label="Starting IP" />
-                                <TextField fullWidth size="small" label="Ending IP" />
-                            </Box>
-                        </Box>
-                        <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
-                                6. DNS
-                            </Typography>
-                                <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-                                <TextField fullWidth size="small" label="Primary DNS" />
-                                <TextField fullWidth size="small" label="Secondary DNS" />
-                            </Box>
-                        </Box>
-                        <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
-                                7. Comments
-                            </Typography>
-                                <TextField fullWidth size="small" multiline minRows={2.25} placeholder="Add any additional comments" />
-                        </Box>
-                        <Box>
-                                <Typography variant="subtitle2" sx={{ mb: 0.75, fontSize: "0.875rem" }}>
-                                Upload Setup Document
-                            </Typography>
-                            <Button variant="outlined" component="label" startIcon={<CloudUpload />}>
-                                Choose File
-                                <input hidden type="file" />
-                            </Button>
-                        </Box>
-                    </Stack>
-                    </Box>
-                    </Paper>
-                )}
-
-                {showAdvancedSections && (
-                    <Paper
-                        elevation={0}
-                        sx={{
-                            bgcolor: "#FFFFFF",
-                            borderRadius: 1,
-                            border: "1px solid",
-                            borderColor: "divider",
-                            overflow: "hidden",
-                            display: "flex",
-                            flexDirection: "column",
-                        }}
-                    >
-                    <Box sx={{ px: 3, pt: 3, pb: 2 }}>
-                        <Typography variant="h6" fontWeight={600}>
-                            Processing and Shipping
-                        </Typography>
-                        <Tabs
-                            value={shipmentTab}
-                            onChange={(_, value) => setShipmentTab(value)}
-                            sx={{ mt: 1.5, borderBottom: "1px solid", borderColor: "divider" }}
-                        >
-                            <Tab label="Sensors" />
-                            <Tab label="Probes" />
-                            <Tab label="Hosted" />
-                            <Tab label="Shipping" />
-                        </Tabs>
-                    </Box>
-
-                    <Divider />
-
-                    {shipmentTab === 0 ? (
-                        <Box sx={{ display: "flex", flexDirection: "column", gap: 3, p: 3 }}>
-                            <Card variant="outlined">
-                                <CardContent sx={{ p: 0 }}>
-                                    <Box
-                                        sx={{
-                                            display: "grid",
-                                            gridTemplateColumns: "repeat(4, minmax(0, 1fr)) 80px",
-                                            bgcolor: "#F5F8FF",
-                                            px: 2,
-                                            py: 1,
-                                            alignItems: "center",
-                                            borderBottom: "1px solid",
-                                            borderColor: "divider",
-                                        }}
-                                    >
-                                        <Typography variant="caption" fontWeight={600}>
-                                            Shipped On
-                                        </Typography>
-                                        <Typography variant="caption" fontWeight={600}>
-                                            Shipping Account
-                                        </Typography>
-                                        <Typography variant="caption" fontWeight={600}>
-                                            Tracking ID
-                                        </Typography>
-                                        <Typography variant="caption" fontWeight={600}>
-                                            Sensors
-                                        </Typography>
-                                        <Typography variant="caption" fontWeight={600} textAlign="center">
-                                            Actions
-                                        </Typography>
-                                    </Box>
-                                    {mockShipments.map((shipment) => (
-                                        <Box
-                                            key={shipment.id}
-                                            sx={{
-                                                display: "grid",
-                                                gridTemplateColumns: "repeat(4, minmax(0, 1fr)) 80px",
-                                                px: 2,
-                                                py: 1.5,
-                                                alignItems: "start",
-                                                borderBottom: "1px solid",
-                                                borderColor: "divider",
-                                                "&:last-of-type": { borderBottom: "none" },
-                                            }}
-                                        >
-                                            <Typography variant="body2">{shipment.shippedOn}</Typography>
-                                            <Typography variant="body2">{shipment.account}</Typography>
-                                            <Typography variant="body2">{shipment.trackingId}</Typography>
-                                            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                                                {shipment.sensors.map((sensor) => (
-                                                    <Chip key={sensor} label={sensor} size="small" sx={{ bgcolor: "#EEF2FF" }} />
-                                                ))}
-                                            </Stack>
-                                            <Box sx={{ display: "flex", justifyContent: "center" }}>
-                                                <Tooltip title="Remove shipment">
-                                                    <IconButton size="small" color="error">
-                                                        <DeleteOutline fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </Box>
-                                        </Box>
-                                    ))}
-                                </CardContent>
-                            </Card>
-
-                            <Card variant="outlined">
-                                <CardContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                                    <Typography variant="subtitle1" fontWeight={600}>
-                                        Add Shipment
-                                    </Typography>
-                                    <Box
-                                        sx={{
-                                            display: "grid",
-                                            gap: 2,
-                                            gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
-                                        }}
-                                    >
-                                        <FormControl fullWidth size="small">
-                                            <InputLabel id="shipment-status-label">Status</InputLabel>
-                                            <Select
-                                                labelId="shipment-status-label"
-                                                label="Status"
-                                                value={shipmentStatus}
-                                                onChange={(event) => setShipmentStatus(event.target.value as string)}
-                                            >
-                                                {shipmentStatusOptions.map((option) => (
-                                                    <MenuItem key={option} value={option}>
-                                                        {option}
-                                                    </MenuItem>
-                                                ))}
-                                            </Select>
-                                        </FormControl>
-                                        <TextField
-                                            fullWidth
-                                            label="Shipped On"
-                                            size="small"
-                                            type="date"
-                                            InputLabelProps={{ shrink: true }}
-                                            value="2025-07-28"
-                                        />
-                                        <FormControl fullWidth size="small">
-                                            <InputLabel id="shipping-account-label">Shipping Account</InputLabel>
-                                            <Select
-                                                labelId="shipping-account-label"
-                                                label="Shipping Account"
-                                                value={shipmentAccount}
-                                                onChange={(event) => setShipmentAccount(event.target.value as string)}
-                                            >
-                                                {shippingAccountOptions.map((option) => (
-                                                    <MenuItem key={option} value={option}>
-                                                        {option}
-                                                    </MenuItem>
-                                                ))}
-                                            </Select>
-                                        </FormControl>
-                                        <TextField fullWidth label="Tracking ID" size="small" />
-                                    </Box>
-                                    <Divider />
-                                    <Typography variant="subtitle2">Drag or select sensors from Sensors to Assign list</Typography>
-                                    <TextField
-                                        size="small"
-                                        placeholder="Search sensors"
-                                        value={sensorSearch}
-                                        onChange={(event) => setSensorSearch(event.target.value)}
-                                        InputProps={{
-                                            startAdornment: (
-                                                <InputAdornment position="start">
-                                                    <MdSearch size={18} />
-                                                </InputAdornment>
-                                            ),
-                                        }}
-                                        sx={{ maxWidth: 280 }}
-                                    />
-                                    <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}>
-                                        <Paper variant="outlined" sx={{ p: 2, minHeight: 320, display: "flex", flexDirection: "column" }}>
-                                            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1 }}>
-                                                <Typography variant="subtitle2" fontWeight={600}>
-                                                    {filteredAvailableSensors.length} Sensors to Assign
-                                                </Typography>
-                                                <Button size="small" onClick={() => setSelectedAvailable(new Set())}>
-                                                    Clear
-                                                </Button>
-                                            </Box>
-                                            <Divider sx={{ mb: 1 }} />
-                                            <List dense sx={{ flex: 1, overflowY: "auto" }}>
-                                                {filteredAvailableSensors.map((sensor) => (
-                                                    <ListItem
-                                                        key={sensor.id}
-                                                        disableGutters
-                                                        secondaryAction={
-                                                            <Typography variant="caption" color="text.secondary">
-                                                                {sensor.type}
-                                                            </Typography>
-                                                        }
-                                                    >
-                                                        <ListItemIcon sx={{ minWidth: 32 }}>
-                                                            <Checkbox
-                                                                size="small"
-                                                                checked={selectedAvailable.has(sensor.id)}
-                                                                onChange={() => toggleSelect(sensor.id, "available")}
-                                                            />
-                                                        </ListItemIcon>
-                                                        <ListItemText primary={sensor.name} secondary={sensor.id} />
-                                                    </ListItem>
-                                                ))}
-                                                {filteredAvailableSensors.length === 0 && (
-                                                    <ListItem>
-                                                        <ListItemText primary="No sensors available" />
-                                                    </ListItem>
-                                                )}
-                                            </List>
-                                            <Button
-                                                variant="contained"
-                                                size="small"
-                                                sx={{ mt: 1 }}
-                                                onClick={handleAssign}
-                                                disabled={selectedAvailable.size === 0}
-                                            >
-                                                Assign Selected
-                                            </Button>
-                                        </Paper>
-                                        <Paper variant="outlined" sx={{ p: 2, minHeight: 320, display: "flex", flexDirection: "column" }}>
-                                            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1 }}>
-                                                <Typography variant="subtitle2" fontWeight={600}>
-                                                    {filteredAssignedSensors.length} Assigned Sensors
-                                                </Typography>
-                                                <Button size="small" onClick={() => setSelectedAssigned(new Set())}>
-                                                    Clear
-                                                </Button>
-                                            </Box>
-                                            <Divider sx={{ mb: 1 }} />
-                                            <List dense sx={{ flex: 1, overflowY: "auto" }}>
-                                                {filteredAssignedSensors.map((sensor) => (
-                                                    <ListItem
-                                                        key={sensor.id}
-                                                        disableGutters
-                                                        secondaryAction={
-                                                            <Typography variant="caption" color="text.secondary">
-                                                                {sensor.type}
-                                                            </Typography>
-                                                        }
-                                                    >
-                                                        <ListItemIcon sx={{ minWidth: 32 }}>
-                                                            <Checkbox
-                                                                size="small"
-                                                                checked={selectedAssigned.has(sensor.id)}
-                                                                onChange={() => toggleSelect(sensor.id, "assigned")}
-                                                            />
-                                                        </ListItemIcon>
-                                                        <ListItemText primary={sensor.name} secondary={sensor.id} />
-                                                    </ListItem>
-                                                ))}
-                                                {filteredAssignedSensors.length === 0 && (
-                                                    <ListItem>
-                                                        <ListItemText primary="No sensors assigned" />
-                                                    </ListItem>
-                                                )}
-                                            </List>
-                                            <Button
-                                                variant="outlined"
-                                                size="small"
-                                                sx={{ mt: 1 }}
-                                                onClick={handleUnassign}
-                                                disabled={selectedAssigned.size === 0}
-                                            >
-                                                Remove Selected
-                                            </Button>
-                                        </Paper>
-                                    </Box>
-                                    <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
-                                        <Button variant="contained" size="small" onClick={handleSave}>
-                                            Submit
-                                        </Button>
-                                    </Box>
-                                </CardContent>
-                            </Card>
-                        </Box>
-                    ) : (
-                        <Box sx={{ p: 3, color: "text.secondary", flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <Typography variant="body2">Content for this tab will be available soon.</Typography>
-                        </Box>
-                    )}
-                    </Paper>
-                )}
             </Box>
         </Box>
     );

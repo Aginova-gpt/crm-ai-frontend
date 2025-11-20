@@ -31,56 +31,38 @@ import { addAsset } from "@/styles/icons";
 import { useCompany } from "@/contexts/CompanyContext";
 
 // ===== Grid layout =====
-const GRID_ORDERS = `
-  minmax(100px, 1fr)   /* Order # */
-  minmax(80px, 1fr)    /* RMA */
+const GRID_QUOTES = `
+  minmax(100px, 1fr)   /* Quote # */
   minmax(180px, 1fr)   /* Customer */
   minmax(220px, 1fr)   /* Products */
-  minmax(140px, 1fr)   /* Run Status */
-  minmax(100px, 1fr)   /* Quantity */
-  minmax(100px, 1fr)   /* PO# */
   minmax(120px, 1fr)   /* Status */
+  minmax(140px, 1fr)   /* Total */
   minmax(110px, 1fr)   /* Created */
-  minmax(110px, 1fr)   /* Due In */
-  minmax(120px, 1fr)   /* Subscription */
-  minmax(120px, 1fr)   /* Invoice */
-  minmax(100px, 1fr)   /* Certs */
+  minmax(110px, 1fr)   /* Expiry Date */
   minmax(140px, 1fr)   /* Actions */
 `;
 
 // ===== Column definitions =====
-const orderCols = [
-    { key: "orderId", label: "Order #", sortable: true },
-    { key: "rma", label: "RMA" },
+const quoteCols = [
+    { key: "quoteId", label: "Quote #", sortable: true },
     { key: "customer", label: "Customer" },
     { key: "products", label: "Products" },
-    { key: "runStatus", label: "Run Status" },
-    { key: "quantity", label: "Quantity" },
-    { key: "po", label: "PO#" },
     { key: "status", label: "Status" },
+    { key: "total", label: "Total" },
     { key: "created", label: "Created", sortable: true },
-    { key: "dueIn", label: "Due In" },
-    { key: "subscription", label: "Subscription" },
-    { key: "invoice", label: "Invoice" },
-    { key: "certs", label: "Certs" },
+    { key: "expiryDate", label: "Expiry Date" },
     { key: "actions", label: "Actions" },
 ];
 
 // ===== Types & helpers =====
-type OrderRecord = {
-    orderId: string;
-    rma?: string;
+type QuoteRecord = {
+    quoteId: string;
     customer?: string;
     products?: string;
-    runStatus?: string;
-    quantity?: string;
-    po?: string;
     status?: string;
+    total?: string;
     created?: string;
-    dueIn?: string;
-    subscription?: string;
-    invoice?: string;
-    certs?: string;
+    expiryDate?: string;
     actions?: string;
     companyId?: string;
     companyName?: string;
@@ -93,15 +75,24 @@ function formatDate(value: string | null | undefined) {
     return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
 }
 
-function extractOrders(payload: any): any[] {
+function getCreatedDate(quote: QuoteRecord): Date | null {
+    const raw = quote.raw;
+    if (!raw) return null;
+    
+    const dateValue = raw?.created_at ?? raw?.created_date ?? raw?.date_created ?? raw?.created;
+    if (!dateValue) return null;
+    
+    const date = new Date(dateValue);
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function extractQuotes(payload: any): any[] {
     if (!payload) return [];
     if (Array.isArray(payload)) return payload;
 
     const candidates = [
-        payload.orders,
-        payload.salesorders,
-        payload.data?.orders,
-        payload.data?.salesorders,
+        payload.quotes,
+        payload.data?.quotes,
         payload.data,
         payload.results,
     ];
@@ -120,7 +111,7 @@ function extractOrders(payload: any): any[] {
     return [];
 }
 
-function normalizeOrder(raw: any): OrderRecord {
+function normalizeQuote(raw: any): QuoteRecord {
     const companyId =
         raw?.company_id ??
         raw?.companyId ??
@@ -129,20 +120,33 @@ function normalizeOrder(raw: any): OrderRecord {
         raw?.company;
     const companyName = raw?.company_name ?? raw?.companyName ?? raw?.company?.name ?? raw?.company?.company_name;
 
+    // Format total amount
+    const formatTotal = (value: any): string => {
+        if (value === null || value === undefined) return "";
+        const num = typeof value === "number" ? value : parseFloat(String(value));
+        if (Number.isNaN(num)) return String(value ?? "");
+        return `$${num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    };
+
+    // Format products list
+    const formatProducts = (value: any): string => {
+        if (Array.isArray(value)) {
+            return value.map((p: any) => p?.name ?? p?.product_name ?? p).filter(Boolean).join(", ");
+        }
+        if (typeof value === "string") return value;
+        if (value?.products_list) return value.products_list;
+        if (value?.products) return String(value.products);
+        return "";
+    };
+
     return {
-        orderId: String(raw?.order_id ?? raw?.legacy_order_id ?? raw?.orderId ?? ""),
-        rma: raw?.rma ?? raw?.rma_number ?? "",
-        customer: raw?.account_name ?? raw?.customer ?? raw?.customer_name ?? "",
-        products: raw?.products_list ?? raw?.products ?? raw?.product ?? "",
-        runStatus: raw?.run_status ?? raw?.runStatus ?? "",
-        quantity: raw?.quantity ?? raw?.qty ?? "",
-        po: raw?.po_number ?? raw?.po ?? "",
-        status: raw?.status ?? "",
-        created: formatDate(raw?.created_at ?? raw?.created_date ?? raw?.created),
-        dueIn: formatDate(raw?.due_date ?? raw?.dueIn ?? raw?.due),
-        subscription: raw?.subscription ?? "",
-        invoice: raw?.invoice ?? "",
-        certs: raw?.certs ?? "",
+        quoteId: String(raw?.quote_id ?? raw?.quote_number ?? raw?.quoteId ?? raw?.id ?? ""),
+        customer: raw?.account_name ?? raw?.customer_name ?? raw?.customer ?? raw?.account?.name ?? "",
+        products: formatProducts(raw?.products ?? raw?.items ?? raw?.line_items ?? raw?.products_list),
+        status: raw?.status ?? raw?.quote_status ?? "",
+        total: formatTotal(raw?.total ?? raw?.total_amount ?? raw?.amount),
+        created: formatDate(raw?.created_at ?? raw?.created_date ?? raw?.date_created ?? raw?.created),
+        expiryDate: formatDate(raw?.expiry_date ?? raw?.expires_at ?? raw?.valid_until ?? raw?.expiry),
         actions: raw?.actions ?? "",
         companyId: companyId ? String(companyId) : undefined,
         companyName: companyName ? String(companyName) : undefined,
@@ -150,19 +154,19 @@ function normalizeOrder(raw: any): OrderRecord {
     };
 }
 
-// ===== Hook to fetch orders =====
-function useOrders(selectedCompanyId?: string | null) {
+// ===== Hook to fetch quotes =====
+function useQuotes(selectedCompanyId?: string | null) {
     const { token, isLoggedIn } = useAuth();
     const { apiURL } = useBackend();
 
     return useQuery({
-        queryKey: ["orders", selectedCompanyId ?? "all"],
+        queryKey: ["quotes", selectedCompanyId ?? "all"],
         queryFn: async () => {
             const companyParam = selectedCompanyId && selectedCompanyId !== "all" ? selectedCompanyId : undefined;
-            if (!companyParam) return { orders: [] };
+            if (!companyParam) return { quotes: [] };
 
-            const path = `salesorders?company_id=${encodeURIComponent(companyParam)}`;
-            const res = await fetch(apiURL(path, "orders.json"), {
+            const path = `get-quotes?company_id=${encodeURIComponent(companyParam)}`;
+            const res = await fetch(apiURL(path, "get-quotes.json"), {
                 headers: { Authorization: `Bearer ${token}` },
             });
             if (!res.ok) {
@@ -196,11 +200,11 @@ export default function OrdersPage() {
             ? selectedCompanyId
             : nonAllCompanies[0]?.id ?? null;
 
-    const { data, isLoading, error } = useOrders(activeCompanyId);
-    const [tab, setTab] = useState(0); // 0 = Orders, 1 = Reports
+    const { data, isLoading, error } = useQuotes(activeCompanyId);
+    const [tab, setTab] = useState(0); // 0 = Quotes, 1 = Reports
 
     const [searchQuery, setSearchQuery] = useState("");
-    const [sortBy, setSortBy] = useState("orderId");
+    const [sortBy, setSortBy] = useState("quoteId");
     const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(20);
@@ -213,16 +217,22 @@ export default function OrdersPage() {
         }
     };
 
-    const allOrders = useMemo(() => {
-        const rows = extractOrders(data);
-        return rows.map(normalizeOrder).filter((order) => order.orderId);
+    const allQuotes = useMemo(() => {
+        const rows = extractQuotes(data);
+        return rows.map(normalizeQuote).filter((quote) => quote.quoteId);
     }, [data]);
-    const orders = useMemo(() => {
-        if (!activeCompanyId) return allOrders;
-        return allOrders.filter((order) => !order.companyId || order.companyId === activeCompanyId);
-    }, [activeCompanyId, allOrders]);
-    const lastUpdate = useMemo(() => new Date().toLocaleTimeString(), [data]);
-    const handleAddOrder = () => router.push("/dashboard/orders/new");
+    const quotes = useMemo(() => {
+        if (!activeCompanyId) return allQuotes;
+        return allQuotes.filter((quote) => !quote.companyId || quote.companyId === activeCompanyId);
+    }, [activeCompanyId, allQuotes]);
+    const [lastUpdate, setLastUpdate] = useState<string>("");
+    
+    useEffect(() => {
+        // Only set the time on the client side to avoid hydration mismatch
+        setLastUpdate(new Date().toLocaleTimeString());
+    }, [data]);
+    
+    const handleAddQuote = () => router.push("/dashboard/quotes/new");
 
     const filterAndSort = (rows: any[]) => {
         const filtered = rows.filter((r) =>
@@ -235,8 +245,48 @@ export default function OrdersPage() {
         });
     };
 
-    const visibleRows = filterAndSort(orders);
+    const visibleRows = filterAndSort(quotes);
     const pagedRows = visibleRows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+
+    // Calculate status card metrics
+    const currentMonthQuotes = useMemo(() => {
+        const now = new Date();
+        const currentMonth = now.getMonth();
+        const currentYear = now.getFullYear();
+        
+        return quotes.filter((quote) => {
+            const createdDate = getCreatedDate(quote);
+            if (!createdDate) return false;
+            return createdDate.getMonth() === currentMonth && createdDate.getFullYear() === currentYear;
+        }).length;
+    }, [quotes]);
+
+    const lastMonthQuotes = useMemo(() => {
+        const now = new Date();
+        const lastMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+        const lastMonthYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+        
+        return quotes.filter((quote) => {
+            const createdDate = getCreatedDate(quote);
+            if (!createdDate) return false;
+            return createdDate.getMonth() === lastMonth && createdDate.getFullYear() === lastMonthYear;
+        }).length;
+    }, [quotes]);
+
+    const yearToDateQuotes = useMemo(() => {
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        
+        return quotes.filter((quote) => {
+            const createdDate = getCreatedDate(quote);
+            if (!createdDate) return false;
+            return createdDate.getFullYear() === currentYear;
+        }).length;
+    }, [quotes]);
+
+    const acceptedQuotes = useMemo(() => {
+        return quotes.filter((quote) => quote.status?.toLowerCase() === "accepted").length;
+    }, [quotes]);
 
     return (
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1, p: 0 }}>
@@ -255,7 +305,7 @@ export default function OrdersPage() {
                 {/* Left: tabs + search */}
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
                     <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ minHeight: 36 }}>
-                        <Tab label="Orders" />
+                        <Tab label="Quotes" />
                         <Tab label="Reports" />
                     </Tabs>
 
@@ -264,11 +314,13 @@ export default function OrdersPage() {
                             {/* Count + Last update */}
                             <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
                                 <Typography sx={{ fontWeight: 700, fontSize: "14px" }}>
-                                    {isLoading ? "Loading…" : `${orders.length} Orders`}
+                                    {isLoading ? "Loading…" : `${quotes.length} Quotes`}
                                 </Typography>
-                                <Typography sx={{ fontSize: "12px", color: "text.secondary" }}>
-                                    Last update: {lastUpdate}
-                                </Typography>
+                                {lastUpdate && (
+                                    <Typography sx={{ fontSize: "12px", color: "text.secondary" }} suppressHydrationWarning>
+                                        Last update: {lastUpdate}
+                                    </Typography>
+                                )}
                             </Box>
 
                             {/* Search bar below */}
@@ -294,7 +346,7 @@ export default function OrdersPage() {
                                     sx={{ width: 280 }}
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="Search orders"
+                                    placeholder="Search quotes"
                                     size="small"
                                     InputProps={{
                                         startAdornment: (
@@ -304,10 +356,10 @@ export default function OrdersPage() {
                                         ),
                                     }}
                                 />
-                                <Tooltip title="Add Order">
+                                <Tooltip title="Add Quote">
                                     <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", mb: 0.25 }}>
-                                        <IconButton color="primary" onClick={handleAddOrder} sx={{ p: 0.5 }}>
-                                            <Image src={addAsset} alt="Add order" width={36} height={36} />
+                                        <IconButton color="primary" onClick={handleAddQuote} sx={{ p: 0.5 }}>
+                                            <Image src={addAsset} alt="Add quote" width={36} height={36} />
                                         </IconButton>
                                         <Typography variant="caption" sx={{ fontSize: 11, lineHeight: 1 }}>
                                             Add
@@ -320,13 +372,13 @@ export default function OrdersPage() {
 
                 </Box>
 
-                {/* Right: status cards (only for Orders tab) */}
+                {/* Right: status cards (only for Quotes tab) */}
                 {tab === 0 && (
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-                        <StatusCard title="Process Order" value={1} total={1} />
-                        <StatusCard title="Shipped This Month" value={5} total={20} />
-                        <StatusCard title="Shipped Last Week" value={2} total={9} />
-                        <StatusCard title="Ready To Invoice" value={3} total={3} />
+                        <StatusCard title="Current Month" value={currentMonthQuotes} total={quotes.length} />
+                        <StatusCard title="Last Month" value={lastMonthQuotes} total={quotes.length} />
+                        <StatusCard title="Year to Date" value={yearToDateQuotes} total={quotes.length} />
+                        <StatusCard title="Accepted" value={acceptedQuotes} total={quotes.length} />
                     </Box>
                 )}
             </Box>
@@ -342,7 +394,7 @@ export default function OrdersPage() {
                             zIndex: 1,
                             bgcolor: "#EAF5FF",
                             display: "grid",
-                            gridTemplateColumns: GRID_ORDERS,
+                            gridTemplateColumns: GRID_QUOTES,
                             columnGap: 1.5,
                             px: 2,
                             py: 1,
@@ -350,7 +402,7 @@ export default function OrdersPage() {
                             borderColor: "divider",
                         }}
                     >
-                        {orderCols.map(({ key, label, sortable }) => {
+                        {quoteCols.map(({ key, label, sortable }) => {
                             const active = sortable && key === sortBy;
                             return (
                                 <Box key={`${label}-hdr`} sx={{ display: "flex", alignItems: "center" }}>
@@ -382,10 +434,10 @@ export default function OrdersPage() {
 
                     {pagedRows.map((row) => (
                         <Box
-                            key={row.orderId}
+                            key={row.quoteId}
                             sx={{
                                 display: "grid",
-                                gridTemplateColumns: GRID_ORDERS,
+                                gridTemplateColumns: GRID_QUOTES,
                                 alignItems: "center",
                                 columnGap: 1.5,
                                 px: 2,
@@ -393,7 +445,7 @@ export default function OrdersPage() {
                                 "&:hover": { bgcolor: "#FAFAFD" },
                             }}
                         >
-                            {orderCols.map((col) => (
+                            {quoteCols.map((col) => (
                                 <Typography key={col.key} noWrap sx={{ color: "text.secondary" }}>
                                     {row[col.key] ?? ""}
                                 </Typography>
