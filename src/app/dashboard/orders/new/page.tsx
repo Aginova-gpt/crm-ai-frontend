@@ -26,7 +26,9 @@ import {
     Chip,
     Stack,
     CircularProgress,
+    Alert,
 } from "@mui/material";
+import { Suspense } from "react";
 import { MdSearch } from "react-icons/md";
 import { DeleteOutline, CloudUpload, Visibility, VisibilityOff, ExpandMore, ExpandLess } from "@mui/icons-material";
 import FormControl from "@mui/material/FormControl";
@@ -42,6 +44,7 @@ import { useBackend } from "../../../../contexts/BackendContext";
 import { useCompany } from "../../../../contexts/CompanyContext";
 import { useProfile } from "../../../../contexts/ProfileContext";
 import { useProducts } from "../../products/hooks/useProducts";
+
 
 type Sensor = {
     id: string;
@@ -112,7 +115,9 @@ function useCustomerDirectory() {
             return res.json();
         },
         enabled: isLoggedIn && !!token,
-        staleTime: 5 * 60 * 1000,
+        staleTime: 5 * 60 * 1000, // 5 minutes
+        gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+        refetchOnWindowFocus: false, // Don't refetch on window focus for better performance
     });
 }
 
@@ -122,12 +127,14 @@ function useProductDirectory(effectiveCompanyId: string | null) {
 
 function useCustomerDetail(customerId: string | null) {
     const { token, isLoggedIn } = useAuth();
+    const { apiURL } = useBackend();
 
     return useQuery({
         queryKey: ["customer-detail", customerId],
         queryFn: async () => {
             if (!customerId) return null;
-            const res = await fetch(`http://34.58.37.44/api/get-account/${customerId}`, {
+            const url = apiURL(`get-account/${customerId}`, `get-account-${customerId}.json`);
+            const res = await fetch(url, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             });
             if (!res.ok) {
@@ -144,12 +151,14 @@ function useCustomerDetail(customerId: string | null) {
 
 function useProductDetail(productId: string | null) {
     const { token, isLoggedIn } = useAuth();
+    const { apiURL } = useBackend();
 
     return useQuery({
         queryKey: ["product-detail", productId],
         queryFn: async () => {
             if (!productId) return null;
-            const res = await fetch(`http://34.58.37.44/api/get-product/${productId}`, {
+            const url = apiURL(`get-product-details?item_id=${productId}`, `get-product-details-${productId}.json`);
+            const res = await fetch(url, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             });
             if (!res.ok) {
@@ -167,11 +176,13 @@ function useProductDetail(productId: string | null) {
 
 function useSalesOrderLookups() {
     const { token, isLoggedIn } = useAuth();
+    const { apiURL } = useBackend();
 
     return useQuery({
         queryKey: ["salesorder-lookups"],
         queryFn: async () => {
-            const res = await fetch(`http://34.58.37.44/api/salesorders/lookups`, {
+            const url = apiURL("salesorders/lookups", "salesorders-lookups.json");
+            const res = await fetch(url, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             });
             if (!res.ok) {
@@ -210,12 +221,16 @@ function useQuotes() {
 
 function useAccountQuotes(accountId: string | null, companyId: string | null) {
     const { token, isLoggedIn } = useAuth();
+    const { apiURL } = useBackend();
 
     return useQuery({
         queryKey: ["account-quotes", accountId, companyId],
         queryFn: async () => {
             if (!accountId || !companyId) return null;
-            const url = `http://34.58.37.44/api/get-account-quotes?account_id=${accountId}&company_id=${companyId}`;
+            const url = apiURL(
+                `get-account-quotes?account_id=${accountId}&company_id=${companyId}`,
+                `get-account-quotes-${accountId}-${companyId}.json`
+            );
             const res = await fetch(url, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             });
@@ -233,25 +248,48 @@ function useAccountQuotes(accountId: string | null, companyId: string | null) {
 
 function useSalesOrderForEditing(salesorderId: string | null, companyId: string | null) {
     const { token, isLoggedIn } = useAuth();
+    const { apiURL } = useBackend();
 
     return useQuery({
         queryKey: ["salesorder-for-editing", salesorderId, companyId],
         queryFn: async () => {
             if (!salesorderId || !companyId) return null;
-            const url = `http://34.58.37.44/api/get-salesorder-for-editing?salesorder_id=${encodeURIComponent(salesorderId)}&company_id=${encodeURIComponent(companyId)}`;
+            const url = apiURL(
+                `get-salesorder-for-editing?salesorder_id=${encodeURIComponent(salesorderId)}&company_id=${encodeURIComponent(companyId)}`,
+                `get-salesorder-for-editing-${salesorderId}-${companyId}.json`
+            );
             const res = await fetch(url, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             });
             if (!res.ok) {
                 if (res.status === 401) throw new Error("Unauthorized – please log in again");
+                if (res.status === 404) throw new Error("Order not found");
                 throw new Error(`Failed to fetch sales order: ${res.status}`);
             }
             const data = await res.json();
-            return data?.salesorder || null;
+            const salesorder = data?.salesorder || null;
+            
+            // If no salesorder in response, order was not found
+            if (!salesorder) {
+                throw new Error("Order not found");
+            }
+            
+            // Validate that the order's company_id matches the requested companyId
+            if (salesorder && companyId) {
+                const orderCompanyId = String(salesorder.company_id ?? "");
+                const requestedCompanyId = String(companyId);
+                
+                if (orderCompanyId !== requestedCompanyId) {
+                    throw new Error("Order not found");
+                }
+            }
+            
+            return salesorder;
         },
         enabled: isLoggedIn && !!token && !!salesorderId && !!companyId,
         staleTime: 0,
         refetchOnWindowFocus: false,
+        retry: false, // Don't retry on error - if order not found, it won't be found on retry
     });
 }
 
@@ -350,11 +388,14 @@ const mockShipments = [
     },
 ];
 
-const initialSensors: Sensor[] = Array.from({ length: 20 }).map((_, index) => ({
+// Memoize static sensor data to avoid recreating on every render
+const createInitialSensors = (): Sensor[] => Array.from({ length: 20 }).map((_, index) => ({
     id: `002305${index.toString().padStart(2, "0")}`,
     name: `Sensor_0023${index.toString().padStart(2, "0")}`,
     type: "Single Probe",
 }));
+
+const initialSensors: Sensor[] = createInitialSensors();
 const initialAssignedSensors = initialSensors.slice(0, 8);
 const initialAvailableSensors = initialSensors.slice(8);
 
@@ -367,6 +408,7 @@ export default function CreateOrderPage() {
     const { selectedCompanyId, userCompanyId } = useCompany();
     const { isAdmin } = useProfile();
     const { token, isLoggedIn } = useAuth();
+    const { apiURL } = useBackend();
     const effectiveCompanyId = React.useMemo(() => (isAdmin ? selectedCompanyId : userCompanyId), [
         isAdmin,
         selectedCompanyId,
@@ -375,7 +417,7 @@ export default function CreateOrderPage() {
     const { data: customersData, isLoading: customersLoading } = useCustomerDirectory();
     const { data: productsData, isLoading: productsLoading, error: productsError } = useProductDirectory(effectiveCompanyId);
     const { data: lookupsData, isLoading: lookupsLoading } = useSalesOrderLookups();
-    const { data: orderData, isLoading: orderLoading } = useSalesOrderForEditing(
+    const { data: orderData, isLoading: orderLoading, error: orderError } = useSalesOrderForEditing(
         orderIdFromUrl,
         effectiveCompanyId ? String(effectiveCompanyId) : null
     );
@@ -384,6 +426,7 @@ export default function CreateOrderPage() {
     const [customerNameError, setCustomerNameError] = React.useState("");
     const [selectedCustomer, setSelectedCustomer] = React.useState<CustomerOption | null>(null);
     const selectedCustomerId = selectedCustomer?.id ?? null;
+    // Only fetch quotes when customer is selected (defer non-critical API call)
     const { data: accountQuotesData, isLoading: accountQuotesLoading, error: accountQuotesError } = useAccountQuotes(
         selectedCustomerId,
         effectiveCompanyId ? String(effectiveCompanyId) : null
@@ -401,6 +444,7 @@ export default function CreateOrderPage() {
         },
     ]);
     const [expandedNotes, setExpandedNotes] = React.useState<Record<string, boolean>>({});
+    // Only fetch customer detail when customer is selected (defer non-critical API call)
     const {
         data: customerDetail,
         isFetching: customerDetailLoading,
@@ -451,8 +495,9 @@ export default function CreateOrderPage() {
     const [shippingComments, setShippingComments] = React.useState("");
     const [processingComments, setProcessingComments] = React.useState("");
 
-    const shipmentStatusOptions = ["Pending", "Approved", "In Transit", "Delivered", "Closed"];
-    const shippingAccountOptions = ["Account 1", "Account 2", "Account 3"];
+    // Memoize static options to avoid recreating on every render
+    const shipmentStatusOptions = React.useMemo(() => ["Pending", "Approved", "In Transit", "Delivered", "Closed"], []);
+    const shippingAccountOptions = React.useMemo(() => ["Account 1", "Account 2", "Account 3"], []);
 
     const certificateTypeOptions = React.useMemo(() => {
         if (!lookupsData) return [];
@@ -673,48 +718,66 @@ export default function CreateOrderPage() {
         return options;
     }, [accountQuotesData]);
 
+    // Optimized customer options processing - reduce redundant formatAddress calls
     const customerOptions = React.useMemo(() => {
         if (!customersData?.data) return [];
-        return customersData.data
-            .flatMap((company: any) => {
-                const companyId = company?.company_id != null ? String(company.company_id) : undefined;
-                const companyCustomers = Array.isArray(company?.data) ? company.data : [];
-                return companyCustomers.map((acc: any, idx: number) => {
-                    const phone =
-                        acc?.phone ??
-                        acc?.account_phone ??
-                        acc?.primary_phone ??
-                        acc?.contact_phone ??
-                        "";
-                    const email =
-                        acc?.email ??
-                        acc?.account_email ??
-                        acc?.primary_email ??
-                        acc?.contact_email ??
-                        "";
-                    const billingAddress =
-                        formatAddress(acc?.billing_address) ??
-                        formatAddress(acc?.accountAddress?.billingAddress) ??
-                        formatAddress(acc?.billingAddress);
-                    const contacts = mapContacts(acc?.contacts ?? []);
-
-                    return {
-                        id: String(acc?.id ?? acc?.account_id ?? acc?.accountId ?? `${companyId ?? "company"}-${idx}`),
-                        name: String(acc?.name ?? acc?.account_name ?? "Unnamed Customer"),
-                        phone,
-                        email,
-                        billingAddress,
-                        shippingAddress:
-                            formatAddress(acc?.shipping_address) ??
-                            formatAddress(acc?.accountAddress?.shippingAddress) ??
-                            formatAddress(acc?.shippingAddress),
-                        companyId,
-                        contacts: contacts.length ? contacts : undefined,
-                        raw: acc,
-                    } as CustomerOption;
+        
+        const options: CustomerOption[] = [];
+        
+        for (const company of customersData.data) {
+            const companyId = company?.company_id != null ? String(company.company_id) : undefined;
+            const companyCustomers = Array.isArray(company?.data) ? company.data : [];
+            
+            for (let idx = 0; idx < companyCustomers.length; idx++) {
+                const acc = companyCustomers[idx];
+                if (!acc) continue;
+                
+                // Optimize phone/email extraction with single pass
+                const phone = acc?.phone ?? acc?.account_phone ?? acc?.primary_phone ?? acc?.contact_phone ?? "";
+                const email = acc?.email ?? acc?.account_email ?? acc?.primary_email ?? acc?.contact_email ?? "";
+                
+                // Optimize address formatting - try each source once, stop at first success
+                let billingAddress = "";
+                const billingSources = [acc?.billing_address, acc?.accountAddress?.billingAddress];
+                for (const source of billingSources) {
+                    const formatted = formatAddress(source);
+                    if (formatted) {
+                        billingAddress = formatted;
+                        break;
+                    }
+                }
+                
+                let shippingAddress = "";
+                const shippingSources = [acc?.shipping_address, acc?.accountAddress?.shippingAddress];
+                for (const source of shippingSources) {
+                    const formatted = formatAddress(source);
+                    if (formatted) {
+                        shippingAddress = formatted;
+                        break;
+                    }
+                }
+                
+                // Only map contacts if they exist
+                const contacts = acc?.contacts ? mapContacts(acc.contacts) : [];
+                
+                const name = String(acc?.name ?? acc?.account_name ?? "Unnamed Customer");
+                if (!name.trim()) continue; // Skip empty names early
+                
+                options.push({
+                    id: String(acc?.id ?? acc?.account_id ?? acc?.accountId ?? `${companyId ?? "company"}-${idx}`),
+                    name,
+                    phone,
+                    email,
+                    billingAddress,
+                    shippingAddress,
+                    companyId,
+                    contacts: contacts.length > 0 ? contacts : undefined,
+                    raw: acc,
                 });
-            })
-            .filter((option: CustomerOption) => option.name.trim().length > 0);
+            }
+        }
+        
+        return options;
     }, [customersData]);
 
     const filteredCustomerOptions = React.useMemo(() => {
@@ -765,6 +828,28 @@ export default function CreateOrderPage() {
 
         return options;
     }, [productsData]);
+
+    // Memoize product IDs from rows to optimize dependency tracking
+    const productRowProductIds = React.useMemo(
+        () => productRows.map(r => r.product?.id).filter(Boolean).join(','),
+        [productRows]
+    );
+    
+    // Combined product options including fallback products from current rows
+    const combinedProductOptions = React.useMemo(() => {
+        const combined = [...productOptions];
+        const seenIds = new Set(productOptions.map(p => p.id));
+        
+        // Add any fallback products from current productRows that aren't already in productOptions
+        productRows.forEach((row) => {
+            if (row.product && !seenIds.has(row.product.id)) {
+                combined.push(row.product);
+                seenIds.add(row.product.id);
+            }
+        });
+        
+        return combined;
+    }, [productOptions, productRowProductIds, productRows]);
 
     // Helper function to calculate total
     const calculateRowTotal = React.useCallback((price: string, quantity: string): string => {
@@ -1075,7 +1160,9 @@ export default function CreateOrderPage() {
 
     // Populate form fields when order data is loaded for editing
     React.useEffect(() => {
-        if (!orderData || !customersData || !lookupsData || !productsData || !customerOptions.length) return;
+        if (!orderData || !customersData || !lookupsData || !customerOptions.length) {
+            return;
+        }
 
         // Set order subject
         if (orderData.subject) {
@@ -1175,19 +1262,43 @@ export default function CreateOrderPage() {
             setSpecialConditions(orderData.special_conditions || "");
         }
 
-        // Set product rows from line_items
-        if (orderData.line_items && Array.isArray(orderData.line_items) && productOptions.length > 0) {
+        // Set product rows from line_items - load immediately with all available data
+        if (orderData.line_items && Array.isArray(orderData.line_items)) {
             const rows: ProductRow[] = orderData.line_items.map((item: any, index: number) => {
+
                 const productId = item.item_id ? String(item.item_id) : null;
-                // Find product by matching id from productOptions
-                const foundProduct = productId ? productOptions.find((p) => p.id === productId) : null;
+                // Find product by matching id from productOptions (may be empty initially)
+                const foundProduct = productId && productOptions.length > 0 ? productOptions.find((p) => p.id === productId) : null;
+
+                // If product not found, create a fallback ProductOption from item data
+                let productToUse = foundProduct;
+                if (!foundProduct) {
+                    // Extract product name from description (which is the main field in line_items)
+                    const productName = item.description || item.item_name || item.product_name || item.internal_name || item.name || "";
+                    
+                    // Create fallback using description as product name
+                    if (productName || productId) {
+                        productToUse = {
+                            id: productId || `temp-${index}`,
+                            name: productName || `Item ${productId || index + 1}`,
+                            productNumber: "", // Will be populated from productOptions if found later
+                            description: item.description || "",
+                            raw: item,
+                        };
+                    }
+                }
+
+                // Extract product code - try from foundProduct first, then from productToUse
+                // Note: line_items don't have product_number, so we rely on productOptions
+                const extractedProductCode = foundProduct?.productNumber ?? productToUse?.productNumber ?? "";
 
                 return {
                     id: String(index + 1),
-                    product: foundProduct ?? null,
-                    productCode: foundProduct?.productNumber ?? item.product_number ?? "",
-                    productDescription: item.description ?? foundProduct?.description ?? "",
-                    productNotes: item.comment ?? "",
+                    product: productToUse ?? null,
+                    // Use item data first, then fall back to productToUse/foundProduct, then empty string
+                    productCode: extractedProductCode,
+                    productDescription: item.description || productToUse?.description || foundProduct?.description || "",
+                    productNotes: item.comment || "",
                     productPrice: item.list_price ? String(item.list_price) : "",
                     productQuantity: item.quantity ? String(item.quantity) : "",
                     productTotal: item.list_price && item.quantity ? String(item.list_price * item.quantity) : "",
@@ -1211,6 +1322,83 @@ export default function CreateOrderPage() {
             }
         }
     }, [orderData?.contact_id, customerContacts]);
+
+    // Update product references when productOptions loads (after initial product rows are set)
+    React.useEffect(() => {
+        if (!orderData?.line_items || !Array.isArray(orderData.line_items)) return;
+
+        setProductRows((prevRows) => {
+            // Only update if we have the same number of rows as line_items
+            if (prevRows.length !== orderData.line_items.length) return prevRows;
+
+            return prevRows.map((row, index) => {
+                const item = orderData.line_items[index];
+                if (!item) return row;
+
+                const productId = item.item_id ? String(item.item_id) : null;
+                // Try to find product in productOptions (may have loaded since initial render)
+                const foundProduct = productId && productOptions.length > 0 ? productOptions.find((p) => p.id === productId) : null;
+                
+                // If product is null, try to find it now that productOptions is loaded
+                if (!row.product) {
+                    if (foundProduct) {
+                        return {
+                            ...row,
+                            product: foundProduct,
+                            // Update code and description if they're empty and we have product data
+                            productCode: row.productCode || foundProduct.productNumber || "",
+                            productDescription: row.productDescription || foundProduct.description || "",
+                        };
+                    } else {
+                        // If not found, create fallback ProductOption from item data
+                        // Use description as the primary source for product name (line_items have description, not product_name)
+                        const productName = item.description || item.item_name || item.product_name || item.internal_name || item.name || "";
+                        
+                        if (productName || productId) {
+                            const fallbackProduct: ProductOption = {
+                                id: productId || `temp-${index}`,
+                                name: productName || `Item ${productId || index + 1}`,
+                                productNumber: "", // Product code comes from productOptions, not line_items
+                                description: item.description || "",
+                                raw: item,
+                            };
+                            return {
+                                ...row,
+                                product: fallbackProduct,
+                                // Keep existing productCode if set, otherwise leave empty (will be populated if product found in productOptions)
+                                productCode: row.productCode || "",
+                                productDescription: row.productDescription || item.description || "",
+                            };
+                        }
+                    }
+                } else if (foundProduct && (!row.productCode || (row.product?.id && row.product.id.startsWith('temp-')))) {
+                    // If we have a product but it's a fallback (temp ID) or missing productCode, update it with the real product
+                    return {
+                        ...row,
+                        product: foundProduct,
+                        productCode: foundProduct.productNumber || row.productCode || "",
+                        productDescription: foundProduct.description || row.productDescription || "",
+                    };
+                } else if (foundProduct && !row.productCode) {
+                    // If we have the product but missing productCode, just update the code
+                    return {
+                        ...row,
+                        productCode: foundProduct.productNumber || "",
+                    };
+                }
+
+                // Update description if it's empty but we have item description
+                if (!row.productDescription && item.description) {
+                    return {
+                        ...row,
+                        productDescription: item.description,
+                    };
+                }
+
+                return row;
+            });
+        });
+    }, [productOptions, orderData?.line_items]);
 
     // Set quote from quote_id when order data and quotes are loaded
     React.useEffect(() => {
@@ -1347,9 +1535,9 @@ export default function CreateOrderPage() {
                 pricetype_id: null,
             })),
         };
-            console.log("Saving order:", payload);
 
-            const res = await fetch("http://34.58.37.44/api/add-salesorder", {
+            const url = apiURL("add-salesorder", "add-salesorder.json");
+            const res = await fetch(url, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -1368,7 +1556,6 @@ export default function CreateOrderPage() {
             }
 
             const responseData = await res.json();
-            console.log("Order saved successfully:", responseData);
             alert("Order saved successfully.");
             router.push("/dashboard/orders");
         } catch (error) {
@@ -1513,11 +1700,47 @@ export default function CreateOrderPage() {
                 </Box>
             </Box>
 
+            {/* Display error if order not found or company ID mismatch */}
+            {orderError && orderIdFromUrl && (
+                <Alert 
+                    severity="error" 
+                    sx={{ mb: 2 }}
+                    action={
+                        <Button 
+                            color="inherit" 
+                            size="small" 
+                            onClick={handleCancel}
+                        >
+                            Go Back
+                        </Button>
+                    }
+                >
+                    <Typography variant="body1" fontWeight={600}>
+                        {orderError instanceof Error ? orderError.message : "Order not found"}
+                    </Typography>
+                    {orderError instanceof Error && orderError.message === "Order not found" && (
+                        <Typography variant="body2" sx={{ mt: 1 }}>
+                            The order with ID "{orderIdFromUrl}" does not exist or does not belong to your company. 
+                            Please check the order ID and try again, or create a new order.
+                        </Typography>
+                    )}
+                </Alert>
+            )}
+
+            {/* Show loading state while fetching order */}
+            {orderLoading && orderIdFromUrl && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                    Loading order data...
+                </Alert>
+            )}
+
             <Box
                 sx={{
                     display: "grid",
                     gridTemplateColumns: { xs: "1fr", lg: "1.2fr 0.7fr" },
                     gap: 2,
+                    opacity: orderError && orderIdFromUrl ? 0.6 : 1,
+                    pointerEvents: orderError && orderIdFromUrl ? "none" : "auto",
                 }}
             >
                 <Paper
@@ -2221,7 +2444,7 @@ export default function CreateOrderPage() {
                                     <Autocomplete
                                         size="small"
                                         fullWidth
-                                        options={productOptions}
+                                        options={combinedProductOptions}
                                         value={row.product}
                                         onChange={(event, newValue) => handleProductSelect(row.id, event, newValue)}
                                         loading={productsLoading}
@@ -2594,6 +2817,7 @@ export default function CreateOrderPage() {
 
                     <Divider />
 
+                    {/* Only render active tab content for better performance */}
                     {shipmentTab === 0 ? (
                         <Box sx={{ display: "flex", flexDirection: "column", gap: 3, p: 3 }}>
                             <Card variant="outlined">
