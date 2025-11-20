@@ -1263,45 +1263,39 @@ export default function CreateOrderPage() {
         }
 
         // Set product rows from line_items - load immediately with all available data
+        // In edit mode, product details come from get-salesorder-for-editing API response
         if (orderData.line_items && Array.isArray(orderData.line_items)) {
             const rows: ProductRow[] = orderData.line_items.map((item: any, index: number) => {
 
                 const productId = item.item_id ? String(item.item_id) : null;
-                // Find product by matching id from productOptions (may be empty initially)
-                const foundProduct = productId && productOptions.length > 0 ? productOptions.find((p) => p.id === productId) : null;
-
-                // If product not found, create a fallback ProductOption from item data
-                let productToUse = foundProduct;
-                if (!foundProduct) {
-                    // Extract product name from description (which is the main field in line_items)
-                    const productName = item.description || item.item_name || item.product_name || item.internal_name || item.name || "";
-                    
-                    // Create fallback using description as product name
-                    if (productName || productId) {
-                        productToUse = {
-                            id: productId || `temp-${index}`,
-                            name: productName || `Item ${productId || index + 1}`,
-                            productNumber: "", // Will be populated from productOptions if found later
-                            description: item.description || "",
-                            raw: item,
-                        };
-                    }
+                
+                // In edit mode, product details come from the API response line_items
+                // Extract product details directly from line_item (product details are included in get-salesorder-for-editing response)
+                const productNumber = item.product_number || item.productNumber || item.item_code || item.itemCode || "";
+                const productName = item.product_name || item.productName || item.item_name || item.itemName || item.internal_name || item.internalName || item.description || item.name || "";
+                const productDescription = item.description || item.product_description || item.productDescription || "";
+                
+                // Create ProductOption from line_item data (product details come from API response)
+                let productToUse: ProductOption | null = null;
+                if (productId) {
+                    productToUse = {
+                        id: productId,
+                        name: productName || `Item ${productId}`,
+                        productNumber: productNumber,
+                        description: productDescription,
+                        raw: item,
+                    };
                 }
-
-                // Extract product code - try from foundProduct first, then from productToUse
-                // Note: line_items don't have product_number, so we rely on productOptions
-                const extractedProductCode = foundProduct?.productNumber ?? productToUse?.productNumber ?? "";
 
                 return {
                     id: String(index + 1),
-                    product: productToUse ?? null,
-                    // Use item data first, then fall back to productToUse/foundProduct, then empty string
-                    productCode: extractedProductCode,
-                    productDescription: item.description || productToUse?.description || foundProduct?.description || "",
-                    productNotes: item.comment || "",
-                    productPrice: item.list_price ? String(item.list_price) : "",
+                    product: productToUse,
+                    productCode: productNumber,
+                    productDescription: productDescription,
+                    productNotes: item.comment || item.notes || "",
+                    productPrice: item.list_price || item.listPrice || item.price ? String(item.list_price || item.listPrice || item.price) : "",
                     productQuantity: item.quantity ? String(item.quantity) : "",
-                    productTotal: item.list_price && item.quantity ? String(item.list_price * item.quantity) : "",
+                    productTotal: (item.list_price || item.listPrice || item.price) && item.quantity ? String((item.list_price || item.listPrice || item.price) * item.quantity) : "",
                 };
             });
 
@@ -1324,6 +1318,7 @@ export default function CreateOrderPage() {
     }, [orderData?.contact_id, customerContacts]);
 
     // Update product references when productOptions loads (after initial product rows are set)
+    // In edit mode, prioritize product details from get-salesorder-for-editing API response (orderData.line_items)
     React.useEffect(() => {
         if (!orderData?.line_items || !Array.isArray(orderData.line_items)) return;
 
@@ -1336,62 +1331,44 @@ export default function CreateOrderPage() {
                 if (!item) return row;
 
                 const productId = item.item_id ? String(item.item_id) : null;
-                // Try to find product in productOptions (may have loaded since initial render)
-                const foundProduct = productId && productOptions.length > 0 ? productOptions.find((p) => p.id === productId) : null;
                 
-                // If product is null, try to find it now that productOptions is loaded
-                if (!row.product) {
-                    if (foundProduct) {
+                // In edit mode, product details come from get-salesorder-for-editing API response
+                // Extract product details directly from line_item
+                const productNumber = item.product_number || item.productNumber || item.item_code || item.itemCode || "";
+                const productName = item.product_name || item.productName || item.item_name || item.itemName || item.internal_name || item.internalName || item.description || item.name || "";
+                const productDescription = item.description || item.product_description || item.productDescription || "";
+                
+                // If product is missing or incomplete, create/update it from line_item data
+                if (!row.product || (productId && row.product.id !== productId)) {
+                    if (productId) {
+                        const productFromLineItem: ProductOption = {
+                            id: productId,
+                            name: productName || `Item ${productId}`,
+                            productNumber: productNumber,
+                            description: productDescription,
+                            raw: item,
+                        };
                         return {
                             ...row,
-                            product: foundProduct,
-                            // Update code and description if they're empty and we have product data
-                            productCode: row.productCode || foundProduct.productNumber || "",
-                            productDescription: row.productDescription || foundProduct.description || "",
+                            product: productFromLineItem,
+                            productCode: productNumber || row.productCode || "",
+                            productDescription: productDescription || row.productDescription || "",
                         };
-                    } else {
-                        // If not found, create fallback ProductOption from item data
-                        // Use description as the primary source for product name (line_items have description, not product_name)
-                        const productName = item.description || item.item_name || item.product_name || item.internal_name || item.name || "";
-                        
-                        if (productName || productId) {
-                            const fallbackProduct: ProductOption = {
-                                id: productId || `temp-${index}`,
-                                name: productName || `Item ${productId || index + 1}`,
-                                productNumber: "", // Product code comes from productOptions, not line_items
-                                description: item.description || "",
-                                raw: item,
-                            };
-                            return {
-                                ...row,
-                                product: fallbackProduct,
-                                // Keep existing productCode if set, otherwise leave empty (will be populated if product found in productOptions)
-                                productCode: row.productCode || "",
-                                productDescription: row.productDescription || item.description || "",
-                            };
-                        }
                     }
-                } else if (foundProduct && (!row.productCode || (row.product?.id && row.product.id.startsWith('temp-')))) {
-                    // If we have a product but it's a fallback (temp ID) or missing productCode, update it with the real product
-                    return {
-                        ...row,
-                        product: foundProduct,
-                        productCode: foundProduct.productNumber || row.productCode || "",
-                        productDescription: foundProduct.description || row.productDescription || "",
+                } else if (row.product && productId && row.product.id === productId) {
+                    // Product exists, but update details from line_item if they're more complete
+                    // This ensures we use the latest data from the API response
+                    const updatedProduct: ProductOption = {
+                        ...row.product,
+                        productNumber: productNumber || row.product.productNumber || "",
+                        description: productDescription || row.product.description || "",
+                        raw: item,
                     };
-                } else if (foundProduct && !row.productCode) {
-                    // If we have the product but missing productCode, just update the code
                     return {
                         ...row,
-                        productCode: foundProduct.productNumber || "",
-                    };
-                }
-
-                // Update description if it's empty but we have item description
-                if (!row.productDescription && item.description) {
-                    return {
-                        ...row,
-                        productDescription: item.description,
+                        product: updatedProduct,
+                        productCode: productNumber || row.productCode || "",
+                        productDescription: productDescription || row.productDescription || "",
                     };
                 }
 
