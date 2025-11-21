@@ -466,7 +466,7 @@ export default function CreateOrderPage() {
 
     const filteredCustomerOptions = React.useMemo(() => {
         if (!selectedCompanyId || selectedCompanyId === "all") return customerOptions;
-        return customerOptions.filter((option) => option.companyId === String(selectedCompanyId));
+        return customerOptions.filter((option: CustomerOption) => option.companyId === String(selectedCompanyId));
     }, [customerOptions, selectedCompanyId]);
 
     const productOptions = React.useMemo(() => {
@@ -810,7 +810,7 @@ export default function CreateOrderPage() {
 
     React.useEffect(() => {
         if (!selectedCustomer) return;
-        const stillExists = filteredCustomerOptions.some((option) => option.id === selectedCustomer.id);
+        const stillExists = filteredCustomerOptions.some((option: { id: string }) => option.id === selectedCustomer.id);
         if (!stillExists) {
             setSelectedCustomer(null);
             setCustomerPhone("");
