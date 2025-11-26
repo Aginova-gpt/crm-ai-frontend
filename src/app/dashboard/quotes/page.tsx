@@ -35,27 +35,23 @@ const GRID_QUOTES = `
   minmax(180px, 1.8fr) /* Subject */
   minmax(180px, 1.4fr) /* Customer */
   minmax(220px, 2fr)   /* Products */
-  minmax(80px, 0.8fr)  /* Quantity */
   minmax(110px, 1fr)   /* Status */
   minmax(130px, 1fr)   /* Created At */
-  minmax(130px, 1fr)   /* Created By */
   minmax(120px, 1fr)   /* Valid Till */
-  minmax(110px, 1fr)   /* Order ID */
+  minmax(130px, 1fr)   /* Created By */
   minmax(110px, 1fr)   /* Total */
   minmax(110px, 0.8fr) /* Actions */
 `;
 
 const quoteCols = [
   { key: "quoteNumber", label: "Quote #", sortable: true },
-  { key: "subject", label: "Quote Subject" },
+  { key: "subject", label: "Subject" },
   { key: "customer", label: "Customer" },
   { key: "products", label: "Products" },
-  { key: "quantity", label: "Quantity" },
   { key: "status", label: "Status" },
   { key: "createdAt", label: "Created At", sortable: true },
-  { key: "createdBy", label: "Created By" },
   { key: "validTill", label: "Valid Till" },
-  { key: "orderId", label: "Order ID" },
+  { key: "createdBy", label: "Created By" },
   { key: "total", label: "Total" },
   { key: "actions", label: "Actions" },
 ];
