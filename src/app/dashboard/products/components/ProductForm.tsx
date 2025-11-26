@@ -1382,8 +1382,6 @@ export default function ProductForm({ mode, initialData }: ProductFormProps) {
         const heightValue = getNumberValue("height");
         const widthValue = getNumberValue("width");
         const lengthValue = getNumberValue("length");
-        const calibrationRaw = getTextValue("calibration");
-        const calibrationYes = calibrationRaw.toLowerCase() === "yes";
 
         const productName = getTextValue("productName");
 
@@ -1408,44 +1406,63 @@ export default function ProductForm({ mode, initialData }: ProductFormProps) {
         const properties: PropertyPayload[] = [];
 
         if (weightValue != null && corePropertyNameIds.weight) {
-            properties.push({
+            const selectedWeightUnit = weightUnitOptions.find(
+                (u) => u.value === weightUnit
+              );
+              const unit_id = selectedWeightUnit?.id ?? null;
+              properties.push({
                 item_property_name_id: corePropertyNameIds.weight,
                 property_value: weightValue.toString(),
-                unit_id: selectedWeightUnit?.id ?? null,
-                unit_type: "weight",
-            });
+                unit_id,
+                unit_type: unit_id != null ? "weight" : null,
+              });
         }
 
         if (lengthValue != null && corePropertyNameIds.length) {
-            properties.push({
+            const selectedDimensionUnit = dimensionUnitOptions.find(
+                (u) => u.value === dimensionUnit
+              );
+              const unit_id = selectedDimensionUnit?.id ?? null;
+            
+              properties.push({
                 item_property_name_id: corePropertyNameIds.length,
                 property_value: lengthValue.toString(),
-                unit_id: selectedDimensionUnit?.id ?? null,
-                unit_type: "dimension",
-            });
+                unit_id,
+                unit_type: unit_id != null ? "dimension" : null,
+              });
         }
 
         if (widthValue != null && corePropertyNameIds.width) {
-            properties.push({
+            const selectedDimensionUnit = dimensionUnitOptions.find(
+                (u) => u.value === dimensionUnit
+              );
+              const unit_id = selectedDimensionUnit?.id ?? null;
+            
+              properties.push({
                 item_property_name_id: corePropertyNameIds.width,
                 property_value: widthValue.toString(),
-                unit_id: selectedDimensionUnit?.id ?? null,
-                unit_type: "dimension",
+                unit_id,
+                unit_type: unit_id != null ? "dimension" : null,
             });
         }
 
         if (heightValue != null && corePropertyNameIds.height) {
-            properties.push({
+            const selectedDimensionUnit = dimensionUnitOptions.find(
+                (u) => u.value === dimensionUnit
+              );
+              const unit_id = selectedDimensionUnit?.id ?? null;
+            
+              properties.push({
                 item_property_name_id: corePropertyNameIds.height,
                 property_value: heightValue.toString(),
-                unit_id: selectedDimensionUnit?.id ?? null,
-                unit_type: "dimension",
+                unit_id,
+                unit_type: unit_id != null ? "dimension" : null,
             });
         }
         if (corePropertyNameIds.calibration) {
             properties.push({
                 item_property_name_id: corePropertyNameIds.calibration,
-                property_value: calibrationYes ? "1" : "0",
+                property_value: calibrationValue === "yes" ? "1" : "0",
                 unit_id: null,
                 unit_type: null,
             });
@@ -1455,15 +1472,6 @@ export default function ProductForm({ mode, initialData }: ProductFormProps) {
             properties.push({
                 item_property_name_id: corePropertyNameIds.bundle,
                 property_value: "1",
-                unit_id: null,
-                unit_type: null,
-            });
-        }
-
-        if (corePropertyNameIds.calibration && calibrationValue) {
-            properties.push({
-                item_property_name_id: corePropertyNameIds.calibration,
-                property_value: calibrationValue,   
                 unit_id: null,
                 unit_type: null,
             });
@@ -1487,7 +1495,6 @@ export default function ProductForm({ mode, initialData }: ProductFormProps) {
             item_category_id: parseIdValue(productCategory),
             item_subcategory_id: parseIdValue(subCategory),
             description: getTextValue("productDescription") || null,
-            calibration: getTextValue("calibration") || null,
             global_item: productCode.trim().toUpperCase(),
             item_type_id: 1,
             company_id: normalizeNumericId(effectiveCompanyId) ?? 0,
@@ -1617,8 +1624,7 @@ export default function ProductForm({ mode, initialData }: ProductFormProps) {
                 <Stack direction="row" spacing={2}>
                     <Button
                         variant="outlined"
-                        onClick={() => router.push("/dashboard/products")}
-                    >
+                        onClick={() => router.push("/dashboard/products")}>
                         Cancel
                     </Button>
                     <Button
@@ -1626,13 +1632,9 @@ export default function ProductForm({ mode, initialData }: ProductFormProps) {
                         color="primary"
                         type="submit"
                         form="product-form"
-                        disabled={submitLoading}
-                    >
+                        disabled={submitLoading}>
                         {submitLoading
-                            ? "Saving..."
-                            : isEdit
-                                ? "Save Changes"
-                                : "Add Product"}
+                            ? "Saving..." : isEdit? "Save Changes" : "Add Product"}
                     </Button>
                 </Stack>
             </Box>
@@ -1643,11 +1645,7 @@ export default function ProductForm({ mode, initialData }: ProductFormProps) {
                 id="product-form"
                 onSubmit={handleSubmit}
                 sx={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 3,
-                    width: { xs: "100%", lg: "70%" },
-                    mx: "auto",
+                    display: "flex", flexDirection: "column", gap: 3, width: { xs: "100%", lg: "70%" }, mx: "auto",
                 }}
             >
                 {(submitError || submitSuccess) && (
@@ -1662,34 +1660,22 @@ export default function ProductForm({ mode, initialData }: ProductFormProps) {
                         }}
                     >
                         {submitError ??
-                            (isEdit
-                                ? "Product updated successfully."
-                                : "Product saved successfully.")}
+                            (isEdit? "Product updated successfully." : "Product saved successfully.")}
                     </Alert>
                 )}
 
                 {/* Main box */}
                 <Box
                     sx={{
-                        bgcolor: "#FFF",
-                        borderRadius: 2,
-                        p: 3,
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 3,
+                        bgcolor: "#FFF", borderRadius: 2, p: 3, display: "flex", flexDirection: "column", gap: 3,
                     }}
                 >
                     <Box>
                         <Typography
                             variant="subtitle1"
                             sx={{
-                                fontWeight: 700,
-                                color: "#0B5FFF",
-                                textDecoration: "underline",
-                                textDecorationThickness: "2px",
-                                cursor: "default",
-                                display: "inline-flex",
-                                mb: 2,
+                                fontWeight: 700, color: "#0B5FFF", textDecoration: "underline", textDecorationThickness: "2px",
+                                cursor: "default", display: "inline-flex", mb: 2,
                             }}
                         />
 
