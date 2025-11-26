@@ -275,6 +275,25 @@ const NUMERIC_INPUT_SX = {
 
 const initialPrices: PriceItem[] = [];
 
+const toDateInputValue = (value: any): string => {
+    if (!value) return "";
+  
+    // Try to parse as a Date
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      // HTML date input expects yyyy-mm-dd
+      return parsed.toISOString().slice(0, 10);
+    }
+  
+    // Fallback: try to pull a yyyy-mm-dd substring if it's already in there
+    const s = String(value).trim();
+    const match = s.match(/(\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1];
+  
+    return "";
+  };
+  
+
 // Helpers
 const normalizeNumericId = (value: unknown): number | null => {
     if (value == null) return null;
@@ -1155,7 +1174,7 @@ export default function ProductForm({ mode, initialData }: ProductFormProps) {
                 priceTypeId: String(row.pricing_type_id),
                 priceTypeLabel: row.pricing_type_name,
                 price: Number(row.price),
-                date: String(row.start_date).slice(0, 10),
+                date: toDateInputValue(row.start_date),
             }));
         } else if (
             Array.isArray(initialData.current_prices) &&
@@ -1168,7 +1187,7 @@ export default function ProductForm({ mode, initialData }: ProductFormProps) {
                 priceTypeId: String(row.pricing_type_id),
                 priceTypeLabel: row.pricing_type_name,
                 price: Number(row.price),
-                date: String(row.start_date).slice(0, 10),
+                date: toDateInputValue(row.start_date),
             }));
         }
 
