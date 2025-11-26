@@ -1421,6 +1421,18 @@ export default function OrderForm(props: OrderFormProps = {}) {
                                 >
                                     Order Details
                                 </Typography>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    label="Order Subject"
+                                    value={orderSubject}
+                                    onChange={(e) => {
+                                        setOrderSubject(e.target.value);
+                                        if (orderSubjectError) setOrderSubjectError("");
+                                    }}
+                                    error={!!orderSubjectError}
+                                    helperText={orderSubjectError || ""}
+                                />
                                 <Box
                                     sx={{
                                         display: "grid",
