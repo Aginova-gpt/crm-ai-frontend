@@ -20,7 +20,7 @@ import {
   IconButton,
   Tooltip,
 } from "@mui/material";
-import { MdSearch, MdOpenInNew } from "react-icons/md";
+import { MdSearch, MdEdit } from "react-icons/md";
 import StatusCard from "@/components/StatusCard/StatusCard";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
@@ -48,7 +48,7 @@ const quoteCols = [
   { key: "subject", label: "Subject" },
   { key: "customer", label: "Customer" },
   { key: "products", label: "Products" },
-  { key: "status", label: "Status" },
+  { key: "status", label: "Stage", sortable: true },
   { key: "createdAt", label: "Created At", sortable: true },
   { key: "validTill", label: "Valid Till" },
   { key: "createdBy", label: "Created By" },
@@ -184,6 +184,12 @@ export default function QuotesPage() {
       ? selectedCompanyId
       : nonAllCompanies[0]?.id ?? null;
 
+  // Reset filter when company changes
+  useEffect(() => {
+    setStatusFilter(null);
+    setPage(0);
+  }, [activeCompanyId]);
+
   const { data, isLoading, error } = useQuotes(activeCompanyId);
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -191,6 +197,7 @@ export default function QuotesPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(20);
+  const [statusFilter, setStatusFilter] = useState<"currentMonth" | "ytd" | "accepted" | "created" | null>(null);
 
   const toggleSort = (key: string) => {
     if (key === sortBy) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -222,16 +229,83 @@ export default function QuotesPage() {
     router.push(`/dashboard/quotes/${encodeURIComponent(quoteId)}`);
 
   const filterAndSort = (rows: QuoteRecord[]) => {
-    const filtered = rows.filter((r) =>
+    let filtered = rows;
+
+    // Apply status filter first
+    if (statusFilter === "currentMonth") {
+      const now = new Date();
+      const currentMonth = now.getMonth();
+      const currentYear = now.getFullYear();
+      filtered = filtered.filter((r) => {
+        if (!r.raw?.created_at) return false;
+        const date = new Date(r.raw.created_at);
+        return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+      });
+    } else if (statusFilter === "ytd") {
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      filtered = filtered.filter((r) => {
+        if (!r.raw?.created_at) return false;
+        const date = new Date(r.raw.created_at);
+        return date.getFullYear() === currentYear;
+      });
+    } else if (statusFilter === "accepted") {
+      filtered = filtered.filter((r) => {
+        const status = String(r.status ?? "").toLowerCase();
+        return status.includes("accepted") || status.includes("accept");
+      });
+    } else if (statusFilter === "created") {
+      filtered = filtered.filter((r) => {
+        const status = String(r.status ?? "").toLowerCase();
+        return status.includes("created") || status === "create";
+      });
+    }
+
+    // Apply search query filter
+    filtered = filtered.filter((r) =>
       Object.values(r)
         .join(" ")
         .toLowerCase()
         .includes(searchQuery.toLowerCase())
     );
+
+    // Sort
     return [...filtered].sort((a, b) => {
-      const av = String(a[sortBy] ?? "").toLowerCase();
-      const bv = String(b[sortBy] ?? "").toLowerCase();
-      return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+      const av = a[sortBy] ?? "";
+      const bv = b[sortBy] ?? "";
+      
+      // For quoteNumber, try numeric sorting first
+      if (sortBy === "quoteNumber") {
+        const aNum = Number(av);
+        const bNum = Number(bv);
+        // If both are valid numbers, sort numerically
+        if (!isNaN(aNum) && !isNaN(bNum) && av !== "" && bv !== "") {
+          return sortDir === "asc" ? aNum - bNum : bNum - aNum;
+        }
+      }
+      
+      // For dates (createdAt, validTill), parse and compare as dates
+      if (sortBy === "createdAt" || sortBy === "validTill") {
+        const aDate = av ? new Date(a.raw?.[sortBy === "createdAt" ? "created_at" : "valid_till"] || av) : null;
+        const bDate = bv ? new Date(b.raw?.[sortBy === "createdAt" ? "created_at" : "valid_till"] || bv) : null;
+        if (aDate && bDate && !isNaN(aDate.getTime()) && !isNaN(bDate.getTime())) {
+          return sortDir === "asc" ? aDate.getTime() - bDate.getTime() : bDate.getTime() - aDate.getTime();
+        }
+      }
+      
+      // For total, try numeric sorting
+      if (sortBy === "total") {
+        const aNum = parseFloat(String(av).replace(/[^0-9.-]/g, ""));
+        const bNum = parseFloat(String(bv).replace(/[^0-9.-]/g, ""));
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+          return sortDir === "asc" ? aNum - bNum : bNum - aNum;
+        }
+      }
+      
+      // Default to string comparison
+      const avStr = String(av).toLowerCase();
+      const bvStr = String(bv).toLowerCase();
+      return sortDir === "asc" ? avStr.localeCompare(bvStr) : bvStr.localeCompare(avStr);
     });
   };
 
@@ -242,10 +316,18 @@ export default function QuotesPage() {
   );
 
   // Stats from API (with safe fallbacks)
-  const totalQuotes: number = data?.total_quotes ?? quotes.length;
-  const monthlyQuotes: number = data?.monthly_quotes ?? 0;
-  const ytdQuotes: number = data?.ytd_quotes ?? 0;
-  const acceptedQuotes: number = data?.accepted_quotes ?? 0;
+  const totalQuotes: number = data?.total_quotes != null ? Number(data.total_quotes) : quotes.length;
+  const monthlyQuotes: number = data?.monthly_quotes != null ? Number(data.monthly_quotes) : 0;
+  const ytdQuotes: number = data?.ytd_quotes != null ? Number(data.ytd_quotes) : 0;
+  const acceptedQuotes: number = data?.accepted_quotes != null ? Number(data.accepted_quotes) : 0;
+  
+  // Calculate created quotes count
+  const createdQuotes: number = useMemo(() => {
+    return quotes.filter((q) => {
+      const status = String(q.status ?? "").toLowerCase();
+      return status.includes("created") || status === "create";
+    }).length;
+  }, [quotes]);
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 1, p: 0 }}>
@@ -364,21 +446,92 @@ export default function QuotesPage() {
 
         {/* Right: Status cards (from API stats) */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-          <StatusCard
-            title="Current Month"
-            value={monthlyQuotes}
-            total={totalQuotes || 1}
-          />
-          <StatusCard
-            title="Year till Date"
-            value={ytdQuotes}
-            total={totalQuotes || 1}
-          />
-          <StatusCard
-            title="Accepted"
-            value={acceptedQuotes}
-            total={totalQuotes || 1}
-          />
+          <Box
+            onClick={() => {
+              setStatusFilter(statusFilter === "currentMonth" ? null : "currentMonth");
+              setPage(0);
+            }}
+            sx={{
+              cursor: "pointer",
+              border:
+                statusFilter === "currentMonth"
+                  ? "2px solid #1976d2"
+                  : "2px solid transparent",
+              borderRadius: 1,
+              transition: "border 0.2s",
+            }}
+          >
+            <StatusCard
+              title="Current Month"
+              value={monthlyQuotes}
+              selected={statusFilter === "currentMonth"}
+            />
+          </Box>
+          <Box
+            onClick={() => {
+              setStatusFilter(statusFilter === "ytd" ? null : "ytd");
+              setPage(0);
+            }}
+            sx={{
+              cursor: "pointer",
+              border:
+                statusFilter === "ytd"
+                  ? "2px solid #1976d2"
+                  : "2px solid transparent",
+              borderRadius: 1,
+              transition: "border 0.2s",
+            }}
+          >
+            <StatusCard
+              title="Year till Date"
+              value={ytdQuotes}
+              selected={statusFilter === "ytd"}
+            />
+          </Box>
+          <Box
+            onClick={() => {
+              setStatusFilter(statusFilter === "accepted" ? null : "accepted");
+              setPage(0);
+            }}
+            sx={{
+              cursor: "pointer",
+              border:
+                statusFilter === "accepted"
+                  ? "2px solid #1976d2"
+                  : "2px solid transparent",
+              borderRadius: 1,
+              transition: "border 0.2s",
+            }}
+          >
+            <StatusCard
+              title="Accepted"
+              value={acceptedQuotes}
+              total={totalQuotes > 0 ? totalQuotes : undefined}
+              selected={statusFilter === "accepted"}
+            />
+          </Box>
+          <Box
+            onClick={() => {
+              setStatusFilter(statusFilter === "created" ? null : "created");
+              setPage(0);
+            }}
+            sx={{
+              cursor: "pointer",
+              border:
+                statusFilter === "created"
+                  ? "2px solid #1976d2"
+                  : "2px solid transparent",
+              borderRadius: 1,
+              transition: "border 0.2s",
+            }}
+          >
+            <StatusCard
+              title="Created"
+              value={createdQuotes}
+              total={totalQuotes > 0 ? totalQuotes : undefined}
+              selected={statusFilter === "created"}
+            />
+          </Box>
         </Box>
       </Box>
 
@@ -477,7 +630,7 @@ export default function QuotesPage() {
               if (col.key === "actions") {
                 return (
                   <Box key="actions" sx={{ display: "flex", gap: 1 }}>
-                    <Tooltip title="View Quote">
+                    <Tooltip title="Edit">
                       <IconButton
                         size="small"
                         color="primary"
@@ -486,7 +639,7 @@ export default function QuotesPage() {
                           handleViewQuote(row.quoteId || row.quoteNumber)
                         }
                       >
-                        <MdOpenInNew size={18} />
+                        <MdEdit size={18} />
                       </IconButton>
                     </Tooltip>
                   </Box>
