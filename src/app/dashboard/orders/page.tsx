@@ -32,20 +32,20 @@ import { useCompany } from "@/contexts/CompanyContext";
 
 // ===== Grid layout =====
 const GRID_ORDERS = `
-  minmax(100px, 1fr)   /* Order # */
-  minmax(80px, 1fr)    /* RMA */
+  minmax(80px, 1fr)   /* Order # */
+  minmax(60px, 1fr)    /* RMA */
   minmax(180px, 1fr)   /* Customer */
   minmax(220px, 1fr)   /* Products */
-  minmax(140px, 1fr)   /* Run Status */
-  minmax(100px, 1fr)   /* Quantity */
-  minmax(100px, 1fr)   /* PO# */
-  minmax(120px, 1fr)   /* Status */
-  minmax(110px, 1fr)   /* Created */
-  minmax(110px, 1fr)   /* Due In */
-  minmax(120px, 1fr)   /* Subscription */
-  minmax(120px, 1fr)   /* Invoice */
-  minmax(100px, 1fr)   /* Certs */
-  minmax(140px, 1fr)   /* Actions */
+  minmax(100px, 1fr)   /* Run Status */
+  minmax(60px, 1fr)   /* Quantity */
+  minmax(80px, 1fr)   /* PO# */
+  minmax(100px, 1fr)   /* Status */
+  minmax(100px, 1fr)   /* Created */
+  minmax(100px, 1fr)   /* Due In */
+  minmax(95px, 1fr)   /* Subscription */
+  minmax(95px, 1fr)   /* Invoice */
+  minmax(95px, 1fr)   /* Certs */
+  minmax(120px, 1fr)   /* Actions */
 `;
 
 // ===== Column definitions =====
@@ -222,7 +222,7 @@ export default function OrdersPage() {
         return allOrders.filter((order) => !order.companyId || order.companyId === activeCompanyId);
     }, [activeCompanyId, allOrders]);
     const lastUpdate = useMemo(() => new Date().toLocaleTimeString(), [data]);
-    const handleAddOrder = () => router.push("/dashboard/orders/new");
+    const handleAddOrder = () => router.push("/dashboard/orders/add-order");
 
     const filterAndSort = (rows: any[]) => {
         const filtered = rows.filter((r) =>
@@ -239,7 +239,7 @@ export default function OrdersPage() {
     const pagedRows = visibleRows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
     const handleEditOrder = (orderId: string) => {
-        router.push(`/dashboard/orders/new?orderId=${encodeURIComponent(orderId)}`);
+        router.push(`/dashboard/orders/${encodeURIComponent(orderId)}/edit`);
     };
 
     return (

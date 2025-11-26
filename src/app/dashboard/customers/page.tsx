@@ -32,6 +32,8 @@ import Image from "next/image";
 import { addAsset } from "@/styles/icons";
 import { useRouter } from "next/navigation";
 import { useProfile } from "@/contexts/ProfileContext";
+import { useCompanyCustomers } from "@/app/dashboard/customers/hooks/useCompanyCustomers";
+
 
 const GRID_COLS = "repeat(11, minmax(110px, 1fr))";
 const HEADER_MIN_WIDTH = 11 * 110;
@@ -74,34 +76,7 @@ const headerCols = [
   { key: "actions", label: "Quick Actions" },
 ];
 
-function useCustomers() {
-  const { token, isLoggedIn } = useAuth();
-  const { apiURL } = useBackend();
-  const { selectedCompanyId } = useCompany();
 
-  return useQuery({
-    queryKey: ["customers"],
-    queryFn: async () => {
-      const url = apiURL("accounts", "accounts.json")
-
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        if (res.status === 401)
-          throw new Error("Unauthorized – please log in again");
-        throw new Error(`Request failed: ${res.status}`);
-      }
-      return res.json();
-    },
-    enabled: isLoggedIn && !!token,
-    staleTime: 0,
-    gcTime: 0,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: "always",
-    refetchOnReconnect: "always",
-  });
-}
 
 export default function CustomersPage() {
   const router = useRouter();
@@ -111,10 +86,8 @@ export default function CustomersPage() {
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
-  // 🧭 Status filter state
   const [statusFilter, setStatusFilter] = useState<"all" | "openQuotes" | "openOrders">("all");
 
-  // 🌍 Global Company Filter
   const {
     companies,
     selectedCompanyId,
@@ -124,50 +97,48 @@ export default function CustomersPage() {
   } = useCompany();
   const { isAdmin } = useProfile();
 
-  const effectiveCompanyId = useMemo(() => (isAdmin ? selectedCompanyId : userCompanyId),
-    [isAdmin, selectedCompanyId, userCompanyId]);
+  // Effective company:
+  // - Admin → whatever is selected in the dropdown (never "all")
+  // - Non-admin → their own company from the JWT
+  const effectiveCompanyId = useMemo(
+    () => (isAdmin ? selectedCompanyId : userCompanyId),
+    [isAdmin, selectedCompanyId, userCompanyId]
+  );
 
-  // 🧠 Fetch Customers for all companies
-  const { data, isLoading, error } = useCustomers();
+  // Fetch customers for the effective company
+  const { data,
+     isLoading, 
+     error,
+     } = useCompanyCustomers();
 
-  // 🧩 Flatten JSON structure
+  // Flatten backend structure to a plain customer list
   const allCustomers: Customer[] = useMemo(() => {
-    if (!data?.data) return [];
-
-    return data.data
-      .flatMap((company: any) =>
-        company.data.map((acc: any) => ({
-          id: String(acc.id),
-          name: acc.name,
-          company_id: company.company_id,          // ✅ keep for filtering
-          company: company.company_name,
-          industry: acc.industry ?? "",
-          city: acc.city ?? "",
-          website: acc.website ?? "",
-          phone: acc.phone ?? "",
-          assignedTo: acc.assignedTo ?? "",
-          openOrders: acc.orders ?? "-",
-          openQuotes: acc.quotes ?? "-",
-        }))
-      )
-      .sort((a: Customer, b: Customer) => {                           // ✅ stable sort
-        if (a.company_id === b.company_id) return a.name.localeCompare(b.name);
-        return Number(a.company_id) - Number(b.company_id);
-      });
+    if (!data?.customers) return [];
+  
+    return data.customers
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        company_id: c.company_id,
+        company: "", // you can add company name to the hook type if needed
+        industry: c.industry ?? "",
+        city: c.city ?? "",
+        website: c.website ?? "",
+        phone: c.phone ?? "",
+        assignedTo: c.assignedTo ?? "",
+        openOrders: c.openOrders ?? "-",
+        openQuotes: c.openQuotes ?? "-",
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [data]);
 
-  // 🏢 Filter by company (or show all)
-  const filteredByCompany = useMemo(() => {
-    if (!effectiveCompanyId) return allCustomers;
-    const selected = String(effectiveCompanyId);
-    return allCustomers.filter((c) => String(c.company_id) === selected);
-  }, [allCustomers, effectiveCompanyId]);
+  // Backend already filtered by company_id, so "filteredByCompany" is just allCustomers
+  const filteredByCompany = allCustomers;
 
-  // 🔍 Apply search + status filters on top of company filter
+  // Apply search + open-orders/open-quotes filters
   const filtered = useMemo(() => {
     let list = filteredByCompany;
 
-    // ✅ Apply open orders / quotes filters
     if (statusFilter === "openOrders") {
       list = list.filter((c) => {
         const match = c.openOrders?.match(/\((\d+)\)/);
@@ -180,8 +151,6 @@ export default function CustomersPage() {
       });
     }
 
-
-    // ✅ Apply search
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
       const searchTerms = query.split(/\s+/);
@@ -194,7 +163,7 @@ export default function CustomersPage() {
     return list;
   }, [filteredByCompany, searchQuery, statusFilter]);
 
-  // 🧮 Compute number of customers contributing to open orders and quotes
+  // Counts for status cards (within current company)
   const contributingCounts = useMemo(() => {
     if (!filteredByCompany.length) return { openOrders: 0, openQuotes: 0 };
 
@@ -214,12 +183,7 @@ export default function CustomersPage() {
     };
   }, [filteredByCompany]);
 
-
-
-
-
-  // ===== Sorting =====
-
+  // Sorting
   const toggleSort = (key: SortKey) => {
     if (key === sortBy) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else setSortBy(key);
@@ -233,26 +197,20 @@ export default function CustomersPage() {
     });
   }, [filtered, sortBy, sortDir]);
 
-  // ===== Pagination =====
-
+  // Pagination
   const pagedCustomers = useMemo(
     () => sorted.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage),
     [sorted, page, rowsPerPage]
   );
   const total = sorted.length;
 
-  // 🧾 Dynamic summary (global or per company)
+  // Summary (already scoped by company on the backend when company_id is passed)
   const currentSummary = useMemo(() => {
-    if (!data?.data) return null;
-    if (effectiveCompanyId)
-      return data.summary ?? null;
+    if (!data) return null;
+    return data.summary ?? null;
+  }, [data]);
 
-    return data.data.find(
-      (c: any) => String(c.company_id) === String(effectiveCompanyId)
-    ) ?? data.summary ?? null;
-  }, [data, effectiveCompanyId]);
-
-  // ===== Placeholder Actions =====
+  // Actions
   const handleEditCustomer = (c: Customer) => {
     router.push(`/dashboard/customers/customerDetail/${c.id}`);
   };
@@ -265,7 +223,7 @@ export default function CustomersPage() {
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-      {/* === HEADER === */}
+      {/* HEADER */}
       <Box
         sx={{
           display: "flex",
@@ -294,7 +252,7 @@ export default function CustomersPage() {
               {isLoading ? "Loading…" : `${total} Customers`}
             </Typography>
 
-            {/* 🔽 Company Filter Dropdown */}
+            {/* Company Dropdown (admin can change, non-admin is fixed) */}
             <FormControl
               size="small"
               sx={{ minWidth: 200 }}
@@ -306,28 +264,27 @@ export default function CustomersPage() {
                 label="Company"
                 onChange={(e) => {
                   if (!isAdmin) return;
-                  setSelectedCompanyId(e.target.value || null);
+                  const value = e.target.value as string;
+                  setSelectedCompanyId(value || null);
                 }}
               >
                 {isAdmin
-                  ? // Admin: show all companies
-                  companies.map((c) => (
-                    <MenuItem key={c.id} value={c.id}>
-                      {c.name}
-                    </MenuItem>
-                  ))
-                  : // Non-admin: show only their own company (read-only)
-                  companies
-                    .filter((c) => c.id === userCompanyId)
-                    .map((c) => (
+                  ? companies.map((c) => (
                       <MenuItem key={c.id} value={c.id}>
                         {c.name}
                       </MenuItem>
-                    ))}
+                    ))
+                  : companies
+                      .filter((c) => c.id === userCompanyId)
+                      .map((c) => (
+                        <MenuItem key={c.id} value={c.id}>
+                          {c.name}
+                        </MenuItem>
+                      ))}
               </Select>
             </FormControl>
 
-            {/* 🔍 Search */}
+            {/* Search */}
             <TextField
               sx={{ width: 280 }}
               placeholder="Search for Customer name"
@@ -343,7 +300,7 @@ export default function CustomersPage() {
               }}
             />
 
-            {/* ➕ Add Customer */}
+            {/* Add Customer */}
             <Tooltip title="Add Customer">
               <Box
                 sx={{
@@ -373,14 +330,20 @@ export default function CustomersPage() {
           </Box>
         </Box>
 
-        {/* === STATUS CARDS === */}
+        {/* STATUS CARDS */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 2, ml: "auto" }}>
-          <Box onClick={() => setStatusFilter(
-            statusFilter === "openOrders" ? "all" : "openOrders"
-          )}
+          <Box
+            onClick={() =>
+              setStatusFilter(
+                statusFilter === "openOrders" ? "all" : "openOrders"
+              )
+            }
             sx={{
               cursor: "pointer",
-              border: statusFilter === "openOrders" ? "2px solid #1976d2" : "2px solid transparent",
+              border:
+                statusFilter === "openOrders"
+                  ? "2px solid #1976d2"
+                  : "2px solid transparent",
               borderRadius: 1,
               transition: "border 0.2s",
             }}
@@ -394,12 +357,18 @@ export default function CustomersPage() {
             />
           </Box>
 
-          <Box onClick={() => setStatusFilter(
-            statusFilter === "openQuotes" ? "all" : "openQuotes"
-          )}
+          <Box
+            onClick={() =>
+              setStatusFilter(
+                statusFilter === "openQuotes" ? "all" : "openQuotes"
+              )
+            }
             sx={{
               cursor: "pointer",
-              border: statusFilter === "openQuotes" ? "2px solid #1976d2" : "2px solid transparent",
+              border:
+                statusFilter === "openQuotes"
+                  ? "2px solid #1976d2"
+                  : "2px solid transparent",
               borderRadius: 1,
               transition: "border 0.2s",
             }}
@@ -417,7 +386,7 @@ export default function CustomersPage() {
 
       {error && <Alert severity="error">{(error as Error).message}</Alert>}
 
-      {/* === TABLE === */}
+      {/* TABLE */}
       <Box
         sx={{
           flex: 1,
@@ -427,7 +396,7 @@ export default function CustomersPage() {
           borderRadius: 1,
         }}
       >
-        {/* Table Header */}
+        {/* Header Row */}
         <Box
           sx={{
             position: "sticky",
@@ -474,7 +443,7 @@ export default function CustomersPage() {
           })}
         </Box>
 
-        {/* Rows */}
+        {/* Data Rows */}
         {isLoading ? (
           <Box sx={{ p: 3, display: "flex", alignItems: "center", gap: 1.5 }}>
             <CircularProgress size={18} />
@@ -486,7 +455,7 @@ export default function CustomersPage() {
           </Box>
         ) : (
           pagedCustomers.map((c, idx) => (
-            <React.Fragment key={`${c.company_id ?? "all"}-${c.id}-${idx}`}>
+            <React.Fragment key={`${c.company_id ?? "c"}-${c.id}-${idx}`}>
               <Box
                 sx={{
                   display: "grid",
@@ -553,7 +522,7 @@ export default function CustomersPage() {
                   {c.openQuotes ?? "-"}
                 </Typography>
 
-                {/* ✅ Quick Actions */}
+                {/* Quick Actions */}
                 <Box sx={{ display: "flex", gap: 1 }}>
                   <Tooltip title="Edit">
                     <IconButton
