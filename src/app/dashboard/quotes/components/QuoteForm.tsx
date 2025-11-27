@@ -139,7 +139,7 @@ type ProductRow = {
     productPrice: string;
     productQuantity: string;
     productTotal: string;
-    salesorder_item_id?: number | null;
+    quote_item_id?: number | null;
 };
 
 function useProductDirectory(effectiveCompanyId: string | null) {
@@ -170,14 +170,14 @@ function useCustomerDetail(customerId: string | null) {
     });
 }
 
-function useSalesOrderLookups() {
+function useQuoteLookups() {
     const { token, isLoggedIn } = useAuth();
     const { apiURL } = useBackend();
 
     return useQuery({
-        queryKey: ["salesorder-lookups"],
+        queryKey: ["quote-lookups"],
         queryFn: async () => {
-            const url = apiURL("salesorders/lookups", "salesorders-lookups.json");
+            const url = apiURL("quotes/lookups", "quotes-lookups.json");
             const res = await fetch(url, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             });
@@ -220,52 +220,52 @@ function useAccountQuotes(accountId: string | null, companyId: string | null) {
     });
 }
 
-function useSalesOrderForEditing(salesorderId: string | null, companyId: string | null) {
+function useQuoteForEditing(quoteId: string | null, companyId: string | null) {
     const { token, isLoggedIn } = useAuth();
     const { apiURL } = useBackend();
 
     return useQuery({
-        queryKey: ["salesorder-for-editing", salesorderId, companyId],
+        queryKey: ["quote-for-editing", quoteId, companyId],
         queryFn: async () => {
-            if (!salesorderId || !companyId) return null;
+            if (!quoteId || !companyId) return null;
             const url = apiURL(
-                `get-salesorder-for-editing?salesorder_id=${encodeURIComponent(
-                    salesorderId
+                `get-quote-for-editing?quote_id=${encodeURIComponent(
+                    quoteId
                 )}&company_id=${encodeURIComponent(companyId)}`,
-                `get-salesorder-for-editing-${salesorderId}-${companyId}.json`
+                `get-quote-for-editing-${quoteId}-${companyId}.json`
             );
             const res = await fetch(url, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             });
             if (!res.ok) {
                 if (res.status === 401) throw new Error("Unauthorized – please log in again");
-                if (res.status === 404) throw new Error("Order not found");
-                throw new Error(`Failed to fetch sales order: ${res.status}`);
+                if (res.status === 404) throw new Error("Quote not found");
+                throw new Error(`Failed to fetch quote: ${res.status}`);
             }
             const data = await res.json();
-            const salesorder = data?.salesorder || null;
-            if (!salesorder) {
-                throw new Error("Order not found");
+            const quote = data?.quote || null;
+            if (!quote) {
+                throw new Error("Quote not found");
             }
-            if (salesorder && companyId) {
-                const orderCompanyId = String(salesorder.company_id ?? "");
+            if (quote && companyId) {
+                const quoteCompanyId = String(quote.company_id ?? "");
                 const requestedCompanyId = String(companyId);
-                if (orderCompanyId !== requestedCompanyId) {
-                    throw new Error("Order not found");
+                if (quoteCompanyId !== requestedCompanyId) {
+                    throw new Error("Quote not found");
                 }
             }
-            return salesorder;
+            return quote;
         },
-        enabled: isLoggedIn && !!token && !!salesorderId && !!companyId,
+        enabled: isLoggedIn && !!token && !!quoteId && !!companyId,
         staleTime: 0,
         refetchOnWindowFocus: false,
         retry: false,
     });
 }
 
-type OrderFormProps = {
+type QuoteFormProps = {
     mode?: "create" | "edit";
-    orderIdFromParams?: string | null;
+    quoteIdFromParams?: string | null;
 };
 
 // Matches ProductForm behavior exactly
@@ -283,34 +283,34 @@ const normalizeNumericId = (value: unknown): number | null => {
     return null;
 };
 
-export default function OrderForm(props: OrderFormProps = {}) {
+export default function QuoteForm(props: QuoteFormProps = {}) {
     const router = useRouter();
-    const [orderIdFromUrl, setOrderIdFromUrl] = React.useState<string | null>(
-        props.orderIdFromParams ?? null
+    const [quoteIdFromUrl, setQuoteIdFromUrl] = React.useState<string | null>(
+        props.quoteIdFromParams ?? null
     );
 
     React.useEffect(() => {
-        if (props.orderIdFromParams !== undefined) {
-            setOrderIdFromUrl(props.orderIdFromParams ?? null);
+        if (props.quoteIdFromParams !== undefined) {
+            setQuoteIdFromUrl(props.quoteIdFromParams ?? null);
             return;
         }
         if (typeof window === "undefined") return;
         const params = new URLSearchParams(window.location.search);
         const id =
-            params.get("orderId") ?? params.get("orderID") ?? params.get("orderid");
-        setOrderIdFromUrl(id);
-    }, [props.orderIdFromParams]);
+            params.get("quoteId") ?? params.get("quoteID") ?? params.get("quoteid");
+        setQuoteIdFromUrl(id);
+    }, [props.quoteIdFromParams]);
 
     const { selectedCompanyId, userCompanyId } = useCompany();
     const { isAdmin } = useProfile();
     const { token, isLoggedIn } = useAuth();
     const { apiURL } = useBackend();
 
-    const [orderStatusError, setOrderStatusError] = React.useState("");
+    const [quoteStageError, setQuoteStageError] = React.useState("");
     const [lineItemsError, setLineItemsError] = React.useState("");
 
-    const [orderSubject, setOrderSubject] = React.useState("");
-    const [orderSubjectError, setOrderSubjectError] = React.useState("");
+    const [quoteSubject, setQuoteSubject] = React.useState("");
+    const [quoteSubjectError, setQuoteSubjectError] = React.useState("");
     const [customerNameError, setCustomerNameError] = React.useState("");
     const [selectedCustomer, setSelectedCustomer] =
         React.useState<CustomerOption | null>(null);
@@ -343,22 +343,12 @@ export default function OrderForm(props: OrderFormProps = {}) {
         error: customersError,
     } = useCompanyCustomers();
 
-    const { data: lookupsData, isLoading: lookupsLoading } = useSalesOrderLookups();
+    const { data: lookupsData, isLoading: lookupsLoading } = useQuoteLookups();
 
-    const [selectedCarrierId, setSelectedCarrierId] = React.useState<number | null>(
-        null
-    );
-    const [selectedStatusId, setSelectedStatusId] = React.useState<number | null>(null);
-    const [selectedPriorityId, setSelectedPriorityId] =
-        React.useState<number | null>(null);
-    const [selectedCertificateTypeId, setSelectedCertificateTypeId] =
-        React.useState<number | null>(null);
+    const [selectedStageId, setSelectedStageId] = React.useState<number | null>(null);
+    const [selectedCarrierId, setSelectedCarrierId] = React.useState<number | null>(null);
     const [specialConditions, setSpecialConditions] = React.useState("");
-    const [selectedTypeId, setSelectedTypeId] = React.useState<number | null>(null);
-    const [shipmentAccount, setShipmentAccount] = React.useState("");
-    const [poNumber, setPoNumber] = React.useState("");
-    const [dueDate, setDueDate] = React.useState("");
-    const [selectedQuote, setSelectedQuote] = React.useState<QuoteOption | null>(null);
+    const [validTill, setValidTill] = React.useState("");
     const [isSaving, setIsSaving] = React.useState(false);
     const [customerPhone, setCustomerPhone] = React.useState("");
     const [customerEmail, setCustomerEmail] = React.useState("");
@@ -381,6 +371,7 @@ export default function OrderForm(props: OrderFormProps = {}) {
         React.useState<ContactOption | null>(null);
     const [shippingComments, setShippingComments] = React.useState("");
     const [processingComments, setProcessingComments] = React.useState("");
+    const [expandedComments, setExpandedComments] = React.useState<Set<string>>(new Set());
 
     const [productRows, setProductRows] = React.useState<ProductRow[]>([
         {
@@ -394,7 +385,6 @@ export default function OrderForm(props: OrderFormProps = {}) {
             productTotal: "",
         },
     ]);
-    const [expandedComments, setExpandedComments] = React.useState<Set<string>>(new Set());
 
     const {
         data: accountQuotesData,
@@ -418,47 +408,37 @@ export default function OrderForm(props: OrderFormProps = {}) {
     } = useProductDirectory(effectiveCompanyId ? String(effectiveCompanyId) : null);
 
     const {
-        data: orderData,
-        isLoading: orderLoading,
-        error: orderError,
-    } = useSalesOrderForEditing(
-        orderIdFromUrl,
+        data: quoteData,
+        isLoading: quoteLoading,
+        error: quoteError,
+    } = useQuoteForEditing(
+        quoteIdFromUrl,
         effectiveCompanyId ? String(effectiveCompanyId) : null
     );
 
     const isBusy =
-        customersLoading || productsLoading || lookupsLoading || orderLoading || isSaving;
+        customersLoading || productsLoading || lookupsLoading || quoteLoading || isSaving;
 
 
 
-    // Populate form when editing and order data arrives
+    // Populate form when editing and quote data arrives
     React.useEffect(() => {
-        if (!orderData) return;
-        const so: any = orderData;
+        if (!quoteData) return;
+        const q: any = quoteData;
 
-        setOrderSubject(String(so.subject ?? so.order_subject ?? ""));
-        setPoNumber(String(so.po_number ?? so.po ?? ""));
-        setDueDate(so.due_date ?? so.due ?? "");
+        setQuoteSubject(String(q.subject ?? q.quote_subject ?? ""));
+        setValidTill(q.valid_till ?? q.validTill ?? "");
 
-        if (so.salesorder_status_id != null)
-            setSelectedStatusId(Number(so.salesorder_status_id));
+        if (q.quote_stage_id != null)
+            setSelectedStageId(Number(q.quote_stage_id));
 
-        if (so.salesorder_priority_id != null)
-            setSelectedPriorityId(Number(so.salesorder_priority_id));
+        if (q.carrier_id != null)
+            setSelectedCarrierId(Number(q.carrier_id));
 
-        if (so.salesorder_type_id != null)
-            setSelectedTypeId(Number(so.salesorder_type_id));
-
-        if (so.certificate_type_id != null)
-            setSelectedCertificateTypeId(Number(so.certificate_type_id));
-
-        if (so.carrier_id != null) setSelectedCarrierId(Number(so.carrier_id));
-
-        setShipmentAccount(String(so.customer_no ?? so.shipment_account ?? ""));
-        setSpecialConditions(String(so.special_conditions ?? ""));
+        setSpecialConditions(String(q.special_conditions ?? ""));
 
         const billingParsed = parseAddress(
-            so.billing_address ?? so.accountBillingAddress
+            q.billing_address ?? q.accountBillingAddress
         );
         setBillingAddress(billingParsed.street);
         setBillingPOBox(billingParsed.poBox);
@@ -468,7 +448,7 @@ export default function OrderForm(props: OrderFormProps = {}) {
         setBillingCountry(billingParsed.country);
 
         const shippingParsed = parseAddress(
-            so.shipping_address ?? so.accountShippingAddress
+            q.shipping_address ?? q.accountShippingAddress
         );
         setShippingAddress(shippingParsed.street);
         setShippingPOBox(shippingParsed.poBox);
@@ -477,20 +457,20 @@ export default function OrderForm(props: OrderFormProps = {}) {
         setShippingCode(shippingParsed.code);
         setShippingCountry(shippingParsed.country);
 
-        setShippingComments(String(so.shipping_comments ?? ""));
-        setProcessingComments(String(so.processing_comments ?? ""));
+        setShippingComments(String(q.shipping_comments ?? ""));
+        setProcessingComments(String(q.processing_comments ?? ""));
 
         let items: any[] =
-            (Array.isArray(so.products) && so.products) ||
-            (Array.isArray(so.items) && so.items) ||
-            (Array.isArray(so.salesorder_items) && so.salesorder_items) ||
+            (Array.isArray(q.products) && q.products) ||
+            (Array.isArray(q.items) && q.items) ||
+            (Array.isArray(q.quote_items) && q.quote_items) ||
             [];
-        if (!items.length && Array.isArray(so.line_items)) {
-            items = so.line_items;
+        if (!items.length && Array.isArray(q.line_items)) {
+            items = q.line_items;
         }
         if (items.length) {
             const mapped: ProductRow[] = items.map((it, idx) => ({
-                id: String(it.salesorder_item_id ?? it.id ?? idx + 1),
+                id: String(it.quote_item_id ?? it.id ?? idx + 1),
                 product:
                     it.product_id ?? it.item_id
                         ? {
@@ -518,7 +498,7 @@ export default function OrderForm(props: OrderFormProps = {}) {
                 productDescription: String(
                     it.product_name ?? it.item_name ?? it.name ?? ""
                 ),
-                productNotes: String(it.product_notes ?? it.notes ?? it.comment ?? ""),
+                productNotes: String(it.product_notes ?? it.notes ?? ""),
                 productPrice: String(
                     it.price ?? it.unit_price ?? it.list_price ?? ""
                 ),
@@ -530,9 +510,9 @@ export default function OrderForm(props: OrderFormProps = {}) {
                         ? Number(it.list_price) * Number(it.quantity)
                         : "")
                 ),
-                salesorder_item_id:
-                    it.salesorder_item_id != null
-                        ? Number(it.salesorder_item_id)
+                quote_item_id:
+                    it.quote_item_id != null
+                        ? Number(it.quote_item_id)
                         : null,
             }));
             setProductRows(
@@ -552,7 +532,7 @@ export default function OrderForm(props: OrderFormProps = {}) {
                     ]
             );
         }
-    }, [orderData]);
+    }, [quoteData]);
 
     const quoteOptions: QuoteOption[] = React.useMemo(() => {
         if (!accountQuotesData || !Array.isArray(accountQuotesData)) return [];
@@ -581,12 +561,12 @@ export default function OrderForm(props: OrderFormProps = {}) {
             .sort((a, b) => a.name.localeCompare(b.name));
     }, [customersData]);
 
-    // Select customer from order once customers list is available
+    // Select customer from quote once customers list is available
     React.useEffect(() => {
-        if (!orderData || !filteredCustomerOptions.length) return;
-        const so: any = orderData;
-        const cid = so.customer_id ?? so.account_id ?? so.accountId;
-        const cname = so.customer_name ?? so.account_name ?? so.customer;
+        if (!quoteData || !filteredCustomerOptions.length) return;
+        const q: any = quoteData;
+        const cid = q.customer_id ?? q.account_id ?? q.accountId;
+        const cname = q.customer_name ?? q.account_name ?? q.customer;
         let match: CustomerOption | null = null;
         if (cid != null) {
             match =
@@ -604,18 +584,7 @@ export default function OrderForm(props: OrderFormProps = {}) {
             if (match.phone) setCustomerPhone(match.phone);
             if (match.email) setCustomerEmail(match.email);
         }
-    }, [orderData, filteredCustomerOptions]);
-
-    // Select quote from order once account quotes are available
-    React.useEffect(() => {
-        if (!orderData || !Array.isArray(quoteOptions) || quoteOptions.length === 0)
-            return;
-        const so: any = orderData;
-        const qid = so.quote_id ?? so.sales_quote_id ?? null;
-        if (!qid) return;
-        const match = quoteOptions.find((q) => q.quote_id === qid);
-        if (match) setSelectedQuote(match);
-    }, [orderData, quoteOptions]);
+    }, [quoteData, filteredCustomerOptions]);
 
     const combinedProductOptions: ProductOption[] = React.useMemo(() => {
         const options: ProductOption[] = [];
@@ -644,68 +613,26 @@ export default function OrderForm(props: OrderFormProps = {}) {
         return options;
     }, [productsData]);
 
-    const orderStatusOptions: NamedOption[] = React.useMemo(() => {
+    const quoteStageOptions: NamedOption[] = React.useMemo(() => {
         const d: any = (lookupsData as any)?.data ?? lookupsData ?? {};
-        const src: any[] = Array.isArray(d?.salesorder_statuses)
-            ? d.salesorder_statuses
+        const src: any[] = Array.isArray(d?.quote_stages)
+            ? d.quote_stages
             : [];
         return src.map((s: any) => ({
-            id: s?.salesorder_status_id ?? s?.id ?? null,
+            id: s?.quote_stage_id ?? s?.id ?? null,
             name:
-                s?.status_name ??
-                s?.salesorder_status_name ??
+                s?.stage_name ??
+                s?.quote_stage_name ??
                 String(s?.name ?? ""),
         }));
     }, [lookupsData]);
 
-    const orderPriorityOptions: NamedOption[] = React.useMemo(() => {
-        const d: any = (lookupsData as any)?.data ?? lookupsData ?? {};
-        const src: any[] = Array.isArray(d?.salesorder_priorities)
-            ? d.salesorder_priorities
-            : [];
-        return src.map((p: any) => ({
-            id: p?.salesorder_priority_id ?? p?.id ?? null,
-            name:
-                p?.priority_name ??
-                p?.salesorder_priority_name ??
-                String(p?.name ?? ""),
-        }));
-    }, [lookupsData]);
-
-    const orderCategoryOptions: NamedOption[] = React.useMemo(() => {
-        const d: any = (lookupsData as any)?.data ?? lookupsData ?? {};
-        const src: any[] = Array.isArray(d?.salesorder_types)
-            ? d.salesorder_types
-            : [];
-        return src.map((t: any) => ({
-            id: t?.salesorder_type_id ?? t?.id ?? null,
-            name:
-                t?.type_name ??
-                t?.salesorder_type_name ??
-                String(t?.name ?? ""),
-        }));
-    }, [lookupsData]);
-
-    const shippingMethodOptions: NamedOption[] = React.useMemo(() => {
+    const carrierOptions: NamedOption[] = React.useMemo(() => {
         const d: any = (lookupsData as any)?.data ?? lookupsData ?? {};
         const src: any[] = Array.isArray(d?.carriers) ? d.carriers : [];
         return src.map((c: any) => ({
             id: c?.carrier_id ?? c?.id ?? null,
             name: c?.carrier_name ?? String(c?.name ?? ""),
-        }));
-    }, [lookupsData]);
-
-    const certificateTypeOptions: NamedOption[] = React.useMemo(() => {
-        const d: any = (lookupsData as any)?.data ?? lookupsData ?? {};
-        const src: any[] = Array.isArray(d?.certificate_types)
-            ? d.certificate_types
-            : [];
-        return src.map((c: any) => ({
-            id: c?.certificate_type_id ?? c?.id ?? null,
-            name:
-                c?.certificate_name ??
-                c?.certificate_type_name ??
-                String(c?.name ?? ""),
         }));
     }, [lookupsData]);
 
@@ -803,7 +730,7 @@ export default function OrderForm(props: OrderFormProps = {}) {
         const mapped = mapContacts(rawContacts);
         setCustomerContacts(mapped);
 
-        const existingContactId = (orderData as any)?.contact_id;
+        const existingContactId = (quoteData as any)?.contact_id;
         if (existingContactId != null) {
             const found = mapped.find((c) => c.id === String(existingContactId));
             setSelectedContact(found ?? null);
@@ -812,7 +739,7 @@ export default function OrderForm(props: OrderFormProps = {}) {
                 setSelectedContact(null);
             }
         }
-    }, [customerDetail, orderData]);
+    }, [customerDetail, quoteData]);
 
     const handleAddProductRow = React.useCallback(() => {
         setProductRows((prev) => [
@@ -923,26 +850,26 @@ export default function OrderForm(props: OrderFormProps = {}) {
     }, []);
 
     const handleCancel = React.useCallback(() => {
-        router.push("/dashboard/orders");
+        router.push("/dashboard/quotes");
     }, [router]);
 
     const handleSave = React.useCallback(async () => {
         let hasErrors = false;
-        setOrderSubjectError("");
+        setQuoteSubjectError("");
         setCustomerNameError("");
-        setOrderStatusError("");
+        setQuoteStageError("");
         setLineItemsError("");
 
-        if (!orderSubject.trim()) {
-            setOrderSubjectError("Order Subject is required");
+        if (!quoteSubject.trim()) {
+            setQuoteSubjectError("Quote Subject is required");
             hasErrors = true;
         }
         if (!selectedCustomer) {
             setCustomerNameError("Customer Name is required");
             hasErrors = true;
         }
-        if (selectedStatusId == null) {
-            setOrderStatusError("Status is required");
+        if (selectedStageId == null) {
+            setQuoteStageError("Stage is required");
             hasErrors = true;
         }
         const activeRows = productRows.filter(
@@ -971,7 +898,7 @@ export default function OrderForm(props: OrderFormProps = {}) {
 
         if (hasErrors) return;
         if (!isLoggedIn || !token) {
-            alert("You must be logged in to save orders.");
+            alert("You must be logged in to save quotes.");
             return;
         }
 
@@ -985,7 +912,7 @@ export default function OrderForm(props: OrderFormProps = {}) {
                         row.product?.id
                 )
                 .map((row, idx) => ({
-                    salesorder_item_id: row.salesorder_item_id ?? null,
+                    quote_item_id: row.quote_item_id ?? null,
                     sequence_no: idx + 1,
                     item_id:
                         row.product?.id != null ? Number(row.product.id) : null,
@@ -1002,22 +929,14 @@ export default function OrderForm(props: OrderFormProps = {}) {
                     pricetype_id: null,
                 }));
 
-            const salesorderPayload: any = {
-                subject: orderSubject.trim(),
+            const quotePayload: any = {
+                subject: quoteSubject.trim(),
                 company_id: normalizeNumericId(effectiveCompanyId) ?? 0,
                 account_id: selectedCustomer ? Number(selectedCustomer.id) : null,
                 contact_id: selectedContact ? Number(selectedContact.id) : null,
-                quote_id: selectedQuote?.quote_id ?? null,
-                due_date: dueDate || null,
-                customer_no: shipmentAccount || null,
-                po_number: poNumber || null,
+                valid_till: validTill || null,
+                quote_stage_id: selectedStageId,
                 carrier_id: selectedCarrierId,
-                salesorder_type_id: selectedTypeId,
-                salesorder_status_id: selectedStatusId,
-                salesorder_priority_id: selectedPriorityId,
-                certificate_type_id: selectedCertificateTypeId,
-                hosting: false,
-                emailed: false,
                 subtotal: netTotal || 0,
                 discount_percent: 0,
                 discount_amount: 0,
@@ -1046,21 +965,21 @@ export default function OrderForm(props: OrderFormProps = {}) {
                 line_items: lineItemsPayload,
             };
 
-            const isEditMode = !!orderIdFromUrl;
+            const isEditMode = !!quoteIdFromUrl;
             if (isEditMode) {
-                salesorderPayload.salesorder_id = parseInt(
-                    orderIdFromUrl as string,
+                quotePayload.quote_id = parseInt(
+                    quoteIdFromUrl as string,
                     10
                 );
             }
 
             const url = isEditMode
-                ? apiURL("edit-salesorder", "edit-salesorder.json")
-                : apiURL("add-salesorder", "add-salesorder.json");
+                ? apiURL("edit-quote", "edit-quote.json")
+                : apiURL("add-quote", "add-quote.json");
             const method = isEditMode ? "PUT" : "POST";
             const payload = isEditMode
-                ? { salesorder: salesorderPayload }
-                : salesorderPayload;
+                ? { quote: quotePayload }
+                : quotePayload;
 
             const res = await fetch(url, {
                 method,
@@ -1074,19 +993,19 @@ export default function OrderForm(props: OrderFormProps = {}) {
             if (!res.ok) {
                 const errorText = await res.text();
                 throw new Error(
-                    `Failed to save order: ${res.status} ${errorText}`
+                    `Failed to save quote: ${res.status} ${errorText}`
                 );
             }
 
             await res.json().catch(() => null);
-            alert("Order saved successfully.");
-            router.push("/dashboard/orders");
+            alert("Quote saved successfully.");
+            router.push("/dashboard/quotes");
         } catch (error) {
-            console.error("Error saving order:", error);
+            console.error("Error saving quote:", error);
             alert(
                 error instanceof Error
                     ? error.message
-                    : "Failed to save order. Please try again."
+                    : "Failed to save quote. Please try again."
             );
         } finally {
             setIsSaving(false);
@@ -1107,30 +1026,24 @@ export default function OrderForm(props: OrderFormProps = {}) {
         shippingCountry,
         customerEmail,
         customerPhone,
-        orderSubject,
+        quoteSubject,
         router,
         selectedCustomer,
         selectedContact,
-        shipmentAccount,
         shippingComments,
         processingComments,
         specialConditions,
         netTotal,
         grandTotal,
         productRows,
+        selectedStageId,
         selectedCarrierId,
-        selectedTypeId,
-        selectedStatusId,
-        selectedPriorityId,
-        selectedCertificateTypeId,
-        poNumber,
-        dueDate,
-        selectedQuote,
+        validTill,
         isLoggedIn,
         token,
-        orderIdFromUrl,
+        quoteIdFromUrl,
         apiURL,
-        orderData,
+        quoteData,
     ]);
 
     return (
@@ -1159,9 +1072,9 @@ export default function OrderForm(props: OrderFormProps = {}) {
                 }}
             >
                 <Typography variant="h5" fontWeight={600}>
-                    {orderIdFromUrl
-                        ? `Edit Order - ${orderIdFromUrl}`
-                        : "Create Order"}
+                    {quoteIdFromUrl
+                        ? `Edit Quote - ${quoteIdFromUrl}`
+                        : "Create Quote"}
                 </Typography>
                 <Box sx={{ display: "flex", gap: 1 }}>
                     <Button
@@ -1176,22 +1089,22 @@ export default function OrderForm(props: OrderFormProps = {}) {
                         onClick={handleSave}
                         disabled={isBusy}
                     >
-                        {isSaving ? "Saving..." : "Save Order"}
+                        {isSaving ? "Saving..." : "Save Quote"}
                     </Button>
                 </Box>
             </Paper>
 
-            {orderIdFromUrl && !orderLoading && orderError && (
+            {quoteIdFromUrl && !quoteLoading && quoteError && (
                 <Alert severity="error">
-                    The specified order could not be found. You can still create a
-                    new order.
+                    The specified quote could not be found. You can still create a
+                    new quote.
                 </Alert>
             )}
 
             {(customersLoading ||
                 productsLoading ||
                 lookupsLoading ||
-                orderLoading) && (
+                quoteLoading) && (
                     <Alert
                         severity="info"
                         icon={<CircularProgress size={16} />}
@@ -1231,7 +1144,7 @@ export default function OrderForm(props: OrderFormProps = {}) {
                             }}
                         >
                             <Typography variant="h6" fontWeight={600}>
-                                Order Details
+                                Quote Details
                             </Typography>
                             <Typography
                                 variant="body2"
@@ -1400,7 +1313,7 @@ export default function OrderForm(props: OrderFormProps = {}) {
                                 />
                             </Box>
 
-                            {/* Right column section: Order Details (PO/Quote/etc) */}
+                            {/* Right column section: Quote Details */}
                             <Box
                                 sx={{
                                     display: "flex",
@@ -1433,20 +1346,67 @@ export default function OrderForm(props: OrderFormProps = {}) {
                                     variant="subtitle2"
                                     sx={{ fontSize: "0.875rem" }}
                                 >
-                                    Order Details
+                                    Quote Details
                                 </Typography>
                                 <TextField
                                     fullWidth
                                     size="small"
-                                    label="Order Subject"
-                                    value={orderSubject}
+                                    label="Quote Subject"
+                                    value={quoteSubject}
                                     onChange={(e) => {
-                                        setOrderSubject(e.target.value);
-                                        if (orderSubjectError) setOrderSubjectError("");
+                                        setQuoteSubject(e.target.value);
+                                        if (quoteSubjectError) setQuoteSubjectError("");
                                     }}
-                                    error={!!orderSubjectError}
-                                    helperText={orderSubjectError || ""}
+                                    error={!!quoteSubjectError}
+                                    helperText={quoteSubjectError || ""}
                                 />
+                                <FormControl fullWidth size="small">
+                                    <InputLabel id="carrier-label">
+                                        Carrier
+                                    </InputLabel>
+                                    <Select
+                                        labelId="carrier-label"
+                                        label="Carrier"
+                                        value={selectedCarrierId ?? ""}
+                                        onChange={(event) => {
+                                            const value =
+                                                event.target
+                                                    .value as
+                                                | number
+                                                | string;
+                                            const id =
+                                                value === ""
+                                                    ? null
+                                                    : Number(value);
+                                            setSelectedCarrierId(id);
+                                        }}
+                                        disabled={lookupsLoading}
+                                    >
+                                        {carrierOptions.length > 0 ? (
+                                            carrierOptions.map(
+                                                (option) => (
+                                                    <MenuItem
+                                                        key={option.id}
+                                                        value={
+                                                            option.id as any
+                                                        }
+                                                    >
+                                                        {option.name}
+                                                    </MenuItem>
+                                                )
+                                            )
+                                        ) : (
+                                            <MenuItem
+                                                value=""
+                                                disabled
+                                            >
+                                                {lookupsLoading
+                                                    ? "Loading..."
+                                                    : "No options available"}
+                                            </MenuItem>
+                                        )}
+                                    </Select>
+                                </FormControl>
                                 <Box
                                     sx={{
                                         display: "grid",
@@ -1460,220 +1420,35 @@ export default function OrderForm(props: OrderFormProps = {}) {
                                     <TextField
                                         fullWidth
                                         size="small"
-                                        label="Purchase Order"
-                                        value={poNumber}
-                                        onChange={(e) =>
-                                            setPoNumber(e.target.value)
-                                        }
-                                    />
-                                    <Autocomplete
-                                        size="small"
-                                        fullWidth
-                                        options={quoteOptions}
-                                        value={selectedQuote}
-                                        onChange={(_, newValue) =>
-                                            setSelectedQuote(newValue)
-                                        }
-                                        loading={accountQuotesLoading}
-                                        disableClearable={false}
-                                        isOptionEqualToValue={(option, value) =>
-                                            option.id === value.id
-                                        }
-                                        getOptionLabel={(option) =>
-                                            typeof option === "string"
-                                                ? option
-                                                : option?.name ?? ""
-                                        }
-                                        renderOption={(props, option) => (
-                                            <li {...props} key={option.id}>
-                                                {option.name}
-                                            </li>
-                                        )}
-                                        renderInput={(params) => (
-                                            <TextField
-                                                {...params}
-                                                size="small"
-                                                fullWidth
-                                                label="Quote Name"
-                                                placeholder="Select Quote"
-                                                error={!!accountQuotesError}
-                                                helperText={
-                                                    accountQuotesError
-                                                        ? accountQuotesError instanceof
-                                                            Error
-                                                            ? accountQuotesError.message
-                                                            : "Failed to load quotes"
-                                                        : undefined
-                                                }
-                                                InputProps={{
-                                                    ...params.InputProps,
-                                                    endAdornment: (
-                                                        <>
-                                                            {accountQuotesLoading ? (
-                                                                <CircularProgress
-                                                                    color="inherit"
-                                                                    size={16}
-                                                                />
-                                                            ) : null}
-                                                            {
-                                                                params.InputProps
-                                                                    .endAdornment
-                                                            }
-                                                        </>
-                                                    ),
-                                                }}
-                                            />
-                                        )}
-                                        noOptionsText={
-                                            accountQuotesLoading
-                                                ? "Loading..."
-                                                : accountQuotesError
-                                                    ? "Error loading quotes"
-                                                    : !selectedCustomerId
-                                                        ? "Select a customer first"
-                                                        : "No quotes found"
-                                        }
-                                        disabled={
-                                            !selectedCustomerId ||
-                                            !effectiveCompanyId
-                                        }
-                                    />
-                                    <TextField
-                                        fullWidth
-                                        size="small"
-                                        label="Shipping Account"
-                                        value={shipmentAccount}
-                                        onChange={(e) =>
-                                            setShipmentAccount(e.target.value)
-                                        }
-                                    />
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel id="order-category-label">
-                                            Order Category
-                                        </InputLabel>
-                                        <Select
-                                            labelId="order-category-label"
-                                            label="Order Category"
-                                            value={selectedTypeId ?? ""}
-                                            onChange={(event) => {
-                                                const value =
-                                                    event.target
-                                                        .value as
-                                                    | number
-                                                    | string;
-                                                const id =
-                                                    value === ""
-                                                        ? null
-                                                        : Number(value);
-                                                setSelectedTypeId(id);
-                                            }}
-                                            disabled={lookupsLoading}
-                                        >
-                                            {orderCategoryOptions.length > 0 ? (
-                                                orderCategoryOptions.map(
-                                                    (option) => (
-                                                        <MenuItem
-                                                            key={option.id}
-                                                            value={
-                                                                option.id as any
-                                                            }
-                                                        >
-                                                            {option.name}
-                                                        </MenuItem>
-                                                    )
-                                                )
-                                            ) : (
-                                                <MenuItem
-                                                    value=""
-                                                    disabled
-                                                >
-                                                    {lookupsLoading
-                                                        ? "Loading..."
-                                                        : "No options available"}
-                                                </MenuItem>
-                                            )}
-                                        </Select>
-                                    </FormControl>
-                                    <TextField
-                                        fullWidth
-                                        size="small"
-                                        label="Due Date"
+                                        label="Valid Till"
                                         type="date"
-                                        value={dueDate}
+                                        value={validTill}
                                         onChange={(e) =>
-                                            setDueDate(e.target.value)
+                                            setValidTill(e.target.value)
                                         }
                                         InputLabelProps={{ shrink: true }}
                                     />
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel id="shipping-method-label">
-                                            Shipping Method
+                                    <FormControl fullWidth size="small" error={!!quoteStageError}>
+                                        <InputLabel id="quote-stage-label">
+                                            Stage
                                         </InputLabel>
                                         <Select
-                                            labelId="shipping-method-label"
-                                            label="Shipping Method"
-                                            value={selectedCarrierId ?? ""}
-                                            onChange={(event) => {
-                                                const value =
-                                                    event.target
-                                                        .value as
-                                                    | number
-                                                    | string;
-                                                const id =
-                                                    value === ""
-                                                        ? null
-                                                        : Number(value);
-                                                setSelectedCarrierId(id);
-                                            }}
-                                            disabled={lookupsLoading}
-                                        >
-                                            {shippingMethodOptions.length >
-                                                0 ? (
-                                                shippingMethodOptions.map(
-                                                    (option) => (
-                                                        <MenuItem
-                                                            key={option.id}
-                                                            value={
-                                                                option.id as any
-                                                            }
-                                                        >
-                                                            {option.name}
-                                                        </MenuItem>
-                                                    )
-                                                )
-                                            ) : (
-                                                <MenuItem
-                                                    value=""
-                                                    disabled
-                                                >
-                                                    {lookupsLoading
-                                                        ? "Loading..."
-                                                        : "No options available"}
-                                                </MenuItem>
-                                            )}
-                                        </Select>
-                                    </FormControl>
-                                    <FormControl fullWidth size="small" error={!!orderStatusError}>
-                                        <InputLabel id="order-status-label">
-                                            Status
-                                        </InputLabel>
-                                        <Select
-                                            labelId="order-status-label"
-                                            label="Status"
-                                            value={selectedStatusId ?? ""}
+                                            labelId="quote-stage-label"
+                                            label="Stage"
+                                            value={selectedStageId ?? ""}
                                             onChange={(event) => {
                                                 const value =
                                                     event.target.value as | number | string;
                                                 const id = value === "" ? null : Number(value);
-                                                setSelectedStatusId(id);
-                                                if (orderStatusError) {
-                                                    setOrderStatusError("");
+                                                setSelectedStageId(id);
+                                                if (quoteStageError) {
+                                                    setQuoteStageError("");
                                                 }
                                             }}
                                             disabled={lookupsLoading}
                                         >
-                                            {orderStatusOptions.length > 0 ? (
-                                                orderStatusOptions.map(
+                                            {quoteStageOptions.length > 0 ? (
+                                                quoteStageOptions.map(
                                                     (option) => (
                                                         <MenuItem key={option.id} value={option.id as any}>
                                                             {option.name}
@@ -1683,106 +1458,6 @@ export default function OrderForm(props: OrderFormProps = {}) {
                                             ) : (
                                                 <MenuItem value="" disabled>
                                                     {lookupsLoading ? "Loading..." : "No options available"}
-                                                </MenuItem>
-                                            )}
-                                        </Select>
-                                    </FormControl>
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel id="order-priority-label">
-                                            Priority
-                                        </InputLabel>
-                                        <Select
-                                            labelId="order-priority-label"
-                                            label="Priority"
-                                            value={selectedPriorityId ?? ""}
-                                            onChange={(event) => {
-                                                const value =
-                                                    event.target
-                                                        .value as
-                                                    | number
-                                                    | string;
-                                                const id =
-                                                    value === ""
-                                                        ? null
-                                                        : Number(value);
-                                                setSelectedPriorityId(id);
-                                            }}
-                                            disabled={lookupsLoading}
-                                        >
-                                            {orderPriorityOptions.length >
-                                                0 ? (
-                                                orderPriorityOptions.map(
-                                                    (option) => (
-                                                        <MenuItem
-                                                            key={option.id}
-                                                            value={
-                                                                option.id as any
-                                                            }
-                                                        >
-                                                            {option.name}
-                                                        </MenuItem>
-                                                    )
-                                                )
-                                            ) : (
-                                                <MenuItem
-                                                    value=""
-                                                    disabled
-                                                >
-                                                    {lookupsLoading
-                                                        ? "Loading..."
-                                                        : "No options available"}
-                                                </MenuItem>
-                                            )}
-                                        </Select>
-                                    </FormControl>
-                                    <FormControl fullWidth size="small">
-                                        <InputLabel id="certificate-type-label">
-                                            Certificate Type
-                                        </InputLabel>
-                                        <Select
-                                            labelId="certificate-type-label"
-                                            label="Certificate Type"
-                                            value={
-                                                selectedCertificateTypeId ?? ""
-                                            }
-                                            onChange={(event) => {
-                                                const value =
-                                                    event.target
-                                                        .value as
-                                                    | number
-                                                    | string;
-                                                const id =
-                                                    value === ""
-                                                        ? null
-                                                        : Number(value);
-                                                setSelectedCertificateTypeId(
-                                                    id
-                                                );
-                                            }}
-                                            disabled={lookupsLoading}
-                                        >
-                                            {certificateTypeOptions.length >
-                                                0 ? (
-                                                certificateTypeOptions.map(
-                                                    (option) => (
-                                                        <MenuItem
-                                                            key={option.id}
-                                                            value={
-                                                                option.id as any
-                                                            }
-                                                        >
-                                                            {option.name}
-                                                        </MenuItem>
-                                                    )
-                                                )
-                                            ) : (
-                                                <MenuItem
-                                                    value=""
-                                                    disabled
-                                                >
-                                                    {lookupsLoading
-                                                        ? "Loading..."
-                                                        : "No options available"}
                                                 </MenuItem>
                                             )}
                                         </Select>

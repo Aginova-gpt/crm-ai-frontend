@@ -163,7 +163,7 @@ export default function QuotesPage() {
   } = useCompany();
 
   useEffect(() => {
-    if (selectedCompanyId === null || companies.length > 0) {
+    if (selectedCompanyId === null && companies.length > 0 && companies[0]?.id) {
       setSelectedCompanyId(companies[0].id);
     }
   }, [companies, selectedCompanyId, setSelectedCompanyId]);
@@ -205,14 +205,16 @@ export default function QuotesPage() {
     );
   }, [activeCompanyId, allQuotes]);
 
-  const lastUpdate = useMemo(
-    () => new Date().toLocaleTimeString(),
-    [data]
-  );
+  const [lastUpdate, setLastUpdate] = useState<string>("");
+  
+  useEffect(() => {
+    // Only set time on client side to avoid hydration mismatch
+    setLastUpdate(new Date().toLocaleTimeString());
+  }, [data]);
 
-  const handleAddQuote = () => router.push("/dashboard/quotes/new");
+  const handleAddQuote = () => router.push("/dashboard/quotes/add-quote");
   const handleViewQuote = (quoteId: string) =>
-    router.push(`/dashboard/quotes/${encodeURIComponent(quoteId)}`);
+    router.push(`/dashboard/quotes/${encodeURIComponent(quoteId)}/edit`);
 
   const filterAndSort = (rows: QuoteRecord[]) => {
     let filtered = rows;
@@ -367,7 +369,7 @@ export default function QuotesPage() {
                     setSelectedCompanyId(value || null);
                   }}
                 >
-                  {companies.map((company) => (
+                  {companies.filter(company => company?.id).map((company) => (
                     <MenuItem key={company.id} value={company.id}>
                       {company.name}
                     </MenuItem>
