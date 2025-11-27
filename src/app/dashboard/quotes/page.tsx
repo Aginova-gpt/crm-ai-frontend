@@ -29,6 +29,7 @@ import { useCompany } from "@/contexts/CompanyContext";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { addAsset } from "@/styles/icons";
+import { computeAxisValue } from "@mui/x-charts/internals";
 
 const GRID_QUOTES = `
   minmax(90px, 1fr)    /* Quote # */
@@ -57,8 +58,8 @@ const quoteCols = [
 ];
 
 type QuoteRecord = {
-  quoteId: string;       // unified quote_id for routing
-  quoteNumber: string;   // DISPLAY ID (legacy_quote_id if present, else quote_id)
+  quoteId: string;       
+  quoteNumber: string;   
   subject?: string;
   customer?: string;
   products?: string;
@@ -80,7 +81,6 @@ const formatDate = (value?: string | null) => {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
 };
 
-// New API shape: { success, company_id, total_quotes, monthly_quotes, ytd_quotes, accepted_quotes, quotes: [...] }
 function extractQuotes(payload: any): any[] {
   if (!payload) return [];
   if (Array.isArray(payload)) return payload;
@@ -132,12 +132,9 @@ function useQuotes(selectedCompanyId?: string | null) {
   const { apiURL } = useBackend();
 
   return useQuery({
-    queryKey: ["quotes", selectedCompanyId ?? "all"],
+    queryKey: ["quotes", selectedCompanyId ?? null],
     queryFn: async () => {
-      const companyParam =
-        selectedCompanyId && selectedCompanyId !== "all"
-          ? selectedCompanyId
-          : undefined;
+      const companyParam = selectedCompanyId;
       if (!companyParam) return { quotes: [] };
 
       const path = `get-quotes?company_id=${encodeURIComponent(companyParam)}`;
@@ -165,24 +162,13 @@ export default function QuotesPage() {
     isLoading: companyLoading,
   } = useCompany();
 
-  const nonAllCompanies = useMemo(
-    () => companies.filter((c) => c.id !== "all"),
-    [companies]
-  );
-
   useEffect(() => {
-    if (
-      (selectedCompanyId === null || selectedCompanyId === "all") &&
-      nonAllCompanies.length > 0
-    ) {
-      setSelectedCompanyId(nonAllCompanies[0].id);
+    if (selectedCompanyId === null || companies.length > 0) {
+      setSelectedCompanyId(companies[0].id);
     }
-  }, [nonAllCompanies, selectedCompanyId, setSelectedCompanyId]);
+  }, [companies, selectedCompanyId, setSelectedCompanyId]);
 
-  const activeCompanyId =
-    selectedCompanyId && selectedCompanyId !== "all"
-      ? selectedCompanyId
-      : nonAllCompanies[0]?.id ?? null;
+  const activeCompanyId = selectedCompanyId?? (companies[0]?.id ?? null);
 
   // Reset filter when company changes
   useEffect(() => {
@@ -333,15 +319,8 @@ export default function QuotesPage() {
     <Box sx={{ display: "flex", flexDirection: "column", gap: 1, p: 0 }}>
       {/* Header row */}
       <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          bgcolor: "#FFFFFF",
-          borderRadius: 1,
-          px: 1.5,
-          py: 1,
-        }}
+        sx={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+          bgcolor: "#FFFFFF", borderRadius: 1, px: 1.5, py: 1, }}
       >
         {/* Left: Tabs + counts + search */}
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -377,7 +356,7 @@ export default function QuotesPage() {
               <FormControl
                 size="small"
                 sx={{ minWidth: 200 }}
-                disabled={companyLoading || nonAllCompanies.length === 0}
+                disabled={companyLoading || companies.length === 0}
               >
                 <InputLabel>Company</InputLabel>
                 <Select
@@ -388,7 +367,7 @@ export default function QuotesPage() {
                     setSelectedCompanyId(value || null);
                   }}
                 >
-                  {nonAllCompanies.map((company) => (
+                  {companies.map((company) => (
                     <MenuItem key={company.id} value={company.id}>
                       {company.name}
                     </MenuItem>
