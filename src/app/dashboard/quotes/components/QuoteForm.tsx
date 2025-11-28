@@ -376,8 +376,6 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
     const [customerContacts, setCustomerContacts] = React.useState<ContactOption[]>([]);
     const [selectedContact, setSelectedContact] =
         React.useState<ContactOption | null>(null);
-    const [shippingComments, setShippingComments] = React.useState("");
-    const [processingComments, setProcessingComments] = React.useState("");
     const [expandedComments, setExpandedComments] = React.useState<Set<string>>(new Set());
 
     const [productRows, setProductRows] = React.useState<ProductRow[]>([
@@ -477,9 +475,6 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
         setShippingState(shippingParsed.state);
         setShippingCode(shippingParsed.code);
         setShippingCountry(shippingParsed.country);
-
-        setShippingComments(String(q.shipping_comments ?? ""));
-        setProcessingComments(String(q.processing_comments ?? ""));
 
         let items: any[] =
             (Array.isArray(q.products) && q.products) ||
@@ -708,8 +703,11 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
         }
     }, [filteredCustomerOptions, selectedCustomer]);
 
-    // Clear addresses when account changes
+    // Clear addresses when account changes (only in create mode)
     React.useEffect(() => {
+        // Don't clear addresses in edit mode if quote data is already loaded
+        if (quoteIdFromUrl && quoteData) return;
+        
         setBillingAddress("");
         setBillingPOBox("");
         setBillingCity("");
@@ -722,11 +720,18 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
         setShippingState("");
         setShippingCode("");
         setShippingCountry("");
-    }, [selectedCustomer?.id]);
+    }, [selectedCustomer?.id, quoteIdFromUrl, quoteData]);
 
-    // Populate addresses from customer detail
+    // Populate addresses, phone, and email from customer detail (only in create mode)
     React.useEffect(() => {
         if (!customerDetail) return;
+        
+        // In edit mode, don't populate addresses from customer - quote data should have them
+        if (quoteIdFromUrl && quoteData) {
+            return;
+        }
+        
+        // In create mode, always populate from customer data
         const billing = parseAddress(
             customerDetail.billing_address ?? customerDetail.accountBillingAddress
         );
@@ -745,7 +750,11 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
         setShippingState(shipping.state || "");
         setShippingCode(shipping.code || "");
         setShippingCountry(shipping.country || "");
-    }, [customerDetail, selectedCustomer?.id]);
+        
+        // Populate phone and email from customer detail
+        if (customerDetail.phone) setCustomerPhone(customerDetail.phone);
+        if (customerDetail.email) setCustomerEmail(customerDetail.email);
+    }, [customerDetail, selectedCustomer?.id, quoteIdFromUrl, quoteData]);
 
     // Populate contact list from customer detail and pre-select contact on edit
     React.useEffect(() => {
@@ -948,13 +957,14 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
                 )
                 .filter((row) => row.product?.id != null)
                 .map((row, idx) => ({
-                    item_id: Number(row.product!.id),
+                    quote_item_id: row.quote_item_id ?? null,
                     sequence_no: idx + 1,
+                    item_id: Number(row.product!.id),
                     quantity: parseFloat(row.productQuantity || "0") || 0,
                     list_price: parseFloat(row.productPrice || "0") || 0,
-                    discount_percent: 0,
-                    discount_amount: 0,
-                    pricetype_id: null,
+                    discount_percent: 0.0,
+                    discount_amount: 0.0,
+                    pricetype_id: 0,
                     comment: row.productNotes || "",
                 }));
 
@@ -967,32 +977,28 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
                 account_id: selectedCustomer ? Number(selectedCustomer.id) : null,
                 contact_id: selectedContact ? Number(selectedContact.id) : null,
                 carrier_id: selectedCarrierId,
-                discount_percent: 0,
-                discount_amount: 0,
-                adjustment: 0,
-                shipping_handling: 0,
-                subtotal: netTotal || 0,
-                total: grandTotal || 0,
+                discount_percent: 0.0,
+                discount_amount: 0.0,
+                adjustment: 0.0,
+                shipping_handling: 0.0,
+                subtotal: netTotal || 0.0,
+                total: grandTotal || 0.0,
                 terms_conditions: specialConditions || null,
-                addresses: {
-                    billing: {
-                        street: billingAddress || "",
-                        city: billingCity || "",
-                        state: billingState || "",
-                        country: billingCountry || "",
-                        postal_code: billingCode || "",
-                        po_box: billingPOBox || "",
-                        is_primary: true,
-                    },
-                    shipping: {
-                        street: shippingAddress || "",
-                        city: shippingCity || "",
-                        state: shippingState || "",
-                        country: shippingCountry || "",
-                        postal_code: shippingCode || "",
-                        po_box: shippingPOBox || "",
-                        is_primary: true,
-                    },
+                billing_address: {
+                    street: billingAddress || "",
+                    city: billingCity || "",
+                    state: billingState || "",
+                    postal_code: billingCode || "",
+                    country: billingCountry || "",
+                    po_box: billingPOBox || "",
+                },
+                shipping_address: {
+                    street: shippingAddress || "",
+                    city: shippingCity || "",
+                    state: shippingState || "",
+                    postal_code: shippingCode || "",
+                    country: shippingCountry || "",
+                    po_box: shippingPOBox || "",
                 },
                 line_items: lineItemsPayload,
             };
@@ -1064,8 +1070,6 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
         router,
         selectedCustomer,
         selectedContact,
-        shippingComments,
-        processingComments,
         specialConditions,
         netTotal,
         grandTotal,
@@ -2128,22 +2132,6 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
                                         setBillingCountry(e.target.value)
                                     }
                                 />
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Billing Comments"
-                                    multiline
-                                    minRows={6}
-                                    value={processingComments}
-                                    onChange={(e) =>
-                                        setProcessingComments(e.target.value)
-                                    }
-                                    sx={{
-                                        "& .MuiInputBase-root": {
-                                            height: "auto",
-                                        },
-                                    }}
-                                />
                             </Box>
                         </Box>
                         <Box sx={{ maxWidth: 420 }}>
@@ -2213,22 +2201,6 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
                                     onChange={(e) =>
                                         setShippingCountry(e.target.value)
                                     }
-                                />
-                                <TextField
-                                    fullWidth
-                                    size="small"
-                                    label="Shipping Comments"
-                                    multiline
-                                    minRows={6}
-                                    value={shippingComments}
-                                    onChange={(e) =>
-                                        setShippingComments(e.target.value)
-                                    }
-                                    sx={{
-                                        "& .MuiInputBase-root": {
-                                            height: "auto",
-                                        },
-                                    }}
                                 />
                             </Box>
                         </Box>
