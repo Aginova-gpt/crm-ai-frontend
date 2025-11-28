@@ -88,10 +88,10 @@ function parseAddress(address: any): {
     }
     return {
         street: address.street ?? address.address ?? address.line1 ?? "",
-        poBox: address.poBox ?? address.po_box ?? address.poBoxNumber ?? "",
+        poBox: address.po_box ?? address.poBox ?? address.poBoxNumber ?? "",
         city: address.city ?? "",
         state: address.state ?? address.region ?? "",
-        code: address.postalcode ?? address.zip ?? address.postal_code ?? address.code ?? "",
+        code: address.postal_code ?? address.postalcode ?? address.zip ?? address.code ?? "",
         country: address.country ?? "",
     };
 }
@@ -170,14 +170,18 @@ function useCustomerDetail(customerId: string | null) {
     });
 }
 
-function useQuoteLookups() {
+function useQuoteLookups(companyId: string | null) {
     const { token, isLoggedIn } = useAuth();
     const { apiURL } = useBackend();
 
     return useQuery({
-        queryKey: ["quote-lookups"],
+        queryKey: ["quote-lookups", companyId],
         queryFn: async () => {
-            const url = apiURL("quotes/lookups", "quotes-lookups.json");
+            if (!companyId) return null;
+            const url = apiURL(
+                `quotes/lookups?company_id=${encodeURIComponent(companyId)}`,
+                `quotes-lookups-${companyId}.json`
+            );
             const res = await fetch(url, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             });
@@ -187,7 +191,7 @@ function useQuoteLookups() {
             }
             return res.json();
         },
-        enabled: isLoggedIn && !!token,
+        enabled: isLoggedIn && !!token && !!companyId,
         staleTime: 5 * 60 * 1000,
         refetchOnWindowFocus: false,
     });
@@ -343,9 +347,12 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
         error: customersError,
     } = useCompanyCustomers();
 
-    const { data: lookupsData, isLoading: lookupsLoading } = useQuoteLookups();
+    const { data: lookupsData, isLoading: lookupsLoading } = useQuoteLookups(
+        effectiveCompanyId ? String(effectiveCompanyId) : null
+    );
 
     const [selectedStageId, setSelectedStageId] = React.useState<number | null>(null);
+    const [selectedAssignedUserId, setSelectedAssignedUserId] = React.useState<number | null>(null);
     const [selectedCarrierId, setSelectedCarrierId] = React.useState<number | null>(null);
     const [specialConditions, setSpecialConditions] = React.useState("");
     const [validTill, setValidTill] = React.useState("");
@@ -432,14 +439,26 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
         if (q.quote_stage_id != null)
             setSelectedStageId(Number(q.quote_stage_id));
 
+        if (q.assigned_to != null || q.assigned_to_user_id != null)
+            setSelectedAssignedUserId(Number(q.assigned_to ?? q.assigned_to_user_id));
+
         if (q.carrier_id != null)
             setSelectedCarrierId(Number(q.carrier_id));
 
-        setSpecialConditions(String(q.special_conditions ?? ""));
-
-        const billingParsed = parseAddress(
-            q.billing_address ?? q.accountBillingAddress
+        setSpecialConditions(
+            String(
+                q.terms_conditions ??
+                q.special_conditions ??
+                q.termsConditions ??
+                ""
+            )
         );
+
+        const billingAddressData =
+            q.addresses?.billing ??
+            q.billing_address ??
+            q.accountBillingAddress;
+        const billingParsed = parseAddress(billingAddressData);
         setBillingAddress(billingParsed.street);
         setBillingPOBox(billingParsed.poBox);
         setBillingCity(billingParsed.city);
@@ -447,9 +466,11 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
         setBillingCode(billingParsed.code);
         setBillingCountry(billingParsed.country);
 
-        const shippingParsed = parseAddress(
-            q.shipping_address ?? q.accountShippingAddress
-        );
+        const shippingAddressData =
+            q.addresses?.shipping ??
+            q.shipping_address ??
+            q.accountShippingAddress;
+        const shippingParsed = parseAddress(shippingAddressData);
         setShippingAddress(shippingParsed.street);
         setShippingPOBox(shippingParsed.poBox);
         setShippingCity(shippingParsed.city);
@@ -498,7 +519,12 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
                 productDescription: String(
                     it.product_name ?? it.item_name ?? it.name ?? ""
                 ),
-                productNotes: String(it.product_notes ?? it.notes ?? ""),
+                productNotes: String(
+                    it.comment ??
+                    it.product_notes ??
+                    it.notes ??
+                    ""
+                ),
                 productPrice: String(
                     it.price ?? it.unit_price ?? it.list_price ?? ""
                 ),
@@ -624,6 +650,15 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
                 s?.stage_name ??
                 s?.quote_stage_name ??
                 String(s?.name ?? ""),
+        }));
+    }, [lookupsData]);
+
+    const userOptions: NamedOption[] = React.useMemo(() => {
+        const d: any = (lookupsData as any)?.data ?? lookupsData ?? {};
+        const src: any[] = Array.isArray(d?.users) ? d.users : [];
+        return src.map((u: any) => ({
+            id: u?.user_id ?? u?.id ?? null,
+            name: u?.username ?? u?.name ?? u?.user_name ?? String(u?.email ?? ""),
         }));
     }, [lookupsData]);
 
@@ -911,56 +946,53 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
                         row.productCode ||
                         row.product?.id
                 )
+                .filter((row) => row.product?.id != null)
                 .map((row, idx) => ({
-                    quote_item_id: row.quote_item_id ?? null,
+                    item_id: Number(row.product!.id),
                     sequence_no: idx + 1,
-                    item_id:
-                        row.product?.id != null ? Number(row.product.id) : null,
-                    item_code:
-                        row.productCode || row.product?.productNumber || null,
-                    item_name:
-                        row.productDescription || row.product?.name || null,
                     quantity: parseFloat(row.productQuantity || "0") || 0,
                     list_price: parseFloat(row.productPrice || "0") || 0,
                     discount_percent: 0,
                     discount_amount: 0,
-                    adjustment: 0,
-                    comment: row.productNotes || "",
                     pricetype_id: null,
+                    comment: row.productNotes || "",
                 }));
 
             const quotePayload: any = {
-                subject: quoteSubject.trim(),
                 company_id: normalizeNumericId(effectiveCompanyId) ?? 0,
+                assigned_to: selectedAssignedUserId,
+                subject: quoteSubject.trim(),
+                quote_stage_id: selectedStageId,
+                valid_till: validTill || null,
                 account_id: selectedCustomer ? Number(selectedCustomer.id) : null,
                 contact_id: selectedContact ? Number(selectedContact.id) : null,
-                valid_till: validTill || null,
-                quote_stage_id: selectedStageId,
                 carrier_id: selectedCarrierId,
-                subtotal: netTotal || 0,
                 discount_percent: 0,
                 discount_amount: 0,
                 adjustment: 0,
-                shipping_handling_amount: 0,
+                shipping_handling: 0,
+                subtotal: netTotal || 0,
                 total: grandTotal || 0,
-                special_conditions: specialConditions || null,
-                shipping_comments: shippingComments || null,
-                processing_comments: processingComments || null,
-                billing_address: {
-                    street: billingAddress || "",
-                    city: billingCity || "",
-                    state: billingState || "",
-                    postal_code: billingCode || "",
-                    country: billingCountry || "",
-                    po_box: billingPOBox || "",
-                },
-                shipping_address: {
-                    street: shippingAddress || "",
-                    city: shippingCity || "",
-                    state: shippingState || "",
-                    postal_code: shippingCode || "",
-                    country: shippingCountry || "",
-                    po_box: shippingPOBox || "",
+                terms_conditions: specialConditions || null,
+                addresses: {
+                    billing: {
+                        street: billingAddress || "",
+                        city: billingCity || "",
+                        state: billingState || "",
+                        country: billingCountry || "",
+                        postal_code: billingCode || "",
+                        po_box: billingPOBox || "",
+                        is_primary: true,
+                    },
+                    shipping: {
+                        street: shippingAddress || "",
+                        city: shippingCity || "",
+                        state: shippingState || "",
+                        country: shippingCountry || "",
+                        postal_code: shippingCode || "",
+                        po_box: shippingPOBox || "",
+                        is_primary: true,
+                    },
                 },
                 line_items: lineItemsPayload,
             };
@@ -980,6 +1012,8 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
             const payload = isEditMode
                 ? { quote: quotePayload }
                 : quotePayload;
+
+           // console.log("Quote Payload:", JSON.stringify(payload, null, 2));
 
             const res = await fetch(url, {
                 method,
@@ -1037,6 +1071,7 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
         grandTotal,
         productRows,
         selectedStageId,
+        selectedAssignedUserId,
         selectedCarrierId,
         validTill,
         isLoggedIn,
@@ -1360,53 +1395,111 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
                                     error={!!quoteSubjectError}
                                     helperText={quoteSubjectError || ""}
                                 />
-                                <FormControl fullWidth size="small">
-                                    <InputLabel id="carrier-label">
-                                        Carrier
-                                    </InputLabel>
-                                    <Select
-                                        labelId="carrier-label"
-                                        label="Carrier"
-                                        value={selectedCarrierId ?? ""}
-                                        onChange={(event) => {
-                                            const value =
-                                                event.target
-                                                    .value as
-                                                | number
-                                                | string;
-                                            const id =
-                                                value === ""
-                                                    ? null
-                                                    : Number(value);
-                                            setSelectedCarrierId(id);
-                                        }}
-                                        disabled={lookupsLoading}
-                                    >
-                                        {carrierOptions.length > 0 ? (
-                                            carrierOptions.map(
-                                                (option) => (
-                                                    <MenuItem
-                                                        key={option.id}
-                                                        value={
-                                                            option.id as any
-                                                        }
-                                                    >
-                                                        {option.name}
-                                                    </MenuItem>
+                                <Box
+                                    sx={{
+                                        display: "grid",
+                                        gap: 1.125,
+                                        gridTemplateColumns: {
+                                            xs: "1fr",
+                                            sm: "1fr 1fr",
+                                        },
+                                    }}
+                                >
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel id="assigned-user-label">
+                                            Assigned to User
+                                        </InputLabel>
+                                        <Select
+                                            labelId="assigned-user-label"
+                                            label="Assigned to User"
+                                            value={selectedAssignedUserId ?? ""}
+                                            onChange={(event) => {
+                                                const value =
+                                                    event.target
+                                                        .value as
+                                                    | number
+                                                    | string;
+                                                const id =
+                                                    value === ""
+                                                        ? null
+                                                        : Number(value);
+                                                setSelectedAssignedUserId(id);
+                                            }}
+                                            disabled={lookupsLoading}
+                                        >
+                                            {userOptions.length > 0 ? (
+                                                userOptions.map(
+                                                    (option) => (
+                                                        <MenuItem
+                                                            key={option.id}
+                                                            value={
+                                                                option.id as any
+                                                            }
+                                                        >
+                                                            {option.name}
+                                                        </MenuItem>
+                                                    )
                                                 )
-                                            )
-                                        ) : (
-                                            <MenuItem
-                                                value=""
-                                                disabled
-                                            >
-                                                {lookupsLoading
-                                                    ? "Loading..."
-                                                    : "No options available"}
-                                            </MenuItem>
-                                        )}
-                                    </Select>
-                                </FormControl>
+                                            ) : (
+                                                <MenuItem
+                                                    value=""
+                                                    disabled
+                                                >
+                                                    {lookupsLoading
+                                                        ? "Loading..."
+                                                        : "No options available"}
+                                                </MenuItem>
+                                            )}
+                                        </Select>
+                                    </FormControl>
+                                    <FormControl fullWidth size="small">
+                                        <InputLabel id="carrier-label">
+                                            Carrier
+                                        </InputLabel>
+                                        <Select
+                                            labelId="carrier-label"
+                                            label="Carrier"
+                                            value={selectedCarrierId ?? ""}
+                                            onChange={(event) => {
+                                                const value =
+                                                    event.target
+                                                        .value as
+                                                    | number
+                                                    | string;
+                                                const id =
+                                                    value === ""
+                                                        ? null
+                                                        : Number(value);
+                                                setSelectedCarrierId(id);
+                                            }}
+                                            disabled={lookupsLoading}
+                                        >
+                                            {carrierOptions.length > 0 ? (
+                                                carrierOptions.map(
+                                                    (option) => (
+                                                        <MenuItem
+                                                            key={option.id}
+                                                            value={
+                                                                option.id as any
+                                                            }
+                                                        >
+                                                            {option.name}
+                                                        </MenuItem>
+                                                    )
+                                                )
+                                            ) : (
+                                                <MenuItem
+                                                    value=""
+                                                    disabled
+                                                >
+                                                    {lookupsLoading
+                                                        ? "Loading..."
+                                                        : "No options available"}
+                                                </MenuItem>
+                                            )}
+                                        </Select>
+                                    </FormControl>
+                                </Box>
                                 <Box
                                     sx={{
                                         display: "grid",
@@ -1476,7 +1569,7 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
                                     <TextField
                                         fullWidth
                                         size="small"
-                                        label="Special Conditions"
+                                        label="Terms & Conditions"
                                         multiline
                                         minRows={3}
                                         value={specialConditions}
