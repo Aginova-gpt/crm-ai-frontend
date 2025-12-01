@@ -13,6 +13,11 @@ import {
     CircularProgress,
     Alert,
     Collapse,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogContentText,
+    DialogActions,
 } from "@mui/material";
 import { MdSearch } from "react-icons/md";
 import { DeleteOutline, ExpandMore, ExpandLess } from "@mui/icons-material";
@@ -357,6 +362,8 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
     const [specialConditions, setSpecialConditions] = React.useState("");
     const [validTill, setValidTill] = React.useState("");
     const [isSaving, setIsSaving] = React.useState(false);
+    const [isConverting, setIsConverting] = React.useState(false);
+    const [convertDialogOpen, setConvertDialogOpen] = React.useState(false);
     const [customerPhone, setCustomerPhone] = React.useState("");
     const [customerEmail, setCustomerEmail] = React.useState("");
 
@@ -897,6 +904,58 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
         router.push("/dashboard/quotes");
     }, [router]);
 
+    const handleConvertToOrder = React.useCallback(async () => {
+        if (!quoteIdFromUrl) return;
+        if (!isLoggedIn || !token) {
+            alert("You must be logged in to convert quotes to orders.");
+            return;
+        }
+
+        setIsConverting(true);
+        try {
+            const url = apiURL("convert-quote-to-order", "convert-quote-to-order.json");
+            const res = await fetch(url, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    quote_id: parseInt(quoteIdFromUrl, 10),
+                    company_id: normalizeNumericId(effectiveCompanyId) ?? 0,
+                }),
+            });
+
+            if (!res.ok) {
+                const errorText = await res.text();
+                throw new Error(
+                    `Failed to convert quote to order: ${res.status} ${errorText}`
+                );
+            }
+
+            await res.json().catch(() => null);
+            alert("Quote converted to order successfully.");
+            router.push("/dashboard/quotes");
+        } catch (error) {
+            console.error("Error converting quote to order:", error);
+            alert(
+                error instanceof Error
+                    ? error.message
+                    : "Failed to convert quote to order. Please try again."
+            );
+        } finally {
+            setIsConverting(false);
+            setConvertDialogOpen(false);
+        }
+    }, [
+        quoteIdFromUrl,
+        isLoggedIn,
+        token,
+        apiURL,
+        effectiveCompanyId,
+        router,
+    ]);
+
     const handleSave = React.useCallback(async () => {
         let hasErrors = false;
         setQuoteSubjectError("");
@@ -1119,14 +1178,24 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
                     <Button
                         variant="outlined"
                         onClick={handleCancel}
-                        disabled={isSaving}
+                        disabled={isSaving || isConverting}
                     >
                         Cancel
                     </Button>
+                    {quoteIdFromUrl && (
+                        <Button
+                            variant="outlined"
+                            color="secondary"
+                            onClick={() => setConvertDialogOpen(true)}
+                            disabled={isBusy || isConverting}
+                        >
+                            Convert to Order
+                        </Button>
+                    )}
                     <Button
                         variant="contained"
                         onClick={handleSave}
-                        disabled={isBusy}
+                        disabled={isBusy || isConverting}
                     >
                         {isSaving ? "Saving..." : "Save Quote"}
                     </Button>
@@ -1139,6 +1208,39 @@ export default function QuoteForm(props: QuoteFormProps = {}) {
                     new quote.
                 </Alert>
             )}
+
+            {/* Convert to Order Confirmation Dialog */}
+            <Dialog
+                open={convertDialogOpen}
+                onClose={() => !isConverting && setConvertDialogOpen(false)}
+                aria-labelledby="convert-dialog-title"
+                aria-describedby="convert-dialog-description"
+            >
+                <DialogTitle id="convert-dialog-title">
+                    Convert Quote to Order
+                </DialogTitle>
+                <DialogContent>
+                    <DialogContentText id="convert-dialog-description">
+                        Are you sure you want to convert this quote to an order? This action cannot be undone.
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={() => setConvertDialogOpen(false)}
+                        disabled={isConverting}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleConvertToOrder}
+                        variant="contained"
+                        color="secondary"
+                        disabled={isConverting}
+                    >
+                        {isConverting ? "Converting..." : "Confirm"}
+                    </Button>
+                </DialogActions>
+            </Dialog>
 
             {(customersLoading ||
                 productsLoading ||
