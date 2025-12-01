@@ -88,10 +88,9 @@ function extractQuotes(payload: any): any[] {
   return [];
 }
 
-// Use the exact field names from the new get-quotes API
 const normalizeQuote = (raw: any): QuoteRecord => {
-  const unifiedId = raw.quote_id;           // main DB ID
-  const legacyId = raw.legacy_quote_id;     // from legacy_mappings
+  const unifiedId = raw.quote_id;           
+  const legacyId = raw.legacy_quote_id;     
   const companyId = raw.company_id;
 
   const productNames: string[] | undefined = Array.isArray(raw.product_names)
@@ -163,7 +162,7 @@ export default function QuotesPage() {
   } = useCompany();
 
   useEffect(() => {
-    if (selectedCompanyId === null && companies.length > 0 && companies[0]?.id) {
+    if (selectedCompanyId === null || companies.length > 0) {
       setSelectedCompanyId(companies[0].id);
     }
   }, [companies, selectedCompanyId, setSelectedCompanyId]);
@@ -205,16 +204,14 @@ export default function QuotesPage() {
     );
   }, [activeCompanyId, allQuotes]);
 
-  const [lastUpdate, setLastUpdate] = useState<string>("");
-  
-  useEffect(() => {
-    // Only set time on client side to avoid hydration mismatch
-    setLastUpdate(new Date().toLocaleTimeString());
-  }, [data]);
+  const lastUpdate = useMemo(
+    () => new Date().toLocaleTimeString(),
+    [data]
+  );
 
   const handleAddQuote = () => router.push("/dashboard/quotes/add-quote");
   const handleViewQuote = (quoteId: string) =>
-    router.push(`/dashboard/quotes/${encodeURIComponent(quoteId)}/edit`);
+    router.push(`/dashboard/quotes/${encodeURIComponent(quoteId)}`);
 
   const filterAndSort = (rows: QuoteRecord[]) => {
     let filtered = rows;
@@ -369,7 +366,7 @@ export default function QuotesPage() {
                     setSelectedCompanyId(value || null);
                   }}
                 >
-                  {companies.filter(company => company?.id).map((company) => (
+                  {companies.map((company) => (
                     <MenuItem key={company.id} value={company.id}>
                       {company.name}
                     </MenuItem>
