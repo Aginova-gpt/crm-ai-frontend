@@ -434,7 +434,7 @@ export default function OrderForm(props: OrderFormProps = {}) {
         isLoading: accountQuotesLoading,
         error: accountQuotesError,
     } = useAccountQuotes(
-        selectedCustomerId,
+        selectedCustomerId ? String(selectedCustomerId) : null,
         effectiveCompanyId ? String(effectiveCompanyId) : null
     );
 
@@ -620,15 +620,34 @@ export default function OrderForm(props: OrderFormProps = {}) {
         const options: QuoteOption[] = [];
         const seenQuoteIds = new Set<number | string>();
 
-        // First, add quotes from account quotes list
-        if (accountQuotesData && Array.isArray(accountQuotesData)) {
-            accountQuotesData.forEach((q: any, index: number) => {
-                const quoteId = q.quote_id ?? q.id ?? null;
+        // Extract quotes array from different possible response structures
+        let quotesArray: any[] = [];
+        if (accountQuotesData) {
+            if (Array.isArray(accountQuotesData)) {
+                quotesArray = accountQuotesData;
+            } else if (accountQuotesData.quotes && Array.isArray(accountQuotesData.quotes)) {
+                quotesArray = accountQuotesData.quotes;
+            } else if (accountQuotesData.data && Array.isArray(accountQuotesData.data)) {
+                quotesArray = accountQuotesData.data;
+            } else if (accountQuotesData.results && Array.isArray(accountQuotesData.results)) {
+                quotesArray = accountQuotesData.results;
+            }
+            // Debug log (remove in production)
+            if (process.env.NODE_ENV === 'development') {
+                console.log('Account quotes data:', accountQuotesData);
+                console.log('Extracted quotes array:', quotesArray);
+            }
+        }
+
+        // Add quotes from account quotes list
+        if (quotesArray.length > 0) {
+            quotesArray.forEach((q: any, index: number) => {
+                const quoteId = q.quote_id ?? q.id ?? q.sales_quote_id ?? null;
                 if (quoteId != null) {
                     seenQuoteIds.add(quoteId);
                     options.push({
                         id: String(quoteId),
-                        name: q.subject ?? q.quote_no ?? `Quote ${index + 1}`,
+                        name: q.subject ?? q.quote_no ?? q.quote_number ?? `Quote ${index + 1}`,
                         subject: q.subject ?? "",
                         quote_id: quoteId,
                         raw: q,
@@ -845,7 +864,7 @@ export default function OrderForm(props: OrderFormProps = {}) {
         }
     }, [filteredCustomerOptions, selectedCustomer]);
 
-    // Clear addresses when account changes
+    // Clear addresses and quote when account changes
     React.useEffect(() => {
         // Skip clearing on initial mount or when there's no customer selected
         if (!selectedCustomer?.id) return;
@@ -858,7 +877,7 @@ export default function OrderForm(props: OrderFormProps = {}) {
             return;
         }
         
-        // Clear addresses when customer changes (in create mode, or when manually changed in edit mode)
+        // Clear addresses and quote when customer changes (in create mode, or when manually changed in edit mode)
         setBillingAddress("");
         setBillingPOBox("");
         setBillingCity("");
@@ -871,6 +890,7 @@ export default function OrderForm(props: OrderFormProps = {}) {
         setShippingState("");
         setShippingCode("");
         setShippingCountry("");
+        setSelectedQuote(null); // Clear quote when customer changes
     }, [selectedCustomer?.id, orderIdFromUrl, orderData]);
 
     // Populate addresses from customer detail
@@ -1603,9 +1623,10 @@ export default function OrderForm(props: OrderFormProps = {}) {
                                         }
                                         loading={accountQuotesLoading}
                                         disableClearable={false}
-                                        isOptionEqualToValue={(option, value) =>
-                                            option.id === value.id
-                                        }
+                                        isOptionEqualToValue={(option, value) => {
+                                            if (!option || !value) return false;
+                                            return option.quote_id === value.quote_id && option.quote_id !== null;
+                                        }}
                                         getOptionLabel={(option) =>
                                             typeof option === "string"
                                                 ? option
