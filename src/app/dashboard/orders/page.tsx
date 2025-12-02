@@ -196,14 +196,21 @@ export default function OrdersPage() {
             ? selectedCompanyId
             : nonAllCompanies[0]?.id ?? null;
 
+    // Reset filter when company changes
+    useEffect(() => {
+        setStatusFilter(null);
+        setPage(0);
+    }, [activeCompanyId]);
+
     const { data, isLoading, error } = useOrders(activeCompanyId);
     const [tab, setTab] = useState(0); // 0 = Orders, 1 = Reports
 
     const [searchQuery, setSearchQuery] = useState("");
-    const [sortBy, setSortBy] = useState("orderId");
-    const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+    const [sortBy, setSortBy] = useState("created");
+    const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(20);
+    const [statusFilter, setStatusFilter] = useState<"processOrder" | "shippedThisMonth" | "shippedLastWeek" | "readyToInvoice" | null>(null);
 
     const toggleSort = (key: string) => {
         if (key === sortBy) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -221,22 +228,182 @@ export default function OrdersPage() {
         if (!activeCompanyId) return allOrders;
         return allOrders.filter((order) => !order.companyId || order.companyId === activeCompanyId);
     }, [activeCompanyId, allOrders]);
-    const lastUpdate = useMemo(() => new Date().toLocaleTimeString(), [data]);
+    
+    const [lastUpdate, setLastUpdate] = useState<string>("--:--:--");
+    
+    useEffect(() => {
+        // Only set time on client side to avoid hydration mismatch
+        setLastUpdate(new Date().toLocaleTimeString());
+    }, [data]);
+    
     const handleAddOrder = () => router.push("/dashboard/orders/add-order");
 
-    const filterAndSort = (rows: any[]) => {
-        const filtered = rows.filter((r) =>
+    const filterAndSort = (rows: OrderRecord[]) => {
+        let filtered = rows;
+
+        // Apply status filter first
+        if (statusFilter === "processOrder") {
+            filtered = filtered.filter((order) => {
+                const status = String(order.status ?? "").toLowerCase();
+                const runStatus = String(order.runStatus ?? "").toLowerCase();
+                return (
+                    status.includes("process") ||
+                    status.includes("pending") ||
+                    runStatus.includes("process") ||
+                    runStatus.includes("pending")
+                );
+            });
+        } else if (statusFilter === "shippedThisMonth") {
+            const now = new Date();
+            const currentMonth = now.getMonth();
+            const currentYear = now.getFullYear();
+            filtered = filtered.filter((order) => {
+                if (!order.raw?.created_at && !order.raw?.shipped_date) return false;
+                const dateStr = order.raw?.shipped_date || order.raw?.created_at;
+                if (!dateStr) return false;
+                const date = new Date(dateStr);
+                const status = String(order.status ?? "").toLowerCase();
+                return (
+                    date.getMonth() === currentMonth &&
+                    date.getFullYear() === currentYear &&
+                    (status.includes("shipped") || status.includes("complete"))
+                );
+            });
+        } else if (statusFilter === "shippedLastWeek") {
+            const now = new Date();
+            const lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            filtered = filtered.filter((order) => {
+                if (!order.raw?.shipped_date && !order.raw?.created_at) return false;
+                const dateStr = order.raw?.shipped_date || order.raw?.created_at;
+                if (!dateStr) return false;
+                const date = new Date(dateStr);
+                const status = String(order.status ?? "").toLowerCase();
+                return (
+                    date >= lastWeek &&
+                    date <= now &&
+                    (status.includes("shipped") || status.includes("complete"))
+                );
+            });
+        } else if (statusFilter === "readyToInvoice") {
+            filtered = filtered.filter((order) => {
+                const status = String(order.status ?? "").toLowerCase();
+                const invoice = String(order.invoice ?? "").toLowerCase();
+                return (
+                    (status.includes("ready") || status.includes("complete") || status.includes("shipped")) &&
+                    !invoice &&
+                    invoice !== "yes"
+                );
+            });
+        }
+
+        // Apply search query filter
+        filtered = filtered.filter((r) =>
             Object.values(r).join(" ").toLowerCase().includes(searchQuery.toLowerCase())
         );
         return [...filtered].sort((a, b) => {
-            const av = String(a[sortBy] ?? "").toLowerCase();
-            const bv = String(b[sortBy] ?? "").toLowerCase();
-            return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+            const av = a[sortBy] ?? "";
+            const bv = b[sortBy] ?? "";
+            
+            // For orderId, try numeric sorting first
+            if (sortBy === "orderId") {
+                const aNum = Number(av);
+                const bNum = Number(bv);
+                // If both are valid numbers, sort numerically
+                if (!isNaN(aNum) && !isNaN(bNum) && av !== "" && bv !== "") {
+                    return sortDir === "asc" ? aNum - bNum : bNum - aNum;
+                }
+            }
+            
+            // For dates (created, dueIn), parse and compare as dates
+            if (sortBy === "created" || sortBy === "dueIn") {
+                const aDate = av ? new Date(a.raw?.[sortBy === "created" ? "created_at" : "due_date"] || av) : null;
+                const bDate = bv ? new Date(b.raw?.[sortBy === "created" ? "created_at" : "due_date"] || bv) : null;
+                if (aDate && bDate && !isNaN(aDate.getTime()) && !isNaN(bDate.getTime())) {
+                    return sortDir === "asc" ? aDate.getTime() - bDate.getTime() : bDate.getTime() - aDate.getTime();
+                }
+            }
+            
+            // For quantity, try numeric sorting
+            if (sortBy === "quantity") {
+                const aNum = parseFloat(String(av).replace(/[^0-9.-]/g, ""));
+                const bNum = parseFloat(String(bv).replace(/[^0-9.-]/g, ""));
+                if (!isNaN(aNum) && !isNaN(bNum)) {
+                    return sortDir === "asc" ? aNum - bNum : bNum - aNum;
+                }
+            }
+            
+            // Default to string comparison
+            const avStr = String(av).toLowerCase();
+            const bvStr = String(bv).toLowerCase();
+            return sortDir === "asc" ? avStr.localeCompare(bvStr) : bvStr.localeCompare(avStr);
         });
     };
 
     const visibleRows = filterAndSort(orders);
     const pagedRows = visibleRows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+
+    // Calculate status card statistics
+    const processOrderCount = useMemo(() => {
+        return orders.filter((order) => {
+            const status = String(order.status ?? "").toLowerCase();
+            const runStatus = String(order.runStatus ?? "").toLowerCase();
+            return (
+                status.includes("process") ||
+                status.includes("pending") ||
+                runStatus.includes("process") ||
+                runStatus.includes("pending")
+            );
+        }).length;
+    }, [orders]);
+
+    const shippedThisMonth = useMemo(() => {
+        const now = new Date();
+        const currentMonth = now.getMonth();
+        const currentYear = now.getFullYear();
+        return orders.filter((order) => {
+            if (!order.raw?.created_at && !order.raw?.shipped_date) return false;
+            const dateStr = order.raw?.shipped_date || order.raw?.created_at;
+            if (!dateStr) return false;
+            const date = new Date(dateStr);
+            const status = String(order.status ?? "").toLowerCase();
+            return (
+                date.getMonth() === currentMonth &&
+                date.getFullYear() === currentYear &&
+                (status.includes("shipped") || status.includes("complete"))
+            );
+        }).length;
+    }, [orders]);
+
+    const shippedLastWeek = useMemo(() => {
+        const now = new Date();
+        const lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        return orders.filter((order) => {
+            if (!order.raw?.shipped_date && !order.raw?.created_at) return false;
+            const dateStr = order.raw?.shipped_date || order.raw?.created_at;
+            if (!dateStr) return false;
+            const date = new Date(dateStr);
+            const status = String(order.status ?? "").toLowerCase();
+            return (
+                date >= lastWeek &&
+                date <= now &&
+                (status.includes("shipped") || status.includes("complete"))
+            );
+        }).length;
+    }, [orders]);
+
+    const readyToInvoice = useMemo(() => {
+        return orders.filter((order) => {
+            const status = String(order.status ?? "").toLowerCase();
+            const invoice = String(order.invoice ?? "").toLowerCase();
+            return (
+                (status.includes("ready") || status.includes("complete") || status.includes("shipped")) &&
+                !invoice &&
+                invoice !== "yes"
+            );
+        }).length;
+    }, [orders]);
+
+    const totalOrders = orders.length;
 
     const handleEditOrder = (orderId: string) => {
         router.push(`/dashboard/orders/${encodeURIComponent(orderId)}/edit`);
@@ -270,7 +437,10 @@ export default function OrdersPage() {
                                 <Typography sx={{ fontWeight: 700, fontSize: "14px" }}>
                                     {isLoading ? "Loading…" : `${orders.length} Orders`}
                                 </Typography>
-                                <Typography sx={{ fontSize: "12px", color: "text.secondary" }}>
+                                <Typography
+                                    sx={{ fontSize: "12px", color: "text.secondary" }}
+                                    suppressHydrationWarning
+                                >
                                     Last update: {lastUpdate}
                                 </Typography>
                             </Box>
@@ -327,10 +497,94 @@ export default function OrdersPage() {
                 {/* Right: status cards (only for Orders tab) */}
                 {tab === 0 && (
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-                        <StatusCard title="Process Order" value={1} total={1} />
-                        <StatusCard title="Shipped This Month" value={5} total={20} />
-                        <StatusCard title="Shipped Last Week" value={2} total={9} />
-                        <StatusCard title="Ready To Invoice" value={3} total={3} />
+                        <Box
+                            onClick={() => {
+                                setStatusFilter(statusFilter === "processOrder" ? null : "processOrder");
+                                setPage(0);
+                            }}
+                            sx={{
+                                cursor: "pointer",
+                                border:
+                                    statusFilter === "processOrder"
+                                        ? "2px solid #1976d2"
+                                        : "2px solid transparent",
+                                borderRadius: 1,
+                                transition: "border 0.2s",
+                            }}
+                        >
+                            <StatusCard
+                                title="Process Order"
+                                value={processOrderCount}
+                                total={totalOrders > 0 ? totalOrders : undefined}
+                                selected={statusFilter === "processOrder"}
+                            />
+                        </Box>
+                        <Box
+                            onClick={() => {
+                                setStatusFilter(statusFilter === "shippedThisMonth" ? null : "shippedThisMonth");
+                                setPage(0);
+                            }}
+                            sx={{
+                                cursor: "pointer",
+                                border:
+                                    statusFilter === "shippedThisMonth"
+                                        ? "2px solid #1976d2"
+                                        : "2px solid transparent",
+                                borderRadius: 1,
+                                transition: "border 0.2s",
+                            }}
+                        >
+                            <StatusCard
+                                title="Shipped This Month"
+                                value={shippedThisMonth}
+                                total={totalOrders > 0 ? totalOrders : undefined}
+                                selected={statusFilter === "shippedThisMonth"}
+                            />
+                        </Box>
+                        <Box
+                            onClick={() => {
+                                setStatusFilter(statusFilter === "shippedLastWeek" ? null : "shippedLastWeek");
+                                setPage(0);
+                            }}
+                            sx={{
+                                cursor: "pointer",
+                                border:
+                                    statusFilter === "shippedLastWeek"
+                                        ? "2px solid #1976d2"
+                                        : "2px solid transparent",
+                                borderRadius: 1,
+                                transition: "border 0.2s",
+                            }}
+                        >
+                            <StatusCard
+                                title="Shipped Last Week"
+                                value={shippedLastWeek}
+                                total={totalOrders > 0 ? totalOrders : undefined}
+                                selected={statusFilter === "shippedLastWeek"}
+                            />
+                        </Box>
+                        <Box
+                            onClick={() => {
+                                setStatusFilter(statusFilter === "readyToInvoice" ? null : "readyToInvoice");
+                                setPage(0);
+                            }}
+                            sx={{
+                                cursor: "pointer",
+                                border:
+                                    statusFilter === "readyToInvoice"
+                                        ? "2px solid #1976d2"
+                                        : "2px solid transparent",
+                                borderRadius: 1,
+                                transition: "border 0.2s",
+                            }}
+                        >
+                            <StatusCard
+                                title="Ready To Invoice"
+                                value={readyToInvoice}
+                                total={totalOrders > 0 ? totalOrders : undefined}
+                                selected={statusFilter === "readyToInvoice"}
+                            />
+                        </Box>
                     </Box>
                 )}
             </Box>

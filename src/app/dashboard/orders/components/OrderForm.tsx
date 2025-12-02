@@ -220,6 +220,37 @@ function useAccountQuotes(accountId: string | null, companyId: string | null) {
     });
 }
 
+function useQuoteById(quoteId: number | string | null, companyId: string | null) {
+    const { token, isLoggedIn } = useAuth();
+    const { apiURL } = useBackend();
+
+    return useQuery({
+        queryKey: ["quote-by-id", quoteId, companyId],
+        queryFn: async () => {
+            if (!quoteId || !companyId) return null;
+            const url = apiURL(
+                `get-quote-for-editing?quote_id=${encodeURIComponent(
+                    String(quoteId)
+                )}&company_id=${encodeURIComponent(companyId)}`,
+                `get-quote-for-editing-${quoteId}-${companyId}.json`
+            );
+            const res = await fetch(url, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            });
+            if (!res.ok) {
+                if (res.status === 401) throw new Error("Unauthorized – please log in again");
+                if (res.status === 404) return null; // Quote not found, but don't throw error
+                throw new Error(`Failed to fetch quote: ${res.status}`);
+            }
+            const data = await res.json();
+            return data?.quote || null;
+        },
+        enabled: isLoggedIn && !!token && !!quoteId && !!companyId,
+        staleTime: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
+    });
+}
+
 function useSalesOrderForEditing(salesorderId: string | null, companyId: string | null) {
     const { token, isLoggedIn } = useAuth();
     const { apiURL } = useBackend();
@@ -288,6 +319,8 @@ export default function OrderForm(props: OrderFormProps = {}) {
     const [orderIdFromUrl, setOrderIdFromUrl] = React.useState<string | null>(
         props.orderIdFromParams ?? null
     );
+    // Track the original customer ID from the order data to distinguish initial load from manual changes
+    const originalOrderCustomerIdRef = React.useRef<string | null>(null);
 
     React.useEffect(() => {
         if (props.orderIdFromParams !== undefined) {
@@ -426,6 +459,22 @@ export default function OrderForm(props: OrderFormProps = {}) {
         effectiveCompanyId ? String(effectiveCompanyId) : null
     );
 
+    // Extract quote_id from order data
+    const orderQuoteId = React.useMemo(() => {
+        if (!orderData) return null;
+        const so: any = orderData;
+        return so.quote_id ?? so.sales_quote_id ?? null;
+    }, [orderData]);
+
+    // Fetch the specific quote if order has a quote_id
+    const {
+        data: orderQuoteData,
+        isLoading: orderQuoteLoading,
+    } = useQuoteById(
+        orderQuoteId,
+        effectiveCompanyId ? String(effectiveCompanyId) : null
+    );
+
     const isBusy =
         customersLoading || productsLoading || lookupsLoading || orderLoading || isSaving;
 
@@ -435,6 +484,12 @@ export default function OrderForm(props: OrderFormProps = {}) {
     React.useEffect(() => {
         if (!orderData) return;
         const so: any = orderData;
+
+        // Store the original customer ID from the order
+        const customerId = so.customer_id ?? so.account_id ?? so.accountId;
+        if (customerId != null) {
+            originalOrderCustomerIdRef.current = String(customerId);
+        }
 
         setOrderSubject(String(so.subject ?? so.order_subject ?? ""));
         setPoNumber(String(so.po_number ?? so.po ?? ""));
@@ -554,16 +609,57 @@ export default function OrderForm(props: OrderFormProps = {}) {
         }
     }, [orderData]);
 
+    // Reset the original customer ref when orderIdFromUrl changes (new order being edited)
+    React.useEffect(() => {
+        if (!orderIdFromUrl) {
+            originalOrderCustomerIdRef.current = null;
+        }
+    }, [orderIdFromUrl]);
+
     const quoteOptions: QuoteOption[] = React.useMemo(() => {
-        if (!accountQuotesData || !Array.isArray(accountQuotesData)) return [];
-        return accountQuotesData.map((q: any, index: number) => ({
-            id: String(q.quote_id ?? q.id ?? index),
-            name: q.subject ?? q.quote_no ?? `Quote ${index + 1}`,
-            subject: q.subject ?? "",
-            quote_id: q.quote_id ?? q.id ?? null,
-            raw: q,
-        }));
-    }, [accountQuotesData]);
+        const options: QuoteOption[] = [];
+        const seenQuoteIds = new Set<number | string>();
+
+        // First, add quotes from account quotes list
+        if (accountQuotesData && Array.isArray(accountQuotesData)) {
+            accountQuotesData.forEach((q: any, index: number) => {
+                const quoteId = q.quote_id ?? q.id ?? null;
+                if (quoteId != null) {
+                    seenQuoteIds.add(quoteId);
+                    options.push({
+                        id: String(quoteId),
+                        name: q.subject ?? q.quote_no ?? `Quote ${index + 1}`,
+                        subject: q.subject ?? "",
+                        quote_id: quoteId,
+                        raw: q,
+                    });
+                }
+            });
+        }
+
+        // If order has a quote_id and we fetched that quote, add it if not already in the list
+        if (orderQuoteData && orderQuoteId) {
+            const quoteId = orderQuoteData.quote_id ?? orderQuoteData.id ?? orderQuoteId;
+            if (quoteId != null && !seenQuoteIds.has(quoteId)) {
+                options.push({
+                    id: String(quoteId),
+                    name: orderQuoteData.subject ?? orderQuoteData.quote_no ?? `Quote ${quoteId}`,
+                    subject: orderQuoteData.subject ?? "",
+                    quote_id: quoteId,
+                    raw: orderQuoteData,
+                });
+            } else if (quoteId != null && seenQuoteIds.has(quoteId)) {
+                // Update existing option with subject if it's missing
+                const existingIndex = options.findIndex((opt) => opt.quote_id === quoteId);
+                if (existingIndex >= 0 && orderQuoteData.subject) {
+                    options[existingIndex].name = orderQuoteData.subject;
+                    options[existingIndex].subject = orderQuoteData.subject;
+                }
+            }
+        }
+
+        return options;
+    }, [accountQuotesData, orderQuoteData, orderQuoteId]);
 
     // ✅ Only customers for this company (because hook calls /accounts?company_id=...)
     const filteredCustomerOptions: CustomerOption[] = React.useMemo(() => {
@@ -606,16 +702,19 @@ export default function OrderForm(props: OrderFormProps = {}) {
         }
     }, [orderData, filteredCustomerOptions]);
 
-    // Select quote from order once account quotes are available
+    // Select quote from order once quotes are available
     React.useEffect(() => {
-        if (!orderData || !Array.isArray(quoteOptions) || quoteOptions.length === 0)
-            return;
+        if (!orderData || !Array.isArray(quoteOptions)) return;
         const so: any = orderData;
         const qid = so.quote_id ?? so.sales_quote_id ?? null;
         if (!qid) return;
+        
+        // Wait for quote to be loaded if we're fetching it separately
+        if (qid === orderQuoteId && orderQuoteLoading) return;
+        
         const match = quoteOptions.find((q) => q.quote_id === qid);
         if (match) setSelectedQuote(match);
-    }, [orderData, quoteOptions]);
+    }, [orderData, quoteOptions, orderQuoteId, orderQuoteLoading]);
 
     const combinedProductOptions: ProductOption[] = React.useMemo(() => {
         const options: ProductOption[] = [];
@@ -748,6 +847,18 @@ export default function OrderForm(props: OrderFormProps = {}) {
 
     // Clear addresses when account changes
     React.useEffect(() => {
+        // Skip clearing on initial mount or when there's no customer selected
+        if (!selectedCustomer?.id) return;
+        
+        const currentCustomerId = selectedCustomer.id;
+        const originalCustomerId = originalOrderCustomerIdRef.current;
+        
+        // In edit mode: don't clear if this is the original customer from order data (initial load)
+        if ((orderIdFromUrl || orderData) && originalCustomerId && currentCustomerId === originalCustomerId) {
+            return;
+        }
+        
+        // Clear addresses when customer changes (in create mode, or when manually changed in edit mode)
         setBillingAddress("");
         setBillingPOBox("");
         setBillingCity("");
@@ -760,11 +871,27 @@ export default function OrderForm(props: OrderFormProps = {}) {
         setShippingState("");
         setShippingCode("");
         setShippingCountry("");
-    }, [selectedCustomer?.id]);
+    }, [selectedCustomer?.id, orderIdFromUrl, orderData]);
 
     // Populate addresses from customer detail
     React.useEffect(() => {
-        if (!customerDetail) return;
+        if (!customerDetail || !selectedCustomer) return;
+        
+        const currentCustomerId = selectedCustomer.id;
+        const originalCustomerId = originalOrderCustomerIdRef.current;
+        
+        // In edit mode: only populate from customer detail if the customer is different from the original
+        // This allows addresses to update when user manually changes customer in edit mode
+        if (orderIdFromUrl || orderData) {
+            // We're in edit mode - only update if customer was manually changed
+            if (originalCustomerId && currentCustomerId === originalCustomerId) {
+                // This is the original customer, don't overwrite addresses from order data
+                return;
+            }
+            // Customer was manually changed, allow updating addresses
+        }
+        
+        // In create mode or when customer is manually changed in edit mode, populate from customer detail
         const billing = parseAddress(
             customerDetail.billing_address ?? customerDetail.accountBillingAddress
         );
@@ -783,7 +910,7 @@ export default function OrderForm(props: OrderFormProps = {}) {
         setShippingState(shipping.state || "");
         setShippingCode(shipping.code || "");
         setShippingCountry(shipping.country || "");
-    }, [customerDetail, selectedCustomer?.id]);
+    }, [customerDetail, selectedCustomer, orderIdFromUrl, orderData]);
 
     // Populate contact list from customer detail and pre-select contact on edit
     React.useEffect(() => {
