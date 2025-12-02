@@ -162,7 +162,7 @@ export default function QuotesPage() {
   } = useCompany();
 
   useEffect(() => {
-    if (selectedCompanyId === null && companies.length > 0) {
+    if (selectedCompanyId === null || companies.length > 0) {
       setSelectedCompanyId(companies[0].id);
     }
   }, [companies, selectedCompanyId, setSelectedCompanyId]);
@@ -204,15 +204,14 @@ export default function QuotesPage() {
     );
   }, [activeCompanyId, allQuotes]);
 
-  const [lastUpdate, setLastUpdate] = useState<string>("");
-
-  useEffect(() => {
-    setLastUpdate(new Date().toLocaleTimeString());
-  }, [data]);
+  const lastUpdate = useMemo(
+    () => new Date().toLocaleTimeString(),
+    [data]
+  );
 
   const handleAddQuote = () => router.push("/dashboard/quotes/add-quote");
   const handleViewQuote = (quoteId: string) =>
-    router.push(`/dashboard/quotes/${encodeURIComponent(quoteId)}/edit`);
+    router.push(`/dashboard/quotes/${encodeURIComponent(quoteId)}`);
 
   const filterAndSort = (rows: QuoteRecord[]) => {
     let filtered = rows;
