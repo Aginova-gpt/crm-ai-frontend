@@ -8,6 +8,7 @@ import {
   Chip,
   Divider,
   FormControl,
+  IconButton,
   InputAdornment,
   InputLabel,
   MenuItem,
@@ -28,6 +29,9 @@ import {
   MdSearch,
   MdInventory2,
 } from "react-icons/md";
+import Image from "next/image";
+import { useRouter } from "next/navigation";
+import { addAsset } from "@/styles/icons";
 import StatusCard from "../../../components/StatusCard/StatusCard";
 
 type Invoice = {
@@ -122,6 +126,7 @@ const formatCurrency = (value: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 
 const InvoicesPage = () => {
+  const router = useRouter();
   const [tab, setTab] = useState(0);
   const [view, setView] = useState("invoice");
   const [searchQuery, setSearchQuery] = useState("");
@@ -132,6 +137,8 @@ const InvoicesPage = () => {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+
+  const handleAddInvoice = () => router.push("/dashboard/invoices/add-invoice");
 
   useEffect(() => {
     setPage(0);
@@ -320,6 +327,36 @@ const InvoicesPage = () => {
               <ToggleButton value="invoice">Invoice</ToggleButton>
               <ToggleButton value="order">Order</ToggleButton>
             </ToggleButtonGroup>
+
+            <Tooltip title="Add Invoice">
+              <Box
+                sx={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  mb: 0.25,
+                }}
+              >
+                <IconButton
+                  color="primary"
+                  onClick={handleAddInvoice}
+                  sx={{ p: 0.5 }}
+                >
+                  <Image
+                    src={addAsset}
+                    alt="Add invoice"
+                    width={36}
+                    height={36}
+                  />
+                </IconButton>
+                <Typography
+                  variant="caption"
+                  sx={{ fontSize: 11, lineHeight: 1 }}
+                >
+                  Add
+                </Typography>
+              </Box>
+            </Tooltip>
           </Box>
         </Box>
 
