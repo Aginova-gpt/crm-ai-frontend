@@ -67,6 +67,13 @@ const orderCols = [
 ];
 
 // ===== Types & helpers =====
+type RawOrderData = {
+    created_at?: string;
+    shipped_date?: string;
+    due_date?: string;
+    [key: string]: unknown;
+};
+
 type OrderRecord = {
     orderId: string;
     rma?: string;
@@ -84,6 +91,7 @@ type OrderRecord = {
     actions?: string;
     companyId?: string;
     companyName?: string;
+    raw?: RawOrderData;
     [key: string]: unknown;
 };
 
@@ -316,8 +324,14 @@ export default function OrdersPage() {
             
             // For dates (created, dueIn), parse and compare as dates
             if (sortBy === "created" || sortBy === "dueIn") {
-                const aDate = av ? new Date(a.raw?.[sortBy === "created" ? "created_at" : "due_date"] || av) : null;
-                const bDate = bv ? new Date(b.raw?.[sortBy === "created" ? "created_at" : "due_date"] || bv) : null;
+                const aRawKey = sortBy === "created" ? "created_at" : "due_date";
+                const bRawKey = sortBy === "created" ? "created_at" : "due_date";
+                const aRawValue = a.raw?.[aRawKey];
+                const bRawValue = b.raw?.[bRawKey];
+                const aDateStr = aRawValue ? String(aRawValue) : (av ? String(av) : "");
+                const bDateStr = bRawValue ? String(bRawValue) : (bv ? String(bv) : "");
+                const aDate = aDateStr ? new Date(aDateStr) : null;
+                const bDate = bDateStr ? new Date(bDateStr) : null;
                 if (aDate && bDate && !isNaN(aDate.getTime()) && !isNaN(bDate.getTime())) {
                     return sortDir === "asc" ? aDate.getTime() - bDate.getTime() : bDate.getTime() - aDate.getTime();
                 }
@@ -669,7 +683,7 @@ export default function OrdersPage() {
                                 }
                                 return (
                                     <Typography key={col.key} noWrap sx={{ color: "text.secondary" }}>
-                                        {row[col.key] ?? ""}
+                                        {String(row[col.key] ?? "")}
                                     </Typography>
                                 );
                             })}
